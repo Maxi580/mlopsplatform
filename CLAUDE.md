@@ -1,3 +1,7 @@
+## Scope and simplicity
+
+This is a small internal platform for one team. Keep the architecture and requirements as simple as possible; prefer the boring solution.
+
 ## Agent skills
 
 ### Issue tracker

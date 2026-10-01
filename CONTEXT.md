@@ -18,6 +18,10 @@ _Avoid_: Workflow, experiment, job
 One enabled step inside a Pipeline: `distill`, `finetune`, `evaluate` or `serve`.
 _Avoid_: Workflow type, step, task
 
+**Endpoint**:
+A running, OpenAI-compatible server for one model (a Model Version or a Base Model), created by the `serve` Stage. It outlives its Pipeline and runs until its Owner stops it.
+_Avoid_: Deployment, served model, inference service
+
 **Smoke Test**:
 A built-in Pipeline Request that runs every Stage end to end on a tiny model, to prove the platform works.
 _Avoid_: Health check, e2e test
@@ -54,5 +58,23 @@ The model whose responses to a set of prompts become training data for a Student
 The model being finetuned on a Distillation Dataset.
 
 **Distillation Dataset**:
-A set of prompt → response pairs produced by a Teacher, used to finetune a Student. Response-level only; it contains no logits.
+A Dataset of prompt → response pairs produced by a Teacher, used to finetune a Student. Response-level only; it contains no logits.
 _Avoid_: Synthetic dataset, teacher data
+
+**Dataset**:
+A named set of examples that the platform stores and versions, either uploaded by a user or produced by a Pipeline. Pipeline Requests refer to Datasets by name, never by storage path.
+_Avoid_: Data, corpus, file (when meaning the platform concept)
+
+**Dataset Version**:
+One immutable snapshot of a Dataset, numbered 1, 2, 3… by the platform. Every upload or Pipeline output creates a new one.
+
+**Registered Model**:
+A named model that a Pipeline produced. Every `finetune` output becomes a new Model Version of one. Base Models are not Registered Models.
+_Avoid_: Finetuned model, checkpoint (when meaning the platform concept)
+
+**Model Version**:
+One immutable output of a Registered Model, numbered 1, 2, 3… by the platform. It holds either full weights or an Adapter.
+
+**Adapter**:
+A Model Version that holds only parameter-efficient weights (e.g. LoRA). It is usable only together with the Base Model, at the exact revision, that it was trained on.
+_Avoid_: LoRA (when meaning any adapter), delta
