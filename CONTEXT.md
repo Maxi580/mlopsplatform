@@ -25,6 +25,10 @@ _Avoid_: Health check, e2e test
 **Owner**:
 The user a Pipeline belongs to. Recorded on every Pipeline even while there is only one user.
 
+**Secret**:
+A credential such as the Hugging Face token or a Teacher's API key, supplied with each submission and kept only while its Pipeline runs. A Pipeline Request may name a Secret but never contains its value.
+_Avoid_: Credential, key, token (when meaning the platform concept)
+
 **Job**:
 A Kubernetes object that executes part of a user's submitted work. Internal: users never see or manage Jobs directly.
 _Avoid_: Task, pod (when meaning the unit of work)
