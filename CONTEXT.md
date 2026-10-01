@@ -7,8 +7,12 @@ An internal, Kubernetes-native platform where a team finetunes, evaluates, disti
 ### Execution
 
 **Pipeline Request**:
-The config document describing what to do: which Stages are enabled and all their settings. Written as a file for the CLI or produced by the Web UI form; the one schema the API accepts and validates.
+The document describing what to do: which Stages are enabled and all their settings. Built by the CLI from a CLI Profile or produced by the Web UI form; the one schema the API accepts and validates.
 _Avoid_: Workflow, job spec, config (when meaning the whole request)
+
+**CLI Profile**:
+A local file holding a user's reusable settings for every Stage, including named Phase variants. The CLI builds a Pipeline Request from it, taking only the Stages and Phases named on the command line. It is never sent to the API as is.
+_Avoid_: Config (when meaning this file), Pipeline Request
 
 **Pipeline**:
 One submitted Pipeline Request as it executes; the thing users list, watch and cancel.
