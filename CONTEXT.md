@@ -18,6 +18,10 @@ _Avoid_: Workflow, experiment, job
 One enabled step inside a Pipeline: `distill`, `finetune`, `evaluate` or `serve`.
 _Avoid_: Workflow type, step, task
 
+**Phase**:
+One training algorithm run inside the `finetune` Stage (e.g. SFT, then DPO, then GRPO). Phases run in order, each starting from the previous Phase's output, and every Phase output becomes a Model Version.
+_Avoid_: Step, sub-stage
+
 **Endpoint**:
 A running, OpenAI-compatible server for one model (a Model Version or a Base Model), created by the `serve` Stage. It outlives its Pipeline and runs until its Owner stops it.
 _Avoid_: Deployment, served model, inference service
@@ -56,13 +60,13 @@ Shared storage holding downloaded Base Models and datasets, so each is fetched f
 _Avoid_: Model store, HF cache
 
 **Teacher**:
-The model whose responses to a set of prompts become training data for a Student. Either a Base Model run in-cluster or an external model reached through an API.
+The model a Student learns from: through its responses to a set of prompts (the `distill` Stage), or through its token probabilities during a `finetune` Phase. Either a model run in-cluster, or, for responses only, an external model reached through an API.
 
 **Student**:
-The model being finetuned on a Distillation Dataset.
+The model being finetuned to learn from a Teacher, on a Distillation Dataset or on the Teacher's token probabilities.
 
 **Distillation Dataset**:
-A Dataset of prompt → response pairs produced by a Teacher, used to finetune a Student. Response-level only; it contains no logits.
+A Dataset of prompt → response pairs produced by a Teacher, used to finetune a Student. Response-level only: it contains no logits. A prompt may offer tools, in which case the response may be a tool call.
 _Avoid_: Synthetic dataset, teacher data
 
 **Dataset**:
@@ -80,5 +84,5 @@ _Avoid_: Finetuned model, checkpoint (when meaning the platform concept)
 One immutable output of a Registered Model, numbered 1, 2, 3… by the platform. It holds either full weights or an Adapter.
 
 **Adapter**:
-A Model Version that holds only parameter-efficient weights (e.g. LoRA). It is usable only together with the Base Model, at the exact revision, that it was trained on.
+A Model Version that holds only parameter-efficient weights (e.g. LoRA). It is usable only together with the model it was trained on: a Base Model at the exact revision, or a full-weight Model Version.
 _Avoid_: LoRA (when meaning any adapter), delta
