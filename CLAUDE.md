@@ -1,3 +1,16 @@
+## What we're building
+
+A Kubernetes-native MLOps platform to distill, finetune, quantize, evaluate and serve open-source LLMs. Components:
+
+- **CLI / Web UI**: thin clients; users build a Pipeline Request and talk only to the API / Can acces Kubeflow and MLFLow UIs.
+- **API** (FastAPI): validates the Pipeline Request, compiles it into a Kubeflow pipeline, tracks Pipelines, Datasets and Endpoints. All decisions live here.
+- **Stage entrypoints**: one container per Stage, run by Kubeflow; do the heavy lifting with TRL/PEFT, lm-eval and vLLM, log to MLflow, register outputs via the API.
+- **Sandbox**: the only place untrusted Python runs (RL rewards, generated benchmark code).
+- **Endpoints**: vLLM servers for a model, alive until stopped.
+- **Installed, not ours**: Kubeflow Pipelines, Kueue (GPU queue), MLflow, Postgres, SeaweedFS (one object store), Traefik (login + HTTPS).
+
+Details: spec #24, architecture #25 (★ = undecided), decisions #2–#23 (`gh issue view <n>`). Vocabulary: `CONTEXT.md`.
+
 ## Coding Guidelines
 
 ### Scope and Complexity
