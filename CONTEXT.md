@@ -37,6 +37,10 @@ _Avoid_: Credential, key, token (when meaning the platform concept)
 A Kubernetes object that executes part of a user's submitted work. Internal: users never see or manage Jobs directly.
 _Avoid_: Task, pod (when meaning the unit of work)
 
+**Sandbox**:
+The isolated place where the platform runs user-written and model-generated Python, one stateless execution at a time. Nothing else executes untrusted code.
+_Avoid_: Code runner, executor
+
 **Run**:
 An MLflow run: the tracked record of params, metrics and artifacts. Used for nothing else.
 _Avoid_: Execution, experiment (when meaning a single run)
