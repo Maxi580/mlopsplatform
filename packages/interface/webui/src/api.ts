@@ -14,9 +14,13 @@ export class ApiError extends Error {
 }
 
 /** The API's JSON answer; ApiError with FastAPI's `detail` when it refused. */
-export async function callApi<T>(path: string, body?: unknown): Promise<T> {
+export async function callApi<T>(
+  path: string,
+  body?: unknown,
+  method = body === undefined ? "GET" : "POST",
+): Promise<T> {
   const response = await fetch(path, {
-    method: body === undefined ? "GET" : "POST",
+    method,
     headers: body === undefined ? {} : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",

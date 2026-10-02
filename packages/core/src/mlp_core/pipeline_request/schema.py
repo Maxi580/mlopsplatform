@@ -3,7 +3,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from mlp_core.config import ALGORITHMS, BACKENDS, MAX_LORA_RANK
-from mlp_core.pipeline_request.references import BaseModelReference, DatasetReference
+from mlp_core.pipeline_request.references import (
+    MODEL_NAME_PATTERN,
+    BaseModelReference,
+    DatasetReference,
+)
 
 METHODS = tuple(sorted({method for methods in BACKENDS.values() for method in methods}))
 
@@ -51,5 +55,5 @@ class Finetune(Strict):
 
 class PipelineRequest(Strict):
     schema_version: Literal[1] = 1
-    name: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]*$", max_length=63)
+    name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
     finetune: Finetune

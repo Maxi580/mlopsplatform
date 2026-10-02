@@ -8,7 +8,7 @@ from mlp_core import config
 
 
 class ObjectStore:
-    """The platform bucket in SeaweedFS; tests swap in a fake."""
+    """SeaweedFS: files in the platform bucket, sizes and deletes in all; tests swap in a fake."""
 
     def __init__(self):
         self.bucket = os.environ["S3_BUCKET"]
@@ -33,3 +33,23 @@ class ObjectStore:
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=int(config.DOWNLOAD_URL_LIFETIME.total_seconds()),
         )
+
+    def size_of(self, bucket: str, prefix: str) -> int:
+        """The bytes of every object whose key starts with the prefix."""
+        return sum(item["Size"] for item in self.objects(bucket, prefix))
+
+    def delete_all(self, bucket: str, prefix: str) -> None:
+        # An empty prefix matches, and so would delete, the whole bucket.
+        if not prefix.strip("/"):
+            raise ValueError(f"Refusing to delete everything in bucket {bucket}")
+        for item in self.objects(bucket, prefix):
+            self.client.delete_object(Bucket=bucket, Key=item["Key"])
+
+    def bucket_sizes(self) -> dict[str, int]:
+        buckets = self.client.list_buckets()["Buckets"]
+        return {bucket["Name"]: self.size_of(bucket["Name"], "") for bucket in buckets}
+
+    def objects(self, bucket: str, prefix: str):
+        pages = self.client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+        for page in pages:
+            yield from page.get("Contents", [])

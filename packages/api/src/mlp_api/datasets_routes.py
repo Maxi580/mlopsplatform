@@ -52,6 +52,10 @@ def download(name: DatasetName, version: int, request: Request) -> dict:
 @router.delete(api_paths.DATASET_VERSION, status_code=204)
 def delete(name: DatasetName, version: int, request: Request) -> Response:
     state = request.app.state
-    if not delete_dataset_version(state.engine, state.object_store, name, version):
-        raise HTTPException(404, f"Dataset {name} has no version {version}")
+    try:
+        delete_dataset_version(state.engine, state.object_store, name, version)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from None
     return Response(status_code=204)

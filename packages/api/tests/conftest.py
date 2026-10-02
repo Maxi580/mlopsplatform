@@ -22,6 +22,8 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("S3_ENDPOINT_URL", "http://seaweedfs.test:8333")
     monkeypatch.setenv("S3_PUBLIC_URL", "https://platform.test")
     monkeypatch.setenv("S3_BUCKET", "platform")
+    monkeypatch.setenv("MLFLOW_URL", "http://mlflow.test")
+    monkeypatch.setenv("MLFLOW_BUCKET", "mlflow")
     monkeypatch.setenv("KUBEFLOW_URL", "http://ml-pipeline.test:8888")
     monkeypatch.setenv("KUBEFLOW_NAMESPACE", "kubeflow")
     monkeypatch.setenv("STAGES_IMAGE", "mlp-stages:real")
@@ -68,10 +70,11 @@ def hugging_face(api):
 
 
 class FakeObjectStore:
-    """Keeps objects in memory; download URLs point at the key."""
+    """Keeps objects in memory per bucket, `objects` being the platform bucket."""
 
     def __init__(self):
         self.objects = {}
+        self.buckets = {"platform": self.objects, "mlflow": {}, "mlpipeline": {}}
 
     def upload_file(self, path, key):
         self.objects[key] = path.read_bytes()
@@ -82,11 +85,43 @@ class FakeObjectStore:
     def download_url(self, key):
         return f"https://objects.test/{key}?signature=x"
 
+    def size_of(self, bucket, prefix):
+        return sum(len(v) for k, v in self.buckets[bucket].items() if k.startswith(prefix))
+
+    def delete_all(self, bucket, prefix):
+        objects = self.buckets[bucket]
+        for key in [key for key in objects if key.startswith(prefix)]:
+            del objects[key]
+
+    def bucket_sizes(self):
+        return {bucket: self.size_of(bucket, "") for bucket in self.buckets}
+
 
 @pytest.fixture
 def object_store(api):
     api.app.state.object_store = FakeObjectStore()
     return api.app.state.object_store
+
+
+class FakeModelRegistry:
+    """Holds Model Versions in memory; their files go in the fake object store's mlflow bucket."""
+
+    artifact_bucket = "mlflow"
+
+    def __init__(self):
+        self.versions = []
+
+    def model_versions(self):
+        return list(self.versions)
+
+    def delete_model_version(self, name, version):
+        self.versions = [v for v in self.versions if (v.name, v.version) != (name, version)]
+
+
+@pytest.fixture
+def model_registry(api):
+    api.app.state.model_registry = FakeModelRegistry()
+    return api.app.state.model_registry
 
 
 class FakeCluster:
@@ -140,6 +175,6 @@ def cluster(api):
 
 
 @pytest.fixture
-def logged_in_api(api, hugging_face, object_store, cluster):
+def logged_in_api(api, hugging_face, object_store, model_registry, cluster):
     api.post(api_paths.LOGIN, json={"password": PASSWORD})
     return api

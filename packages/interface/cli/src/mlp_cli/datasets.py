@@ -4,6 +4,7 @@ from typing import Annotated
 import typer
 
 from mlp_cli.api import api_client, download_client, exit_on_error
+from mlp_cli.versions import split_version
 from mlp_core import api_paths
 
 app = typer.Typer()
@@ -55,7 +56,7 @@ def download(
 ) -> None:
     """Download a Dataset Version straight from the object store."""
     # 1. The presigned URL, from the API.
-    name, version = split_dataset_version(dataset_version)
+    name, version = split_version(dataset_version)
     with api_client() as client:
         path = api_paths.DATASET_DOWNLOAD.format(name=name, version=version)
         url = exit_on_error(client.get(path)).json()["url"]
@@ -74,14 +75,7 @@ def download(
 @app.command()
 def delete(dataset_version: Annotated[str, typer.Argument(help="name@version")]) -> None:
     """Delete a Dataset Version and its file."""
-    name, version = split_dataset_version(dataset_version)
+    name, version = split_version(dataset_version)
     with api_client() as client:
         exit_on_error(client.delete(api_paths.DATASET_VERSION.format(name=name, version=version)))
     typer.echo(f"Deleted {name}@{version}")
-
-
-def split_dataset_version(dataset_version: str) -> tuple[str, int]:
-    name, _, version = dataset_version.partition("@")
-    if not version.isdigit():
-        raise typer.BadParameter(f"expected name@version, e.g. {name}@1, got {dataset_version}")
-    return name, int(version)

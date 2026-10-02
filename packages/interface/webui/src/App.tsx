@@ -5,6 +5,7 @@ import LoginPage from "./login/LoginPage";
 import NewPipelinePage from "./pipelines/NewPipelinePage";
 import PipelinesPage from "./pipelines/PipelinesPage";
 import Shell from "./shell/Shell";
+import StoragePage from "./storage/StoragePage";
 
 export default function App() {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function App() {
       <Route element={<Shell />}>
         <Route index element={<PipelinesPage />} />
         <Route path="/pipelines/new" element={<NewPipelinePage />} />
+        <Route path="/storage" element={<StoragePage />} />
       </Route>
     </Routes>
   );

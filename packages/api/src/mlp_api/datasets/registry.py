@@ -17,9 +17,10 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 
 from mlp_api.database import metadata
-from mlp_api.datasets.object_store import ObjectStore
 from mlp_api.datasets.rows import row_format_of_file
-from mlp_core.pipeline_request.references import dataset_key
+from mlp_api.object_store import ObjectStore
+from mlp_api.pipelines.lifecycle import refuse_while_in_use
+from mlp_core.pipeline_request.references import dataset_key, dataset_reference
 
 dataset_version = Table(
     "dataset_version",
@@ -90,8 +91,12 @@ def find_dataset_version(engine: Engine, name: str, version: int | None = None) 
 
 def delete_dataset_version(
     engine: Engine, object_store: ObjectStore, name: str, version: int
-) -> bool:
-    """Whether the version existed; its file is removed from the object store."""
+) -> None:
+    """Deletes the version and its file; LookupError if unknown, ValueError while in use."""
+    # 1. Refused while an unfinished Pipeline trains on it.
+    refuse_while_in_use(engine, dataset_reference(name, version))
+
+    # 2. The row is kept, the file goes.
     with engine.begin() as connection:
         deleted = connection.execute(
             update(dataset_version)
@@ -103,6 +108,5 @@ def delete_dataset_version(
             .values(deleted=True)
         )
         if deleted.rowcount == 0:
-            return False
+            raise LookupError(f"Dataset {name} has no version {version}")
         object_store.delete(dataset_key(name, version))
-    return True

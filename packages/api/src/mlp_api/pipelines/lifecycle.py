@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 from sqlalchemy import (
@@ -100,6 +101,20 @@ def list_pipelines(engine: Engine) -> list[dict]:
         }
         for row in rows
     ]
+
+
+def refuse_while_in_use(engine: Engine, reference: str, produced_by: str | None = None) -> None:
+    """ValueError naming every unfinished Pipeline whose request names the Reference or makes it."""
+    with engine.connect() as connection:
+        rows = connection.execute(select(pipeline).where(unfinished)).all()
+    # A resolved request pins every Reference, so it holds the exact string as one JSON value.
+    using = [
+        f"{row.name} (#{row.id})"
+        for row in rows
+        if str(row.id) == produced_by or json.dumps(reference) in json.dumps(row.request)
+    ]
+    if using:
+        raise ValueError(f"{reference} is used by Pipeline {', '.join(using)}")
 
 
 # Submission happens inside a request, so after a restart no unsubmitted Pipeline is in flight.

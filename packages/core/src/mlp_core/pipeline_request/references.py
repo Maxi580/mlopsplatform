@@ -4,6 +4,8 @@ from pydantic import Field
 
 # Starts alphanumeric, so names like `..` never become storage paths.
 DATASET_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
+# A Registered Model is named after the Pipeline that produced it.
+MODEL_NAME_PATTERN = r"[a-z0-9][a-z0-9.-]*"
 BaseModelReference = Annotated[str, Field(pattern=r"^hf:[\w.-]+/[\w.-]+(@[\w.-]+)?$")]
 DatasetReference = Annotated[str, Field(pattern=rf"^dataset:{DATASET_NAME_PATTERN}(@\d+)?$")]
 
@@ -26,6 +28,10 @@ def split_dataset_reference(reference: str) -> tuple[str, int | None]:
 
 def dataset_reference(name: str, version: int) -> str:
     return f"dataset:{name}@{version}"
+
+
+def model_reference(name: str, version: int) -> str:
+    return f"model:{name}@{version}"
 
 
 def dataset_key(name: str, version: int) -> str:

@@ -80,3 +80,9 @@ def write_profile(home, url, ca, **profile):
     ca.cert_pem.write_to_path(str(home / "ca.crt"))
     profile = {"url": url, "ca_cert": str(home / "ca.crt"), **profile}
     (home / ".mlp" / "profile.yaml").write_text(yaml.safe_dump(profile))
+
+
+@pytest.fixture
+def logged_in(home, fake_api, platform_ca):
+    write_profile(home, fake_api.url, platform_ca)
+    (home / ".mlp" / "token").write_text(TOKEN)

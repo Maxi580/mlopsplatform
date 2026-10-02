@@ -68,6 +68,11 @@ spec:
               value: https://{{ .Values.domain }}
             - name: S3_BUCKET
               value: {{ .Values.platformBucket }}
+            - name: MLFLOW_URL
+              value: http://mlflow.{{ .Values.namespaces.mlflow }}.svc.cluster.local:{{ .Values.ports.mlflow }}
+            # MLflow keeps Model Version files here; the API reads their sizes and deletes them.
+            - name: MLFLOW_BUCKET
+              value: {{ .Values.mlflow.artifactRoot.s3.bucket }}
             - name: KUBEFLOW_URL
               value: http://ml-pipeline.{{ .Values.namespaces.kubeflow }}.svc.cluster.local:{{ .Values.ports.kfpApi }}
             - name: KUBEFLOW_NAMESPACE

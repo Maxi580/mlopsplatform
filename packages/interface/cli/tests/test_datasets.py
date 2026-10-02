@@ -4,17 +4,11 @@ from typer.testing import CliRunner
 from mlp_cli.main import app
 from mlp_core import api_paths
 
-from .conftest import TOKEN, write_profile
+from .conftest import TOKEN
 
 CONTENT = b'{"text": "hello"}\n'
 UPLOAD_PATH = api_paths.DATASET_VERSIONS.format(name="chat")
 DOWNLOAD_PATH = api_paths.DATASET_DOWNLOAD.format(name="chat", version=2)
-
-
-@pytest.fixture
-def logged_in(home, fake_api, platform_ca):
-    write_profile(home, fake_api.url, platform_ca)
-    (home / ".mlp" / "token").write_text(TOKEN)
 
 
 def mlp_datasets(*args):

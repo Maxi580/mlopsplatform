@@ -126,3 +126,11 @@ ROW_FORMATS = {
     "messages": {"messages": "messages"},
     "text": {"text": "a string"},
 }
+
+# Storage
+# Suffixes of the Kubernetes sizes the settings use, e.g. `object_store_size: 100Gi`.
+QUANTITY_SUFFIXES = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "Pi": 2**50}
+
+# Registered Models
+# Model Versions per page of an MLflow registry search.
+MLFLOW_PAGE_SIZE = 10000

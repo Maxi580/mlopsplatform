@@ -14,3 +14,11 @@ export const REFERENCE_PLACEHOLDERS: Record<string, string> = {
   "^hf:": "hf:org/name or hf:org/name@revision",
   "^dataset:": "dataset:name or dataset:name@version",
 };
+// Object store bucket -> what it holds, shown beside its usage.
+export const BUCKET_CONTENTS: Record<string, string> = {
+  platform: "Datasets and Checkpoints",
+  mlflow: "Model Versions and Run artifacts",
+  mlpipeline: "Kubeflow run outputs and logs",
+};
+// Object store usage, in percent, from which the meter shows a warning.
+export const STORAGE_WARNING_PERCENT = 90;

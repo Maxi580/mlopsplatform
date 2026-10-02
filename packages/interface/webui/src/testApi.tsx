@@ -14,7 +14,7 @@ export function fakeApi(routes: Record<string, Handler | Answer>) {
     calls.push({ route, body });
     const handler = routes[route] ?? [404, { detail: "Not Found" }];
     const [status, answer] = typeof handler === "function" ? handler(body) : handler;
-    return new Response(JSON.stringify(answer), { status });
+    return new Response(status === 204 ? null : JSON.stringify(answer), { status });
   });
   return calls;
 }

@@ -1,6 +1,8 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from mlp_core import config
+
 
 class Settings(BaseSettings):
     """Platform settings; defaults live in deploy/values.yaml, rendered into a ConfigMap."""
@@ -25,3 +27,9 @@ class Settings(BaseSettings):
                 f"gpus_per_stage ({self.gpus_per_stage}) exceeds gpu_count ({self.gpu_count})"
             )
         return self
+
+
+def size_in_bytes(quantity: str) -> int:
+    """A Kubernetes size such as `100Gi`, in bytes."""
+    number = quantity.rstrip("KMGTPi")
+    return int(float(number) * config.QUANTITY_SUFFIXES[quantity[len(number) :]])

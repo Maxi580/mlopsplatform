@@ -514,6 +514,44 @@ tr.highlighted {
   animation: pulse 2s infinite;
 }
 
+/* Storage */
+
+.usage-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.usage-heading .muted {
+  margin-left: auto;
+}
+
+/* A native meter, which the browser colours as a warning past its `high` mark. */
+.usage meter {
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin: 12px 0 16px;
+}
+
+.buckets {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.buckets li {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 1fr auto;
+  gap: 12px;
+}
+
+.storage-section {
+  margin-top: 32px;
+}
+
 /* Pipeline builder */
 
 .builder {
