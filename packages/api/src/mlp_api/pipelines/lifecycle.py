@@ -57,7 +57,7 @@ def submit_pipeline(
     # 2. The Secret and the run; a failure leaves the Secret to the reconciler.
     try:
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
-        spec = compile_pipeline(pipeline_id, request, cluster.steps, settings.gpus_per_stage)
+        spec = compile_pipeline(pipeline_id, request, cluster.steps, settings)
         run_id = cluster.submit_run(f"{request.name}-{pipeline_id}", spec)
     except Exception as error:
         set_pipeline(engine, pipeline_id, status="failed")
@@ -127,16 +127,20 @@ def kubeflow_run_url(run_id: str) -> str:
 
 def refuse_while_in_use(engine: Engine, reference: str, produced_by: str | None = None) -> None:
     """ValueError naming every unfinished Pipeline whose request names the Reference or makes it."""
+    using = pipelines_using(engine, reference, produced_by)
+    if using:
+        raise ValueError(f"{reference} is used by Pipeline {', '.join(using)}")
+
+
+def pipelines_using(engine: Engine, reference: str, produced_by: str | None = None) -> list[str]:
     with engine.connect() as connection:
         rows = connection.execute(select(pipeline).where(unfinished)).all()
     # A resolved request pins every Reference, so it holds the exact string as one JSON value.
-    using = [
+    return [
         f"{row.name} (#{row.id})"
         for row in rows
         if str(row.id) == produced_by or json.dumps(reference) in json.dumps(row.request)
     ]
-    if using:
-        raise ValueError(f"{reference} is used by Pipeline {', '.join(using)}")
 
 
 # Submission happens inside a request, so after a restart no unsubmitted Pipeline is in flight.

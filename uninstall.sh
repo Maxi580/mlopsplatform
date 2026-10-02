@@ -28,6 +28,8 @@ for namespace in "${namespaces[@]}"; do
     | yq ".items[] | select(.spec.claimRef.namespace == \"$namespace\") | .metadata.name" \
     | xargs -r kubectl delete pv
 done
+# A host directory, so deleting its volume leaves the files.
+sudo rm -rf "$(value .modelCacheHostPath)"
 
 log "Removing images and build cache"
 sudo k3s crictl rmi --prune

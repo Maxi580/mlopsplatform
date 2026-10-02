@@ -67,6 +67,15 @@ Every `finetune` Phase registers a Model Version; an upload registers one too, t
 
 `GET /models/{name}/versions/{v}/files` answers a presigned URL per file, which `mlp models download` saves under the directory.
 
+## Model Cache
+
+```sh
+mlp cache                                      # every cached Base Model with size and last use
+mlp cache free hf:Qwen/Qwen2.5-0.5B-Instruct@<commit>
+```
+
+`fetch` downloads each Base Model once into the Model Cache, a host directory (`modelCacheHostPath`) that the steps and the API mount. Past `model_cache_high_water_mark` of `model_cache_size`, the API evicts the least recently used Base Models, never one an unfinished Pipeline uses; a submit also evicts to make room for its Base Model. `fetch` fails before downloading if the whole download still doesn't fit. Freeing a Base Model in use is refused with 409.
+
 ## Pipeline Requests
 
 The CLI Profile also holds reusable Stage settings, named Phase variants and Secrets. A command builds a Pipeline Request from only the Stages and Phases it names; Secrets travel beside the request, never inside it. The API publishes the request's JSON Schema at `/schema`.

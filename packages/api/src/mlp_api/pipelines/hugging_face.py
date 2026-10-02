@@ -28,6 +28,16 @@ class HuggingFace:
             return None
         return HubModel(commit=info.sha, needs_remote_code="auto_map" in (info.config or {}))
 
+    def model_size(self, repo: str, commit: str, token: str | None) -> int | None:
+        """The bytes a download of every file at the commit takes, or None if Hugging Face fails."""
+        try:
+            info = HfApi(token=token or False).model_info(
+                repo, revision=commit, files_metadata=True
+            )
+        except (HfHubHTTPError, httpx.HTTPError):
+            return None
+        return sum(file.size or 0 for file in info.siblings or [])
+
     def download_model(self, repo: str, commit: str, directory: Path) -> None:
         snapshot_download(repo, revision=commit, local_dir=directory, token=False)
 

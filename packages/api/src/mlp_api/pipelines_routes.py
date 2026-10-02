@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
+from mlp_api.model_cache.janitor import make_room_for_base_model
 from mlp_api.pipelines.lifecycle import (
     cancel_pipeline,
     get_pipeline,
@@ -38,6 +39,9 @@ def validate(submission: Submission, request: Request) -> dict:
 def submit(submission: Submission, request: Request) -> dict:
     resolved = resolve(submission, request)
     state = request.app.state
+    if resolved.finetune.base_model:
+        token = submission.secrets.get("hf_token")
+        make_room_for_base_model(state, resolved.finetune.base_model, token)
     try:
         pipeline_id = submit_pipeline(
             state.engine, state.cluster, state.settings, resolved, submission.secrets

@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { fakeApi, renderApp } from "../testApi";
-import type { Dataset, RegisteredModel, Storage } from "./storage";
+import type { CachedBaseModels, Dataset, RegisteredModel, Storage } from "./storage";
 
 const datasets: Dataset[] = [
   { name: "chat", versions: [{ version: 1, size_bytes: 2048, row_format: "messages" }] },
@@ -25,10 +25,21 @@ const storage: Storage = {
   ],
   capacity_bytes: 100 * 2 ** 30,
 };
+const cachedBaseModels: CachedBaseModels = {
+  base_models: [
+    {
+      reference: "hf:Qwen/Qwen3-0.6B@abc123",
+      size_bytes: 3 * 2 ** 30,
+      last_used: "2026-10-01T08:30:00+00:00",
+    },
+  ],
+  capacity_bytes: 200 * 2 ** 30,
+};
 const routes: Parameters<typeof fakeApi>[0] = {
   "GET /datasets": [200, datasets],
   "GET /models": [200, models],
   "GET /storage": [200, storage],
+  "GET /cache/base-models": [200, cachedBaseModels],
   "GET /settings": [200, { gpu_count: 1 }],
 };
 
@@ -104,6 +115,40 @@ test("a refused delete shows which Pipeline uses the version", async () => {
 
   expect(await screen.findByText(reason)).toBeInTheDocument();
   expect(screen.getByText("chat@1")).toBeInTheDocument();
+});
+
+test("the Model Cache lists cached Base Models with size and last use", async () => {
+  fakeApi({ ...routes });
+  renderApp("/storage");
+
+  const row = (await screen.findByText("hf:Qwen/Qwen3-0.6B@abc123")).closest("tr")!;
+  for (const text of ["2026-10-01 08:30", "3.0 GB"]) {
+    expect(within(row).getByText(text)).toBeInTheDocument();
+  }
+  expect(screen.getByText("3.0 GB of 200.0 GB used")).toBeInTheDocument();
+});
+
+test("freeing a cached Base Model a Pipeline uses shows the reason", async () => {
+  const reason = "hf:Qwen/Qwen3-0.6B@abc123 is used by Pipeline qwen-sft (#7)";
+  const calls = fakeApi({
+    ...routes,
+    "DELETE /cache/base-models?reference=hf%3AQwen%2FQwen3-0.6B%40abc123": [
+      409,
+      { detail: reason },
+    ],
+  });
+  renderApp("/storage");
+
+  const row = (await screen.findByText("hf:Qwen/Qwen3-0.6B@abc123")).closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
+  await userEvent.click(
+    within(row).getByRole("button", { name: "Delete hf:Qwen/Qwen3-0.6B@abc123" }),
+  );
+
+  expect(await screen.findByText(reason)).toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain(
+    "DELETE /cache/base-models?reference=hf%3AQwen%2FQwen3-0.6B%40abc123",
+  );
 });
 
 test("the sidebar links the Storage page", async () => {

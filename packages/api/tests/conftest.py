@@ -32,6 +32,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("MODEL_CACHE_PVC", "model-cache")
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
+    monkeypatch.setattr(config, "EVICTION_INTERVAL", timedelta(days=1))
     return database
 
 
@@ -60,10 +61,15 @@ class FakeHuggingFace:
         self.lookups = []
         # Repo -> its files, for downloads.
         self.files = {}
+        # Repo -> the size of all its files.
+        self.sizes = {}
 
     def find_model(self, repo, revision, token):
         self.lookups.append((repo, revision, token))
         return self.models.get(repo)
+
+    def model_size(self, repo, commit, token):
+        return self.sizes.get(repo)
 
     def download_model(self, repo, commit, directory):
         for path, content in self.files[repo].items():
@@ -228,6 +234,13 @@ def cluster(api):
 
 
 @pytest.fixture
-def logged_in_api(api, hugging_face, object_store, model_registry, cluster):
+def model_cache(api, tmp_path):
+    """The Hugging Face cache inside the Model Cache, empty until a test writes into it."""
+    api.app.state.model_cache = tmp_path / "model-cache" / "hub"
+    return api.app.state.model_cache
+
+
+@pytest.fixture
+def logged_in_api(api, hugging_face, object_store, model_registry, cluster, model_cache):
     api.post(api_paths.LOGIN, json={"password": PASSWORD})
     return api

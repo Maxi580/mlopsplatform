@@ -83,9 +83,18 @@ spec:
               value: {{ .Values.images.trainerHf }}:{{ .Values.images.tag }}
             - name: MODEL_CACHE_PVC
               value: {{ .Values.modelCachePvc }}
+          # The janitor lists and evicts Base Models where the steps' HF_HOME puts them.
+          volumeMounts:
+            - name: model-cache
+              mountPath: /model-cache
           ports:
             - containerPort: {{ .Values.ports.api }}
           readinessProbe:
             httpGet:
               path: /health
               port: {{ .Values.ports.api }}
+      volumes:
+        - name: model-cache
+          hostPath:
+            path: {{ .Values.modelCacheHostPath }}
+            type: DirectoryOrCreate

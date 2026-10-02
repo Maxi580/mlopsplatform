@@ -33,6 +33,23 @@ roleRef:
   kind: Role
   name: mlp-api
 ---
+# A host directory rather than a provisioned volume, so the API in its own namespace mounts it too.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.modelCachePvc }}
+spec:
+  accessModes: [ReadWriteOnce]
+  capacity:
+    storage: {{ .Values.settings.model_cache_size }}
+  storageClassName: ""
+  hostPath:
+    path: {{ .Values.modelCacheHostPath }}
+    type: DirectoryOrCreate
+  claimRef:
+    name: {{ .Values.modelCachePvc }}
+    namespace: {{ .Values.namespaces.kubeflow }}
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -40,6 +57,8 @@ metadata:
   namespace: {{ .Values.namespaces.kubeflow }}
 spec:
   accessModes: [ReadWriteOnce]
+  storageClassName: ""
+  volumeName: {{ .Values.modelCachePvc }}
   resources:
     requests:
       storage: {{ .Values.settings.model_cache_size }}

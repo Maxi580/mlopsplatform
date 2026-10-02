@@ -2,6 +2,8 @@ import { CircleAlert, Download, HardDrive } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { callApi, errorMessage, useApi } from "../api";
 import {
+  CACHED_BASE_MODELS,
+  cachedBaseModel,
   DATASETS,
   datasetDownload,
   datasetVersion,
@@ -12,20 +14,28 @@ import {
 } from "../apiPaths";
 import { BUCKET_CONTENTS, STORAGE_WARNING_PERCENT } from "../config";
 import ModelUploadForm from "./ModelUploadForm";
-import type { Dataset, ModelVersionFile, RegisteredModel, Storage } from "./storage";
+import type {
+  CachedBaseModels,
+  Dataset,
+  ModelVersionFile,
+  RegisteredModel,
+  Storage,
+} from "./storage";
 
 export default function StoragePage() {
   const datasets = useApi<Dataset[]>(DATASETS);
   const models = useApi<RegisteredModel[]>(MODELS);
   const storage = useApi<Storage>(STORAGE);
+  const cache = useApi<CachedBaseModels>(CACHED_BASE_MODELS);
   const [notice, setNotice] = useState<{ text: string; failed: boolean }>();
   const [modelFiles, setModelFiles] = useState<{ label: string; files: ModelVersionFile[] }>();
-  const error = datasets.error ?? models.error ?? storage.error;
+  const error = datasets.error ?? models.error ?? storage.error ?? cache.error;
 
   function reload() {
     datasets.reload();
     models.reload();
     storage.reload();
+    cache.reload();
   }
 
   async function remove(path: string, label: string) {
@@ -69,7 +79,7 @@ export default function StoragePage() {
         <div>
           <h1>Storage</h1>
           <p className="muted">
-            Datasets, Registered Models, model uploads and how full the object store is.
+            Datasets, Registered Models, model uploads, the Model Cache and how full they are.
           </p>
         </div>
       </header>
@@ -128,6 +138,19 @@ export default function StoragePage() {
         )}
       />
       {modelFiles && <ModelFilesCard {...modelFiles} />}
+
+      <VersionTable
+        title="Model Cache"
+        note={cache.data && cacheUsage(cache.data)}
+        columns={["Base Model", "Last used (UTC)", "Size"]}
+        empty="No cached Base Models; fetch downloads each one once."
+        onDelete={remove}
+        rows={cache.data?.base_models.map((entry) => ({
+          label: entry.reference,
+          cells: [entry.last_used.slice(0, 16).replace("T", " "), formatBytes(entry.size_bytes)],
+          path: cachedBaseModel(entry.reference),
+        }))}
+      />
 
       <section className="storage-section">
         <h2>Upload a model</h2>
@@ -195,6 +218,12 @@ function UsageCard({ storage }: { storage: Storage }) {
   );
 }
 
+// Unused Base Models are also evicted least recently used first, past the high-water mark.
+function cacheUsage(cache: CachedBaseModels): string {
+  const used = cache.base_models.reduce((total, entry) => total + entry.size_bytes, 0);
+  return `${formatBytes(used)} of ${formatBytes(cache.capacity_bytes)} used`;
+}
+
 type VersionRowData = {
   label: string;
   cells: ReactNode[];
@@ -204,12 +233,14 @@ type VersionRowData = {
 
 function VersionTable({
   title,
+  note,
   columns,
   empty,
   rows,
   onDelete,
 }: {
   title: string;
+  note?: string;
   columns: string[];
   empty: string;
   rows?: VersionRowData[];
@@ -218,6 +249,7 @@ function VersionTable({
   return (
     <section className="storage-section">
       <h2>{title}</h2>
+      {note && <p className="muted">{note}</p>}
       {rows?.length === 0 && <p className="muted">{empty}</p>}
       {!!rows?.length && (
         <div className="card table-card">

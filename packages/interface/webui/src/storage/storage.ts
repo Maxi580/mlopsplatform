@@ -1,4 +1,5 @@
-// What `GET /datasets`, `GET /models`, `GET /storage` and the model upload routes answer.
+// What `GET /datasets`, `GET /models`, `GET /storage`, `GET /cache/base-models` and the model
+// upload routes answer.
 export type Dataset = {
   name: string;
   versions: { version: number; size_bytes: number; row_format: string }[];
@@ -11,6 +12,11 @@ export type RegisteredModel = {
 
 export type Storage = {
   buckets: { name: string; size_bytes: number }[];
+  capacity_bytes: number;
+};
+
+export type CachedBaseModels = {
+  base_models: { reference: string; size_bytes: number; last_used: string }[];
   capacity_bytes: number;
 };
 

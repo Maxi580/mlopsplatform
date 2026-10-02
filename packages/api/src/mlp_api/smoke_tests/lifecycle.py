@@ -5,6 +5,7 @@ from pathlib import Path
 from sqlalchemy import Engine, select, update
 
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
+from mlp_api.model_cache.janitor import make_room_for_base_model
 from mlp_api.models.mlflow import MLflow
 from mlp_api.models.registry import delete_model_version
 from mlp_api.models.uploads import upload_model_directory
@@ -42,8 +43,9 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     pipeline_id = create_pipeline(engine, name, {}, cases)
 
     try:
-        # 3. The Base Model, pinned to a commit.
+        # 3. The Base Model, pinned to a commit, with room for it in the Model Cache.
         base_model = pin_base_model(state.hugging_face, config.SMOKE_TEST_BASE_MODEL, None)
+        make_room_for_base_model(state, base_model, None)
 
         # 4. The bundled Datasets and the tiny model, uploaded the normal way.
         for phase in {phase for phase, _, _ in trainings.values()}:
@@ -73,7 +75,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             base_model,
             requests,
             state.cluster.steps,
-            state.settings.gpus_per_stage,
+            state.settings,
         )
         run_id = state.cluster.submit_run(name, spec)
     except Exception as error:

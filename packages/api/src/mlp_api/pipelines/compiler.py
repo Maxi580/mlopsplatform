@@ -6,6 +6,7 @@ from kfp import dsl, kubernetes
 
 from mlp_core import config
 from mlp_core.pipeline_request.schema import PipelineRequest
+from mlp_core.settings import Settings
 
 
 @dataclass(frozen=True)
@@ -31,7 +32,7 @@ class StepEnvironment:
 
 
 def compile_pipeline(
-    pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, gpus_per_stage: int
+    pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, settings: Settings
 ) -> dict:
     """The Kubeflow pipeline spec for a resolved request, in the form KFP's run API takes."""
 
@@ -43,10 +44,10 @@ def compile_pipeline(
     def pipeline():
         cleanup_task = cleanup().set_caching_options(False)
         with dsl.ExitHandler(cleanup_task):
-            finetune_task = finetune_step(pipeline_id, request, steps, gpus_per_stage)
+            finetune_task = finetune_step(pipeline_id, request, steps, settings.gpus_per_stage)
             # A Model Version to start from lies in the object store; only a Base Model is fetched.
             if request.finetune.base_model:
-                fetch_task = fetch_step(request.finetune.base_model, steps)
+                fetch_task = fetch_step(request.finetune.base_model, steps, settings)
                 # Only fetch gets the token, from the Secret; a pipeline parameter would be logged.
                 kubernetes.use_secret_as_env(
                     fetch_task,
@@ -65,17 +66,17 @@ def compile_smoke_test(
     base_model: str,
     finetune_cases: dict[str, PipelineRequest],
     steps: StepEnvironment,
-    gpus_per_stage: int,
+    settings: Settings,
 ) -> dict:
     """The Smoke Test's Kubeflow pipeline spec: one node per case, named after it, in a chain."""
 
     @dsl.pipeline(name=name)
     def pipeline():
-        previous = fetch_step(base_model, steps).set_display_name("fetch")
+        previous = fetch_step(base_model, steps, settings).set_display_name("fetch")
         for case, request in finetune_cases.items():
             # Runs once the case before it ended, even if that failed; no data passes between them.
             previous = (
-                finetune_step(pipeline_id, request, steps, gpus_per_stage)
+                finetune_step(pipeline_id, request, steps, settings.gpus_per_stage)
                 .set_display_name(case)
                 .after(previous)
                 .ignore_upstream_failure()
@@ -84,14 +85,16 @@ def compile_smoke_test(
     return pipeline_run_spec(pipeline)
 
 
-def fetch_step(base_model: str, steps: StepEnvironment):
+def fetch_step(base_model: str, steps: StepEnvironment, settings: Settings):
     @dsl.container_component
-    def fetch(base_model: str):
+    def fetch(base_model: str, model_cache_size: str):
         return dsl.ContainerSpec(
-            image=steps.stages_image, command=["mlp-stage", "fetch"], args=[base_model]
+            image=steps.stages_image,
+            command=["mlp-stage", "fetch"],
+            args=[base_model, model_cache_size],
         )
 
-    task = fetch(base_model=base_model)
+    task = fetch(base_model=base_model, model_cache_size=settings.model_cache_size)
     use_model_cache(task, steps)
     return task
 

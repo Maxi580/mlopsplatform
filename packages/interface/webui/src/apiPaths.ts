@@ -18,3 +18,6 @@ export const modelVersionFiles = (name: string, version: number) =>
 export const MODEL_UPLOADS = "/models/uploads";
 export const modelUploadComplete = (id: string) => `/models/uploads/${id}/complete`;
 export const STORAGE = "/storage";
+export const CACHED_BASE_MODELS = "/cache/base-models";
+export const cachedBaseModel = (reference: string) =>
+  `${CACHED_BASE_MODELS}?reference=${encodeURIComponent(reference)}`;
