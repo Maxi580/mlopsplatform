@@ -105,9 +105,11 @@ build_images() {
   TAG=$(git -C "$ROOT" rev-parse --short HEAD)
   [[ -z $(git -C "$ROOT" status --porcelain) ]] || TAG+="-dirty-$(date +%Y%m%d%H%M%S)"
   log "Building images with tag $TAG"
-  sudo nerdctl --address "$K3S_SOCKET" --namespace k8s.io build \
-    --build-arg PYTHON_IMAGE="$(value .images.python)" --build-arg UV_IMAGE="$(value .images.uv)" \
-    -t "$(value .images.api):$TAG" -f "$ROOT/packages/api/Dockerfile" "$ROOT"
+  for image in api stages; do
+    sudo nerdctl --address "$K3S_SOCKET" --namespace k8s.io build \
+      --build-arg PYTHON_IMAGE="$(value .images.python)" --build-arg UV_IMAGE="$(value .images.uv)" \
+      -t "$(value ".images.$image"):$TAG" -f "$ROOT/packages/$image/Dockerfile" "$ROOT"
+  done
 }
 
 # Generated once and reused; Kubeflow and MLflow get copies in their own namespaces.

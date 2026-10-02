@@ -1,0 +1,45 @@
+# KFP runs every Pipeline step in its own namespace; the API manages their Secrets there.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlp-api
+  namespace: {{ .Values.namespaces.kubeflow }}
+rules:
+  # Per-Pipeline Secrets; step pods get no access to Secrets at all.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, delete, list]
+  # Pending step pods show as "waiting for GPU".
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlp-api
+  namespace: {{ .Values.namespaces.kubeflow }}
+subjects:
+  - kind: ServiceAccount
+    name: api
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mlp-api
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.modelCachePvc }}
+  namespace: {{ .Values.namespaces.kubeflow }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.settings.model_cache_size }}

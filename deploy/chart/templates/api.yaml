@@ -26,6 +26,7 @@ spec:
       annotations:
         checksum/settings: {{ .Values.settings | toJson | sha256sum }}
     spec:
+      serviceAccountName: api
       containers:
         - name: api
           image: {{ .Values.images.api }}:{{ required "images.tag is set by install.sh" .Values.images.tag }}
@@ -67,6 +68,14 @@ spec:
               value: https://{{ .Values.domain }}
             - name: S3_BUCKET
               value: {{ .Values.platformBucket }}
+            - name: KUBEFLOW_URL
+              value: http://ml-pipeline.{{ .Values.namespaces.kubeflow }}.svc.cluster.local:{{ .Values.ports.kfpApi }}
+            - name: KUBEFLOW_NAMESPACE
+              value: {{ .Values.namespaces.kubeflow }}
+            - name: STAGES_IMAGE
+              value: {{ .Values.images.stages }}:{{ .Values.images.tag }}
+            - name: MODEL_CACHE_PVC
+              value: {{ .Values.modelCachePvc }}
           ports:
             - containerPort: {{ .Values.ports.api }}
           readinessProbe:

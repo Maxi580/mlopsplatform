@@ -2,7 +2,10 @@
 name = "mlp-stages"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["mlp-core"]
+dependencies = ["mlp-core", "huggingface-hub>=2.1.1"]
+
+[project.scripts]
+mlp-stage = "mlp_stages.main:main"
 
 [tool.uv.sources]
 mlp-core = { workspace = true }

@@ -1,4 +1,5 @@
 import os
+import threading
 from collections import defaultdict
 from contextlib import asynccontextmanager
 
@@ -9,7 +10,10 @@ from mlp_api import auth_routes, datasets_routes, health_routes, pipelines_route
 from mlp_api.auth.session import require_login
 from mlp_api.database import create_tables
 from mlp_api.datasets.object_store import ObjectStore
+from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.hugging_face import HuggingFace
+from mlp_api.pipelines.lifecycle import fail_unsubmitted_pipelines
+from mlp_api.pipelines.reconciler import reconcile_forever
 from mlp_core.settings import Settings
 
 
@@ -21,9 +25,14 @@ async def lifespan(app: FastAPI):
     app.state.jwt_secret = os.environ["JWT_SECRET"]
     # In memory per client IP, which works because the API runs as one replica.
     app.state.failed_logins = defaultdict(list)
+    app.state.cluster = Cluster()
     app.state.engine = create_engine(os.environ["DATABASE_URL"])
     create_tables(app.state.engine)
+    fail_unsubmitted_pipelines(app.state.engine)
+    stop = threading.Event()
+    threading.Thread(target=reconcile_forever, args=(app.state, stop), daemon=True).start()
     yield
+    stop.set()
     app.state.engine.dispose()
 
 

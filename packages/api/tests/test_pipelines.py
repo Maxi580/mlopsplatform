@@ -1,4 +1,11 @@
+import json
+from datetime import timedelta
+
+import pytest
+
+from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.hugging_face import HubModel
+from mlp_api.pipelines.reconciler import reconcile_pipelines
 from mlp_core import api_paths
 
 from .test_datasets import CHAT, jsonl, upload
@@ -41,3 +48,249 @@ def test_validate_rejects_with_paths_inside_the_pipeline_request(logged_in_api):
 
 def test_validation_requires_login(api, hugging_face):
     assert validate(api, pipeline_request()).status_code == 401
+
+
+HF_TOKEN = "hf_" + "s3cr3tT0ken" * 4
+
+
+@pytest.fixture
+def submittable(logged_in_api, hugging_face):
+    hugging_face.models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
+    upload(logged_in_api, "chat", jsonl(CHAT))
+
+
+def submit(api, request=None, secrets=None):
+    submission = {"request": request or pipeline_request(), "secrets": secrets or {}}
+    return api.post(api_paths.PIPELINES, json=submission)
+
+
+def pipelines(api) -> list[dict]:
+    response = api.get(api_paths.PIPELINES)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_submit_returns_the_pipeline_id_right_away(logged_in_api, submittable):
+    response = submit(logged_in_api)
+
+    assert response.status_code == 202, response.text
+    pipeline_id = response.json()["id"]
+    [pipeline] = pipelines(logged_in_api)
+    assert pipeline["id"] == pipeline_id
+    assert (pipeline["name"], pipeline["owner"], pipeline["status"]) == (
+        "qwen-sft",
+        "shared",
+        "pending",
+    )
+    assert pipeline["stages"] == ["finetune"]
+
+
+def submitted_pipeline(cluster) -> tuple[dict, dict]:
+    spec = cluster.submitted["pipeline_spec"]
+    return spec["pipeline_spec"], spec["platform_spec"]["platforms"]["kubernetes"]
+
+
+def test_the_pipeline_fetches_the_pinned_base_model_and_always_cleans_up(
+    logged_in_api, submittable, cluster
+):
+    submit(logged_in_api)
+
+    pipeline, _ = submitted_pipeline(cluster)
+    fetch = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"]["fetch"]
+    pinned = fetch["inputs"]["parameters"]["base_model"]["runtimeValue"]["constant"]
+    assert pinned == f"hf:{BASE_MODEL}@{COMMIT}"
+    cleanup = pipeline["root"]["dag"]["tasks"]["cleanup"]
+    assert cleanup["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED"
+    executors = pipeline["deploymentSpec"]["executors"]
+    assert executors["exec-fetch"]["container"]["command"] == ["mlp-stage", "fetch"]
+    assert {e["container"]["image"] for e in executors.values()} == {"mlp-stages:test"}
+
+
+def test_fetch_writes_into_the_model_cache(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+
+    pipeline, kubernetes = submitted_pipeline(cluster)
+    [mount] = kubernetes["deploymentSpec"]["executors"]["exec-fetch"]["pvcMount"]
+    assert (mount["constant"], mount["mountPath"]) == ("model-cache", "/model-cache")
+    env = pipeline["deploymentSpec"]["executors"]["exec-fetch"]["container"]["env"]
+    assert {"name": "HF_HOME", "value": "/model-cache"} in env
+
+
+def test_only_fetch_gets_the_hf_token_from_the_pipelines_secret(
+    logged_in_api, submittable, cluster
+):
+    pipeline_id = submit(logged_in_api, secrets={"hf_token": HF_TOKEN}).json()["id"]
+
+    assert cluster.secrets == {f"pipeline-{pipeline_id}": {"hf_token": HF_TOKEN}}
+    _, kubernetes = submitted_pipeline(cluster)
+    executors = kubernetes["deploymentSpec"]["executors"]
+    assert [name for name, e in executors.items() if "secretAsEnv" in e] == ["exec-fetch"]
+    [secret] = executors["exec-fetch"]["secretAsEnv"]
+    assert secret["secretName"] == f"pipeline-{pipeline_id}"
+    assert secret["keyToEnv"] == [{"secretKey": "hf_token", "envVar": "HF_TOKEN"}]
+
+
+def test_the_token_is_never_a_pipeline_parameter_nor_stored(
+    logged_in_api, submittable, cluster, platform_database
+):
+    response = submit(logged_in_api, secrets={"hf_token": HF_TOKEN})
+
+    assert HF_TOKEN not in json.dumps(cluster.submitted)
+    assert HF_TOKEN not in response.text + json.dumps(pipelines(logged_in_api))
+    assert HF_TOKEN.encode() not in platform_database.read_bytes()
+
+
+def test_a_rejected_submission_starts_nothing(logged_in_api, submittable, cluster):
+    response = submit(logged_in_api, without(pipeline_request(), "finetune", "base_model"))
+
+    assert response.status_code == 422
+    assert (cluster.secrets, cluster.runs, pipelines(logged_in_api)) == ({}, {}, [])
+
+
+def test_a_pipeline_kubeflow_refused_is_failed(logged_in_api, submittable, cluster):
+    def refuse(display_name, pipeline_spec):
+        raise ConnectionError("ml-pipeline unreachable")
+
+    cluster.submit_run = refuse
+
+    response = submit(logged_in_api)
+
+    assert response.status_code == 502
+    assert "ml-pipeline unreachable" in response.json()["detail"]
+    assert pipelines(logged_in_api)[0]["status"] == "failed"
+
+
+def reconcile(api):
+    reconcile_pipelines(api.app.state.engine, api.app.state.cluster)
+
+
+def finish_run(cluster, state, mlflow_run_url=None):
+    [run_id] = cluster.runs
+    cluster.runs[run_id] = KubeflowRun(state, mlflow_run_url)
+
+
+@pytest.mark.parametrize(
+    ("state", "status"),
+    [("SUCCEEDED", "succeeded"), ("FAILED", "failed"), ("CANCELED", "cancelled")],
+)
+def test_a_finished_run_finishes_the_pipeline_and_deletes_its_secret(
+    logged_in_api, submittable, cluster, state, status
+):
+    submit(logged_in_api, secrets={"hf_token": HF_TOKEN})
+    finish_run(cluster, state)
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["status"] == status
+    assert cluster.secrets == {}
+
+
+def test_a_running_pipeline_keeps_its_secret(logged_in_api, submittable, cluster):
+    submit(logged_in_api, secrets={"hf_token": HF_TOKEN})
+    finish_run(cluster, "RUNNING")
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["status"] == "running"
+    assert len(cluster.secrets) == 1
+
+
+def test_a_pipeline_whose_pod_waits_for_a_gpu_shows_it(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+    finish_run(cluster, "RUNNING")
+    cluster.waiting_for_gpu = set(cluster.runs)
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["status"] == "waiting for GPU"
+
+
+def test_a_run_deleted_in_the_kfp_ui_fails_the_pipeline(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+    cluster.runs.clear()
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["status"] == "failed"
+    assert cluster.secrets == {}
+
+
+def test_secrets_older_than_48_hours_or_of_no_running_pipeline_are_swept(
+    logged_in_api, submittable, cluster
+):
+    old, fresh = (submit(logged_in_api).json()["id"] for _ in range(2))
+    cluster.secret_created[f"pipeline-{old}"] -= timedelta(hours=49)
+    cluster.create_secret("pipeline-999", {})
+
+    reconcile(logged_in_api)
+
+    assert list(cluster.secrets) == [f"pipeline-{fresh}"]
+
+
+def test_the_list_links_the_kubeflow_run_and_the_mlflow_run(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+    finish_run(cluster, "RUNNING", mlflow_run_url="https://mlflow.test/#/runs/abc")
+
+    reconcile(logged_in_api)
+
+    [pipeline] = pipelines(logged_in_api)
+    [run_id] = cluster.runs
+    assert pipeline["kubeflow_run_url"] == f"/pipeline/#/runs/details/{run_id}"
+    assert pipeline["mlflow_run_url"] == "https://mlflow.test/#/runs/abc"
+
+
+def cancel(api, pipeline_id):
+    return api.post(api_paths.CANCEL_PIPELINE.format(id=pipeline_id))
+
+
+def test_cancel_terminates_the_run_deletes_the_secret_and_marks_it_cancelled(
+    logged_in_api, submittable, cluster
+):
+    pipeline_id = submit(logged_in_api, secrets={"hf_token": HF_TOKEN}).json()["id"]
+    finish_run(cluster, "RUNNING")
+
+    response = cancel(logged_in_api, pipeline_id)
+    reconcile(logged_in_api)
+
+    assert response.status_code == 200, response.text
+    assert cluster.terminated == list(cluster.runs)
+    assert cluster.secrets == {}
+    assert pipelines(logged_in_api)[0]["status"] == "cancelled"
+
+
+def test_a_finished_pipeline_cannot_be_cancelled(logged_in_api, submittable, cluster):
+    pipeline_id = submit(logged_in_api).json()["id"]
+    finish_run(cluster, "SUCCEEDED")
+    reconcile(logged_in_api)
+
+    response = cancel(logged_in_api, pipeline_id)
+
+    assert response.status_code == 409
+    assert "succeeded" in response.json()["detail"]
+    assert cluster.terminated == []
+
+
+def test_cancelling_an_unknown_pipeline_is_not_found(logged_in_api):
+    assert cancel(logged_in_api, 42).status_code == 404
+
+
+def test_pipelines_require_login(api, cluster):
+    assert submit(api).status_code == 401
+    assert cancel(api, 1).status_code == 401
+
+
+def test_a_cancel_during_a_reconcile_stays_cancelled(logged_in_api, submittable, cluster):
+    pipeline_id = submit(logged_in_api).json()["id"]
+    finish_run(cluster, "RUNNING")
+    find_run = cluster.find_run
+
+    def cancel_meanwhile(run_id):
+        run = find_run(run_id)
+        cancel(logged_in_api, pipeline_id)
+        return run
+
+    cluster.find_run = cancel_meanwhile
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["status"] == "cancelled"

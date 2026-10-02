@@ -25,6 +25,8 @@ images:
   uv: ghcr.io/astral-sh/uv:0.12.22
   postgres: postgres:17
   api: mlp-api
+  # Runs every Pipeline step; built on the python image until a Stage needs vLLM.
+  stages: mlp-stages
   # Set by install.sh to the short git SHA.
   tag: ""
 
@@ -32,6 +34,7 @@ ports:
   api: 8000
   postgres: 5432
   kfpUi: 80
+  kfpApi: 8888
   mlflow: 80
   seaweedfs: 8333
 
@@ -44,6 +47,8 @@ postgres:
 buckets: [mlflow, platform]
 # Holds Dataset Versions and Checkpoints.
 platformBucket: platform
+# Shared by every Pipeline step in the kubeflow namespace; sized by settings.model_cache_size.
+modelCachePvc: model-cache
 
 # Rendered into the platform settings ConfigMap, read through mlp_core.settings.
 settings:

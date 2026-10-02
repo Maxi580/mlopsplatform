@@ -1,4 +1,5 @@
-# Upstream's workflowDefaults plus podGC; logs stay readable because upstream archives them.
+# Upstream's workflowDefaults plus podGC, minus its retryStrategy: Pipelines are never retried
+# automatically. Logs stay readable because upstream archives them.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,7 +13,3 @@ data:
         secondsAfterCompletion: 3600
         secondsAfterSuccess: 3600
         secondsAfterFailure: 3600
-      templateDefaults:
-        retryStrategy:
-          limit: '2'
-          retryPolicy: OnError

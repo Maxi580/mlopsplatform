@@ -1,11 +1,13 @@
 import io
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
 from mlp_api.app import app
 from mlp_api.auth.account import set_password
-from mlp_core import api_paths
+from mlp_api.pipelines.cluster import KubeflowRun
+from mlp_core import api_paths, config
 
 PASSWORD = "correct horse battery staple"
 JWT_SECRET = "test-jwt-secret-of-at-least-32-bytes"
@@ -19,6 +21,12 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("S3_ENDPOINT_URL", "http://seaweedfs.test:8333")
     monkeypatch.setenv("S3_PUBLIC_URL", "https://platform.test")
     monkeypatch.setenv("S3_BUCKET", "platform")
+    monkeypatch.setenv("KUBEFLOW_URL", "http://ml-pipeline.test:8888")
+    monkeypatch.setenv("KUBEFLOW_NAMESPACE", "kubeflow")
+    monkeypatch.setenv("STAGES_IMAGE", "mlp-stages:real")
+    monkeypatch.setenv("MODEL_CACHE_PVC", "model-cache")
+    # Tests reconcile by hand, so the background loop never races them.
+    monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
     return database
 
 
@@ -79,7 +87,52 @@ def object_store(api):
     return api.app.state.object_store
 
 
+class FakeCluster:
+    """Records Secrets and Kubeflow runs; tests set run states and pods waiting for GPUs."""
+
+    stages_image = "mlp-stages:test"
+    model_cache_pvc = "model-cache"
+
+    def __init__(self):
+        self.secrets = {}
+        self.secret_created = {}
+        self.runs = {}
+        self.terminated = []
+        self.waiting_for_gpu = set()
+
+    def create_secret(self, name, values):
+        self.secrets[name] = values
+        self.secret_created[name] = datetime.now(UTC)
+
+    def delete_secret(self, name):
+        self.secrets.pop(name, None)
+
+    def secret_ages(self):
+        return {name: datetime.now(UTC) - self.secret_created[name] for name in self.secrets}
+
+    def submit_run(self, display_name, pipeline_spec):
+        run_id = f"run-{len(self.runs) + 1}"
+        self.runs[run_id] = KubeflowRun(state="PENDING", mlflow_run_url=None)
+        self.submitted = {"display_name": display_name, "pipeline_spec": pipeline_spec}
+        return run_id
+
+    def find_run(self, run_id):
+        return self.runs.get(run_id)
+
+    def terminate_run(self, run_id):
+        self.terminated.append(run_id)
+
+    def is_waiting_for_gpu(self, run_id):
+        return run_id in self.waiting_for_gpu
+
+
 @pytest.fixture
-def logged_in_api(api, hugging_face, object_store):
+def cluster(api):
+    api.app.state.cluster = FakeCluster()
+    return api.app.state.cluster
+
+
+@pytest.fixture
+def logged_in_api(api, hugging_face, object_store, cluster):
     api.post(api_paths.LOGIN, json={"password": PASSWORD})
     return api

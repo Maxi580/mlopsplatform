@@ -14,6 +14,8 @@ dependencies = [
     "httpx2>=2.13.1",
     "jsonschema>=4.26.0",
     "boto3>=1.43.107",
+    "kfp>=2.17.0",
+    "kfp-kubernetes>=2.17.0",
 ]
 
 [project.scripts]
