@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": { "includes": ["src/**", "*.ts", "*.json", "!package-lock.json"] },
+  "formatter": { "indentStyle": "space", "lineWidth": 100 },
+  "linter": {
+    "rules": {
+      "recommended": true,
+      "style": { "noNonNullAssertion": "off" },
+      "a11y": { "noAutofocus": "off" }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/pipelines/pipelineForm.ts", "src/testApi.tsx"],
+      "linter": { "rules": { "suspicious": { "noExplicitAny": "off" } } }
+    }
+  ]
+}

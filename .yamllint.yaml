@@ -1,0 +1,10 @@
+# Helm templates are Go templates, not YAML; `helm lint` checks them instead.
+extends: default
+ignore: |
+  deploy/chart/templates/
+  **/node_modules/
+rules:
+  line-length: {max: 120}
+  document-start: disable
+  # GitHub Actions' `on:` key reads as a boolean otherwise.
+  truthy: {check-keys: false}

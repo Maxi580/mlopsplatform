@@ -21,8 +21,14 @@ test("the page shows the GPU count and links the KFP and MLflow UIs", async () =
 
   expect(await screen.findByText("4 GPUs")).toBeInTheDocument();
   const sidebar = screen.getByRole("complementary");
-  expect(within(sidebar).getByRole("link", { name: /kubeflow/i })).toHaveAttribute("href", "/pipeline/");
-  expect(within(sidebar).getByRole("link", { name: /mlflow/i })).toHaveAttribute("href", "/mlflow/");
+  expect(within(sidebar).getByRole("link", { name: /kubeflow/i })).toHaveAttribute(
+    "href",
+    "/pipeline/",
+  );
+  expect(within(sidebar).getByRole("link", { name: /mlflow/i })).toHaveAttribute(
+    "href",
+    "/mlflow/",
+  );
 });
 
 test("each Pipeline shows its Owner, status, Stages and links", async () => {

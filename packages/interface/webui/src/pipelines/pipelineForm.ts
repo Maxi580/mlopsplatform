@@ -35,7 +35,10 @@ export function pipelineForm(schema: Schema): FormSection {
 }
 
 /** The Pipeline Request the form's values describe; empty values are left out, sections never. */
-export function pipelineRequestFromForm(form: FormSection, values: FormValues): Record<string, unknown> {
+export function pipelineRequestFromForm(
+  form: FormSection,
+  values: FormValues,
+): Record<string, unknown> {
   const tree: Record<string, any> = {};
   for (const node of nodesOf(form)) {
     if (node.kind === "section") {
@@ -55,9 +58,11 @@ export function pipelineRequestFromForm(form: FormSection, values: FormValues): 
 
 /** Each error by the name of the field, or section's more settings, that shows it. */
 export function placeErrors(form: FormSection, errors: FieldError[]) {
-  const names = new Set(nodesOf(form).flatMap((node) =>
-    node.kind === "section" && node.moreSettings ? [node.name, moreName(node.name)] : [node.name],
-  ));
+  const names = new Set(
+    nodesOf(form).flatMap((node) =>
+      node.kind === "section" && node.moreSettings ? [node.name, moreName(node.name)] : [node.name],
+    ),
+  );
   const byName: Record<string, string[]> = {};
   const unplaced: string[] = [];
   for (const error of errors) {
@@ -65,7 +70,7 @@ export function placeErrors(form: FormSection, errors: FieldError[]) {
     const [name, rest] = nearestName(names, loc);
     const message = rest.length ? `${rest.join(".")}: ${error.msg}` : error.msg;
     if (name === null) unplaced.push(message);
-    else (byName[name] ??= []).push(message);
+    else byName[name] = [...(byName[name] ?? []), message];
   }
   return { byName, unplaced };
 }
@@ -86,7 +91,13 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
     const children = Object.entries(node.properties ?? {}).map(([key, value]) =>
       nodeOf(value as Schema, defs, child(key), key),
     );
-    return { kind: "section", name, title, children, moreSettings: node.additionalProperties === true };
+    return {
+      kind: "section",
+      name,
+      title,
+      children,
+      moreSettings: node.additionalProperties === true,
+    };
   }
   if (node.type === "array" && resolveRef(node.items, defs).type === "object") {
     const children = Array.from({ length: node.minItems ?? 1 }, (_, index) =>
@@ -116,7 +127,8 @@ function nodesOf(node: FormNode): FormNode[] {
 function nearestName(names: Set<string>, loc: string[]): [string | null, string[]] {
   for (let length = loc.length; length > 0; length--) {
     const name = loc.slice(0, length).join(".");
-    if (length < loc.length && names.has(moreName(name))) return [moreName(name), loc.slice(length)];
+    if (length < loc.length && names.has(moreName(name)))
+      return [moreName(name), loc.slice(length)];
     if (names.has(name)) return [name, loc.slice(length)];
   }
   return [null, loc];
@@ -126,10 +138,14 @@ function nearestName(names: Set<string>, loc: string[]): [string | null, string[
 function readValue(field: FormField, text: string): unknown {
   if (field.kind === "integer" || field.kind === "number") {
     const number = Number(text);
-    return Number.isNaN(number) || (field.kind === "integer" && !Number.isInteger(number)) ? text : number;
+    return Number.isNaN(number) || (field.kind === "integer" && !Number.isInteger(number))
+      ? text
+      : number;
   }
-  if (field.kind === "choice") return field.choices?.find((choice) => String(choice) === text) ?? text;
-  if (field.kind === "list" && text.includes(",")) return text.split(",").map((part) => part.trim());
+  if (field.kind === "choice")
+    return field.choices?.find((choice) => String(choice) === text) ?? text;
+  if (field.kind === "list" && text.includes(","))
+    return text.split(",").map((part) => part.trim());
   return text;
 }
 

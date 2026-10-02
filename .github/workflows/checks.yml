@@ -1,0 +1,45 @@
+name: checks
+on: [push, pull_request]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --all-packages --frozen
+      - run: uv run pytest
+
+  webui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/interface/webui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/interface/webui/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      # Typechecks with tsc, then bundles with Vite: the same build as the image.
+      - run: npm run build
+      - run: npm test
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: yamllint --strict .
+      - run: shellcheck --severity=warning install.sh uninstall.sh deploy/values.sh
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          recursive: true
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/chart -f deploy/values.yaml -f deploy/values-dev.yaml --set images.tag=ci

@@ -46,7 +46,7 @@ export default function LoginPage() {
             {error}
           </p>
         )}
-        <button className="button primary wide" disabled={busy}>
+        <button type="submit" className="button primary wide" disabled={busy}>
           {busy ? <LoaderCircle className="spin" size={16} /> : <LogIn size={16} />}
           Log in
         </button>

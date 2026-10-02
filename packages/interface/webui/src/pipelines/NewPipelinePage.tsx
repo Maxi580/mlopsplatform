@@ -1,4 +1,13 @@
-import { CircleAlert, CircleCheck, Eye, EyeOff, KeyRound, ListChecks, LoaderCircle, Rocket } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  Eye,
+  EyeOff,
+  KeyRound,
+  ListChecks,
+  LoaderCircle,
+  Rocket,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
@@ -33,7 +42,13 @@ export default function NewPipelinePage() {
   );
 }
 
-function PipelineBuilder({ form, datasetReferences }: { form: FormSection; datasetReferences: string[] }) {
+function PipelineBuilder({
+  form,
+  datasetReferences,
+}: {
+  form: FormSection;
+  datasetReferences: string[];
+}) {
   const navigate = useNavigate();
   const [values, setValues] = useState<FormValues>(loadDraft);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
@@ -78,7 +93,10 @@ function PipelineBuilder({ form, datasetReferences }: { form: FormSection; datas
   }
 
   // Top-level values (the name) get their own card; each Stage gets one too.
-  const topLevel: FormSection = { ...form, children: form.children.filter((node) => node.kind !== "section") };
+  const topLevel: FormSection = {
+    ...form,
+    children: form.children.filter((node) => node.kind !== "section"),
+  };
   const stages = form.children.filter((node): node is FormSection => node.kind === "section");
   const errorCount = Object.values(errors.byName).flat().length + errors.unplaced.length;
   const sectionProps = { values, errors: errors.byName, datasetReferences, onChange: setValues };
@@ -88,7 +106,9 @@ function PipelineBuilder({ form, datasetReferences }: { form: FormSection; datas
       <header className="page-header">
         <div>
           <h1>New Pipeline</h1>
-          <p className="muted">Built from the published schema: the same Pipeline Request as `mlp run`.</p>
+          <p className="muted">
+            Built from the published schema: the same Pipeline Request as `mlp run`.
+          </p>
         </div>
       </header>
 
@@ -139,9 +159,7 @@ function PipelineBuilder({ form, datasetReferences }: { form: FormSection; datas
         <aside className="builder-aside">
           <div className="card sticky">
             <h2>Pipeline Request</h2>
-            <pre className="preview" aria-label="Pipeline Request preview">
-              {JSON.stringify(request, null, 2)}
-            </pre>
+            <pre className="preview">{JSON.stringify(request, null, 2)}</pre>
             {errorCount > 0 && (
               <p className="field-error">
                 {errorCount} problem{errorCount === 1 ? "" : "s"} to fix
@@ -156,12 +174,30 @@ function PipelineBuilder({ form, datasetReferences }: { form: FormSection; datas
               </div>
             )}
             <div className="aside-actions">
-              <button type="button" className="button" disabled={!!busy} onClick={() => send(VALIDATE_PIPELINE)}>
-                {busy === VALIDATE_PIPELINE ? <LoaderCircle className="spin" size={16} /> : <ListChecks size={16} />}
+              <button
+                type="button"
+                className="button"
+                disabled={!!busy}
+                onClick={() => send(VALIDATE_PIPELINE)}
+              >
+                {busy === VALIDATE_PIPELINE ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <ListChecks size={16} />
+                )}
                 Validate
               </button>
-              <button type="button" className="button primary" disabled={!!busy} onClick={() => send(PIPELINES)}>
-                {busy === PIPELINES ? <LoaderCircle className="spin" size={16} /> : <Rocket size={16} />}
+              <button
+                type="button"
+                className="button primary"
+                disabled={!!busy}
+                onClick={() => send(PIPELINES)}
+              >
+                {busy === PIPELINES ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <Rocket size={16} />
+                )}
                 Submit
               </button>
             </div>
@@ -172,7 +208,12 @@ function PipelineBuilder({ form, datasetReferences }: { form: FormSection; datas
   );
 }
 
-function SecretInput(props: { slot: string; label: string; value: string; onChange: (value: string) => void }) {
+function SecretInput(props: {
+  slot: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="field">

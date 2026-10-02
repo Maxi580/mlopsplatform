@@ -1,4 +1,4 @@
-import { pipelineForm, pipelineRequestFromForm, placeErrors, type FormNode } from "./pipelineForm";
+import { type FormNode, pipelineForm, pipelineRequestFromForm, placeErrors } from "./pipelineForm";
 
 // A trimmed copy of `GET /schema`, with each shape the form must handle.
 const schema = {
@@ -13,9 +13,18 @@ const schema = {
     Finetune: {
       type: "object",
       properties: {
-        base_model: { type: "string", pattern: "^hf:[\w.-]+/[\w.-]+(@[\w.-]+)?$", title: "Base Model" },
+        base_model: {
+          type: "string",
+          pattern: "^hf:[\\w.-]+/[\\w.-]+(@[\\w.-]+)?$",
+          title: "Base Model",
+        },
         backend: { enum: ["hf", "unsloth"], type: "string", title: "Backend" },
-        phases: { type: "array", minItems: 1, items: { $ref: "#/$defs/SftPhase" }, title: "Phases" },
+        phases: {
+          type: "array",
+          minItems: 1,
+          items: { $ref: "#/$defs/SftPhase" },
+          title: "Phases",
+        },
       },
     },
     SftPhase: {
@@ -31,7 +40,9 @@ const schema = {
       properties: {
         learning_rate: { type: "number", title: "Learning Rate" },
         max_length: { type: "integer", title: "Max Length" },
-        target_modules: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
+        target_modules: {
+          anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+        },
       },
     },
   },
@@ -45,16 +56,19 @@ const form = pipelineForm(schema);
 const byName = Object.fromEntries(flatten(form).map((node) => [node.name, node]));
 
 test("every schema value becomes a field of the right kind", () => {
-  expect(byName["name"].kind).toBe("text");
-  expect(byName["schema_version"]).toMatchObject({ kind: "fixed", fixed: 1 });
+  expect(byName.name.kind).toBe("text");
+  expect(byName.schema_version).toMatchObject({ kind: "fixed", fixed: 1 });
   expect(byName["finetune.backend"]).toMatchObject({ kind: "choice", choices: ["hf", "unsloth"] });
   expect(byName["finetune.phases"].kind).toBe("section");
   expect(byName["finetune.phases.0.algorithm"]).toMatchObject({ kind: "fixed", fixed: "sft" });
   expect(byName["finetune.phases.0.settings.learning_rate"].kind).toBe("number");
   expect(byName["finetune.phases.0.settings.max_length"].kind).toBe("integer");
   expect(byName["finetune.phases.0.settings.target_modules"].kind).toBe("list");
-  expect(byName["finetune.phases.0.settings"]).toMatchObject({ kind: "section", moreSettings: true });
-  expect(byName["finetune"]).toMatchObject({ kind: "section", moreSettings: false });
+  expect(byName["finetune.phases.0.settings"]).toMatchObject({
+    kind: "section",
+    moreSettings: true,
+  });
+  expect(byName.finetune).toMatchObject({ kind: "section", moreSettings: false });
 });
 
 test("the form's values become a Pipeline Request", () => {

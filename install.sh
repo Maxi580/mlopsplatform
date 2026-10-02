@@ -95,6 +95,8 @@ EOF
   command -v helm >/dev/null || install_helm
 
   mkdir -p "$(dirname "$KUBECONFIG")"
+  # The user, not root, writes and owns the kubeconfig.
+  # shellcheck disable=SC2024
   sudo k3s kubectl config view --raw > "$KUBECONFIG"
   chmod 600 "$KUBECONFIG"
   kubectl wait --for=condition=Ready node --all --timeout=5m

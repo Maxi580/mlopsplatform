@@ -11,11 +11,19 @@ type Props = {
 };
 
 /** A section's fields in a grid, its subsections below, and its more settings last. */
-export default function FormSectionView({ section, values, errors, datasetReferences, onChange }: Props) {
+export default function FormSectionView({
+  section,
+  values,
+  errors,
+  datasetReferences,
+  onChange,
+}: Props) {
   const fields = section.children.filter((node): node is FormField => node.kind !== "section");
   const fixed = fields.filter((field) => field.kind === "fixed");
   const editable = fields.filter((field) => field.kind !== "fixed");
-  const subsections = section.children.filter((node): node is FormSection => node.kind === "section");
+  const subsections = section.children.filter(
+    (node): node is FormSection => node.kind === "section",
+  );
   const setField = (name: string, value: string) =>
     onChange({ ...values, fields: { ...values.fields, [name]: value } });
 
@@ -45,7 +53,9 @@ export default function FormSectionView({ section, values, errors, datasetRefere
           ))}
         </div>
       )}
-      {section.moreSettings && <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />}
+      {section.moreSettings && (
+        <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />
+      )}
       {subsections.flatMap(itemsOfList).map((subsection) => (
         <fieldset key={subsection.name} className="subsection">
           <legend>{subsection.title}</legend>
@@ -75,7 +85,9 @@ function FieldInput({
   datasetReferences: string[];
   onChange: (value: string) => void;
 }) {
-  const prefix = Object.keys(REFERENCE_PLACEHOLDERS).find((start) => field.pattern?.startsWith(start));
+  const prefix = Object.keys(REFERENCE_PLACEHOLDERS).find((start) =>
+    field.pattern?.startsWith(start),
+  );
   const isDataset = prefix === "^dataset:";
   const common = {
     id: field.name,
@@ -102,7 +114,11 @@ function FieldInput({
         <input
           {...common}
           inputMode={field.kind === "integer" || field.kind === "number" ? "decimal" : undefined}
-          placeholder={field.kind === "list" ? "one value, or several separated by commas" : prefix && REFERENCE_PLACEHOLDERS[prefix]}
+          placeholder={
+            field.kind === "list"
+              ? "one value, or several separated by commas"
+              : prefix && REFERENCE_PLACEHOLDERS[prefix]
+          }
           list={isDataset ? "dataset-references" : undefined}
           autoComplete="off"
         />
@@ -122,34 +138,52 @@ function FieldInput({
 // Settings the schema allows beyond its fields; values read as JSON when they can (0.1, true, [..]).
 function MoreSettings({ section, values, errors, onChange }: Omit<Props, "datasetReferences">) {
   const rows = values.more[section.name] ?? [];
-  const setRows = (next: typeof rows) => onChange({ ...values, more: { ...values.more, [section.name]: next } });
+  const setRows = (next: typeof rows) =>
+    onChange({ ...values, more: { ...values.more, [section.name]: next } });
 
   return (
     <div className="more-settings">
       <p className="field-label">More settings</p>
       {rows.map((row, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: rows are controlled inputs without an identity.
         <div key={index} className="more-row">
           <input
             aria-label="Setting"
             placeholder="weight_decay"
             value={row.key}
-            onChange={(event) => setRows(rows.map((r, i) => (i === index ? { ...r, key: event.target.value } : r)))}
+            onChange={(event) =>
+              setRows(rows.map((r, i) => (i === index ? { ...r, key: event.target.value } : r)))
+            }
           />
           <input
             aria-label="Value"
             placeholder="0.01"
             value={row.value}
-            onChange={(event) => setRows(rows.map((r, i) => (i === index ? { ...r, value: event.target.value } : r)))}
+            onChange={(event) =>
+              setRows(rows.map((r, i) => (i === index ? { ...r, value: event.target.value } : r)))
+            }
           />
-          <button type="button" className="icon-button" aria-label="Remove setting" onClick={() => setRows(rows.filter((_, i) => i !== index))}>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Remove setting"
+            onClick={() => setRows(rows.filter((_, i) => i !== index))}
+          >
             <Trash2 size={16} />
           </button>
         </div>
       ))}
-      <button type="button" className="button ghost small" onClick={() => setRows([...rows, { key: "", value: "" }])}>
+      <button
+        type="button"
+        className="button ghost small"
+        onClick={() => setRows([...rows, { key: "", value: "" }])}
+      >
         <Plus size={14} /> Add setting
       </button>
-      <FieldErrors id={`${moreName(section.name)}-error`} messages={errors[moreName(section.name)]} />
+      <FieldErrors
+        id={`${moreName(section.name)}-error`}
+        messages={errors[moreName(section.name)]}
+      />
     </div>
   );
 }
@@ -173,4 +207,3 @@ function itemsOfList(section: FormSection): FormSection[] {
 function lastPart(name: string): string {
   return name.split(".").pop()!;
 }
-

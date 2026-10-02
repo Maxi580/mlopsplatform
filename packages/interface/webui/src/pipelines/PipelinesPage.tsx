@@ -2,16 +2,18 @@ import { ChartLine, CircleAlert, Plus, Workflow } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { callApi, errorMessage, useApi } from "../api";
-import { PIPELINES, cancelPipeline } from "../apiPaths";
+import { cancelPipeline, PIPELINES } from "../apiPaths";
 import { FINISHED_STATUSES, PIPELINE_LIST_REFRESH_MS } from "../config";
-import StatusBadge from "./StatusBadge";
 import type { Pipeline } from "./pipeline";
+import StatusBadge from "./StatusBadge";
 
 export default function PipelinesPage() {
-  const { data: pipelines, error, loadedAt, reload } = useApi<Pipeline[]>(
-    PIPELINES,
-    PIPELINE_LIST_REFRESH_MS,
-  );
+  const {
+    data: pipelines,
+    error,
+    loadedAt,
+    reload,
+  } = useApi<Pipeline[]>(PIPELINES, PIPELINE_LIST_REFRESH_MS);
   const submitted: number | undefined = useLocation().state?.submitted;
   const [notice, setNotice] = useState("");
 
@@ -43,7 +45,9 @@ export default function PipelinesPage() {
       </header>
 
       {submitted !== undefined && (
-        <p className="banner success">Submitted Pipeline {submitted}. It starts as soon as a GPU is free.</p>
+        <p className="banner success">
+          Submitted Pipeline {submitted}. It starts as soon as a GPU is free.
+        </p>
       )}
       {notice && <p className="banner">{notice}</p>}
       {error && (
@@ -57,7 +61,7 @@ export default function PipelinesPage() {
           <Workflow size={32} />
           <h2>No Pipelines yet</h2>
           <p className="muted">Start one here or with `mlp run`.</p>
-          <Link className="button primary" to="/pipelines/new">
+          <Link className="button primary empty-action" to="/pipelines/new">
             <Plus size={16} /> New Pipeline
           </Link>
         </section>
@@ -127,31 +131,53 @@ function PipelineRow({
       <td title={created.toLocaleString()}>{timeAgo(created)}</td>
       <td>
         <div className="links">
-        {pipeline.kubeflow_run_url && (
-          <a className="link-button" href={pipeline.kubeflow_run_url} target="_blank" rel="noreferrer">
-            <Workflow size={14} /> Kubeflow
-          </a>
-        )}
-        {pipeline.mlflow_run_url && (
-          <a className="link-button" href={pipeline.mlflow_run_url} target="_blank" rel="noreferrer">
-            <ChartLine size={14} /> MLflow
-          </a>
-        )}
+          {pipeline.kubeflow_run_url && (
+            <a
+              className="link-button"
+              href={pipeline.kubeflow_run_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Workflow size={14} /> Kubeflow
+            </a>
+          )}
+          {pipeline.mlflow_run_url && (
+            <a
+              className="link-button"
+              href={pipeline.mlflow_run_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ChartLine size={14} /> MLflow
+            </a>
+          )}
         </div>
       </td>
       <td className="actions">
         {!FINISHED_STATUSES.includes(pipeline.status) &&
           (confirming ? (
             <>
-              <button className="button danger small" onClick={() => onCancel(pipeline)}>
+              <button
+                type="button"
+                className="button danger small"
+                onClick={() => onCancel(pipeline)}
+              >
                 Cancel Pipeline
               </button>
-              <button className="button ghost small" onClick={() => setConfirming(false)}>
+              <button
+                type="button"
+                className="button ghost small"
+                onClick={() => setConfirming(false)}
+              >
                 Keep
               </button>
             </>
           ) : (
-            <button className="button ghost small" onClick={() => setConfirming(true)}>
+            <button
+              type="button"
+              className="button ghost small"
+              onClick={() => setConfirming(true)}
+            >
               Cancel
             </button>
           ))}
@@ -163,10 +189,13 @@ function PipelineRow({
 function summary(pipelines?: Pipeline[]): string {
   if (!pipelines) return "Loading…";
   const counts = new Map<string, number>();
-  for (const pipeline of pipelines) counts.set(pipeline.status, (counts.get(pipeline.status) ?? 0) + 1);
+  for (const pipeline of pipelines)
+    counts.set(pipeline.status, (counts.get(pipeline.status) ?? 0) + 1);
   const active = [...counts].filter(([status]) => !FINISHED_STATUSES.includes(status));
   const total = `${pipelines.length} Pipeline${pipelines.length === 1 ? "" : "s"}`;
-  return active.length ? `${total} · ${active.map(([status, count]) => `${count} ${status}`).join(" · ")}` : total;
+  return active.length
+    ? `${total} · ${active.map(([status, count]) => `${count} ${status}`).join(" · ")}`
+    : total;
 }
 
 function timeAgo(date: Date): string {

@@ -98,6 +98,6 @@ uv run ruff check . && uv run ruff format --check .
 
 cd packages/interface/webui
 npm ci
-npm test && npm run typecheck
+npm run lint && npm run build && npm test   # npm run format fixes formatting
 MLP_API_URL=http://localhost:8000 npm run dev   # http://localhost:5173/ui/, API calls go to MLP_API_URL
 ```

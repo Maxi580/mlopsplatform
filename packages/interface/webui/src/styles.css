@@ -54,7 +54,13 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font:
+    14px / 1.5 Inter,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -277,7 +283,7 @@ code,
   color: var(--text);
 }
 
-.empty .button {
+.empty-action {
   margin-top: 12px;
 }
 
@@ -302,7 +308,10 @@ code,
   font: inherit;
   font-weight: 560;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.05s;
 }
 
 .button:hover {
@@ -559,7 +568,9 @@ select {
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 input:focus,
@@ -664,9 +675,7 @@ select[aria-invalid="true"] {
   place-items: center;
   min-height: 100vh;
   padding: 16px;
-  background:
-    radial-gradient(60rem 30rem at 50% -10%, var(--accent-soft), transparent),
-    var(--bg);
+  background: radial-gradient(60rem 30rem at 50% -10%, var(--accent-soft), transparent), var(--bg);
 }
 
 .login-card {
