@@ -36,6 +36,14 @@ spec:
           env:
             - name: UVICORN_PORT
               value: {{ .Values.ports.api | quote }}
+            # Only Traefik reaches the API, so trust its X-Forwarded-For for login rate limits.
+            - name: FORWARDED_ALLOW_IPS
+              value: "*"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mlp-credentials
+                  key: jwtSecret
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:

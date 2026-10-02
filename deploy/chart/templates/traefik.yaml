@@ -1,4 +1,5 @@
-# Configures k3s's bundled Traefik: port 80 only redirects, every HTTPS response gets HSTS.
+# Configures k3s's bundled Traefik: port 80 only redirects, every HTTPS response gets HSTS,
+# and client IPs survive to the API so login rate limits apply per client.
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
@@ -6,6 +7,9 @@ metadata:
   namespace: {{ .Values.namespaces.kubeSystem }}
 spec:
   valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local
     providers:
       kubernetesCRD:
         allowCrossNamespace: true

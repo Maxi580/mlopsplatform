@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 members = ["packages/*"]
 
 [dependency-groups]
-dev = ["pytest", "pyyaml", "httpx2", "ruff"]
+dev = ["pytest", "pyyaml", "httpx2", "ruff", "trustme"]
 
 [tool.ruff]
 line-length = 100

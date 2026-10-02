@@ -14,7 +14,9 @@ spec:
         - name: api
           port: {{ .Values.ports.api }}
     - kind: Rule
-      match: {{ $host }} && PathPrefix(`/pipeline`)
+      match: {{ $host }} && PathPrefix(`/pipeline/`)
+      middlewares:
+        - name: login
       services:
         - name: ml-pipeline-ui
           namespace: {{ .Values.namespaces.kubeflow }}
@@ -29,11 +31,21 @@ spec:
     - kind: Rule
       match: {{ $host }} && PathPrefix(`/mlflow/`)
       middlewares:
+        - name: login
         - name: mlflow-strip-prefix
       services:
         - name: mlflow
           namespace: {{ .Values.namespaces.mlflow }}
           port: {{ .Values.ports.mlflow }}
+---
+# The KFP UI and MLflow UI have no login of their own; the API checks the login cookie or token.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: login
+spec:
+  forwardAuth:
+    address: http://api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.api }}/auth/verify
 ---
 # The MLflow UI uses relative URLs, so it works under /mlflow/ once the prefix is stripped.
 apiVersion: traefik.io/v1alpha1

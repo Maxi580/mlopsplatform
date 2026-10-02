@@ -1,0 +1,28 @@
+from typing import Annotated
+
+import typer
+
+from mlp_cli.api import api_client, save_token
+
+app = typer.Typer(no_args_is_help=True)
+
+
+@app.callback()
+def mlp() -> None:
+    """Client for the MLOps platform API."""
+
+
+@app.command()
+def login(
+    password: Annotated[
+        str, typer.Option(envvar="MLP_PASSWORD", prompt="Shared password", hide_input=True)
+    ],
+) -> None:
+    """Log in with the shared account; later commands use the stored token for 12 hours."""
+    with api_client() as client:
+        response = client.post("/auth/login", json={"password": password})
+    if response.is_error:
+        typer.echo(f"Login failed ({response.status_code}): {response.text}", err=True)
+        raise typer.Exit(1)
+    save_token(response.json()["token"])
+    typer.echo("Logged in")

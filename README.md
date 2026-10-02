@@ -13,7 +13,24 @@ git clone https://github.com/Maxi580/mlopsplatform && cd mlopsplatform
 
 It installs only missing host prerequisites (k3s, nerdctl + BuildKit, NVIDIA container toolkit, gVisor, helm, yq), builds our images, deploys the platform and prints its URLs and the path to `ca.crt`. Import `ca.crt` into your OS trust store once. Running it again is safe and keeps all data.
 
+The first run asks for the shared account's password (or reads `MLP_PASSWORD`). To reset it later:
+
+```sh
+kubectl -n mlp exec -it deploy/api -- set-password
+```
+
 `./uninstall.sh` deletes everything the platform created, including all data, but keeps k3s, nerdctl/BuildKit and the driver.
+
+## CLI login
+
+Write a CLI Profile to `~/.mlp/profile.yaml`, then run `mlp login`:
+
+```yaml
+url: https://<domain>
+ca_cert: ~/ca.crt
+```
+
+The token is stored in `~/.mlp/token` and is valid for 12 hours.
 
 ## Development
 

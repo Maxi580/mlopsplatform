@@ -149,6 +149,24 @@ install_platform_chart() {
     -f "$VALUES" --set images.tag="$TAG" --wait --timeout 10m
 }
 
+# Asked on the first run only; the API stores just its hash, which survives re-installs.
+set_shared_password() {
+  local platform accounts password confirmation
+  platform=$(value .namespaces.platform)
+  # A separate assignment, so a failing kubectl stops the install instead of resetting the password.
+  accounts=$(kubectl -n "$platform" exec statefulset/postgres -- psql -U "$(value .postgres.user)" \
+    -d "$(value .postgres.database)" -tAc 'SELECT count(*) FROM account')
+  [[ $accounts == 1 ]] && return
+  log "Setting the shared password"
+  password=${MLP_PASSWORD:-}
+  if [[ -z $password ]]; then
+    read -rsp "Shared password: " password && echo
+    read -rsp "Repeat it: " confirmation && echo
+    [[ $password == "$confirmation" ]] || die "the passwords differ"
+  fi
+  printf '%s\n' "$password" | kubectl -n "$platform" exec -i deploy/api -- set-password
+}
+
 install_kubeflow_pipelines() {
   log "Installing Kubeflow Pipelines"
   local kubeflow
@@ -212,6 +230,7 @@ create_credentials
 kubectl apply -f "$(device_plugin_manifest)"
 install_cert_manager
 install_platform_chart
+set_shared_password
 install_kubeflow_pipelines
 install_mlflow
 write_ca_certificate
