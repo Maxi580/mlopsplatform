@@ -1,4 +1,5 @@
-# Run with the trainer image's versions: uv run --with trl==X --with peft==Y <this script>
+# Run with the trainer image's versions:
+# uv run --with trl==X --with peft==Y python -m mlp_core.pipeline_request.generate_trainer_configs
 import dataclasses
 import json
 import typing
