@@ -6,7 +6,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from sqlalchemy import Column, Engine, Integer, String, Table, create_engine, delete, insert, select
 
-from mlp_api.database import create_tables, metadata
+from mlp_api.storage.database import create_tables, metadata
 from mlp_core.config import MIN_PASSWORD_LENGTH
 
 account = Table(

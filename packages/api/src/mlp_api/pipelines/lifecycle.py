@@ -15,10 +15,10 @@ from sqlalchemy import (
     update,
 )
 
-from mlp_api.database import metadata
 from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.compiler import compile_pipeline
 from mlp_api.smoke_tests.cases import case_results
+from mlp_api.storage.database import metadata
 from mlp_core import config
 from mlp_core.pipeline_request.schema import PipelineRequest
 from mlp_core.settings import Settings

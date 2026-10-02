@@ -17,13 +17,13 @@ from mlp_api import (
     storage_routes,
 )
 from mlp_api.auth.session import require_login
-from mlp_api.database import create_tables
 from mlp_api.models.mlflow import MLflow
-from mlp_api.object_store import ObjectStore
 from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.hugging_face import HuggingFace
 from mlp_api.pipelines.lifecycle import fail_unsubmitted_pipelines
 from mlp_api.pipelines.reconciler import reconcile_forever
+from mlp_api.storage.database import create_tables
+from mlp_api.storage.object_store import ObjectStore
 from mlp_core.settings import Settings
 
 

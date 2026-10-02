@@ -1,8 +1,8 @@
 from sqlalchemy import Engine
 
 from mlp_api.models.mlflow import MLflow
-from mlp_api.object_store import ObjectStore
 from mlp_api.pipelines.lifecycle import refuse_while_in_use
+from mlp_api.storage.object_store import ObjectStore
 from mlp_core.pipeline_request.references import model_reference
 
 

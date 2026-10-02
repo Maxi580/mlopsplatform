@@ -5,7 +5,6 @@ from sqlalchemy import Engine, select, update
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
 from mlp_api.models.mlflow import MLflow
 from mlp_api.models.registry import delete_model_version
-from mlp_api.object_store import ObjectStore
 from mlp_api.pipelines.compiler import compile_smoke_test
 from mlp_api.pipelines.lifecycle import (
     create_pipeline,
@@ -16,6 +15,7 @@ from mlp_api.pipelines.lifecycle import (
 )
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.smoke_tests.cases import SmokeTestSelection, finetune_case_request, finetune_cases
+from mlp_api.storage.object_store import ObjectStore
 from mlp_core import config
 from mlp_core.pipeline_request.references import base_model_reference, split_base_model_reference
 

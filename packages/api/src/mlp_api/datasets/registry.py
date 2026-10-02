@@ -16,10 +16,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 
-from mlp_api.database import metadata
 from mlp_api.datasets.rows import row_format_of_file
-from mlp_api.object_store import ObjectStore
 from mlp_api.pipelines.lifecycle import refuse_while_in_use
+from mlp_api.storage.database import metadata
+from mlp_api.storage.object_store import ObjectStore
 from mlp_core.pipeline_request.references import dataset_key, dataset_reference
 
 dataset_version = Table(

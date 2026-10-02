@@ -1,10 +1,10 @@
 import pytest
 from sqlalchemy import create_engine
 
-from mlp_api.database import create_tables
 from mlp_api.datasets.registry import delete_dataset_version, upload_dataset_version
 from mlp_api.pipelines.hugging_face import HubModel
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
+from mlp_api.storage.database import create_tables
 from mlp_core import config
 
 from .conftest import FakeHuggingFace, FakeObjectStore
