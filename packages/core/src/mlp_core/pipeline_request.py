@@ -7,6 +7,7 @@ from mlp_core.trainers import (
     BACKENDS,
     DENIED_LORA,
     DENIED_SETTINGS,
+    LORA_CONFIG,
     METHODS,
     is_denied,
     trainer_config_schema,
@@ -15,6 +16,8 @@ from mlp_core.trainers import (
 
 def published_schema(config: str, denied: tuple[str, ...]) -> dict:
     schema = trainer_config_schema(config)
+    if schema is None:
+        return {}
     # Validation rejects trust_remote_code anywhere, so the schema doesn't offer it.
     denied = (*denied, "trust_remote_code")
     properties = {
@@ -39,7 +42,7 @@ class SftPhase(Strict):
     )
     lora: dict[str, Any] = Field(
         default_factory=dict,
-        json_schema_extra=lambda schema: schema.update(published_schema("LoraConfig", DENIED_LORA)),
+        json_schema_extra=lambda schema: schema.update(published_schema(LORA_CONFIG, DENIED_LORA)),
     )
 
 

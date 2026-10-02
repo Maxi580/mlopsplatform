@@ -19,6 +19,7 @@ from mlp_core.trainers import (
     ALGORITHMS,
     DENIED_LORA,
     DENIED_SETTINGS,
+    LORA_CONFIG,
     is_denied,
     trainer_config_schema,
 )
@@ -105,7 +106,7 @@ def phase_errors(request: PipelineRequest) -> Iterator[dict]:
             [*loc, "settings"], phase.settings, config, DENIED_SETTINGS, "is set by the platform"
         )
         yield from config_errors(
-            [*loc, "lora"], phase.lora, "LoraConfig", DENIED_LORA, "makes Adapters vLLM can't serve"
+            [*loc, "lora"], phase.lora, LORA_CONFIG, DENIED_LORA, "makes Adapters vLLM can't serve"
         )
         rank = phase.lora.get("r")
         if isinstance(rank, int) and rank > MAX_LORA_RANK:
@@ -115,10 +116,13 @@ def phase_errors(request: PipelineRequest) -> Iterator[dict]:
 def config_errors(
     loc: list, values: dict, config: str, denied: tuple[str, ...], denied_reason: str
 ) -> Iterator[dict]:
-    fields = trainer_config_schema(config)["properties"]
+    schema = trainer_config_schema(config)
+    fields = schema["properties"] if schema else None
     for name, value in values.items():
         if is_denied(name, denied):
             yield error([*loc, name], f"`{name}` {denied_reason}")
+        elif fields is None:
+            continue
         elif name not in fields:
             yield error([*loc, name], f"`{name}` is not a {config} setting")
         elif not Draft202012Validator(fields[name]).is_valid(value):

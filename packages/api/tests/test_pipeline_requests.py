@@ -1,7 +1,8 @@
 import pytest
 
 from mlp_api.cluster import HubModel
-from mlp_core import api_paths
+from mlp_core import api_paths, config
+from mlp_core.trainers import trainer_config_schema
 
 BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 COMMIT = "7ae557604adf67be50417f59c2c2f167def9a775"
@@ -161,3 +162,23 @@ def test_validation_requires_login(api, cluster):
     response = api.post(api_paths.VALIDATE_PIPELINE, json={"request": pipeline_request()})
 
     assert response.status_code == 401
+
+
+@pytest.fixture
+def no_generated_schemas(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TRAINER_CONFIGS_DIRECTORY", tmp_path)
+    trainer_config_schema.cache_clear()
+    yield
+    trainer_config_schema.cache_clear()
+
+
+def test_settings_without_a_generated_schema_are_accepted_unchecked(validate, no_generated_schemas):
+    phase = {"settings": {"anything": "goes"}, "lora": {"new_peft_option": 1}}
+
+    assert validate(pipeline_request(phase=phase)).status_code == 200
+
+
+def test_the_deny_list_holds_without_a_generated_schema(validate, no_generated_schemas):
+    message = rejection(validate(pipeline_request(phase={"settings": {"output_dir": "/x"}})))
+
+    assert "set by the platform" in message

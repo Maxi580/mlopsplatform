@@ -2,13 +2,13 @@
 import dataclasses
 import json
 import typing
-from pathlib import Path
 
 import peft
 import trl
 from pydantic import TypeAdapter
 
-from mlp_core.trainers import ALGORITHMS
+from mlp_core.config import TRAINER_CONFIGS_DIRECTORY
+from mlp_core.trainers import ALGORITHMS, LORA_CONFIG
 
 
 def inline_definitions(schema: dict) -> dict:
@@ -64,11 +64,13 @@ def config_schema(config: type) -> dict:
 
 
 def main() -> None:
-    output = Path(__file__).parents[1] / "src" / "mlp_core" / "trainer_configs"
-    configs = [getattr(trl, config) for config in ALGORITHMS.values()]
-    for config in [*configs, peft.LoraConfig]:
-        schema = config_schema(config)
-        (output / f"{config.__name__}.json").write_text(json.dumps(schema, indent=1) + "\n")
+    for name in [*ALGORITHMS.values(), LORA_CONFIG]:
+        config = getattr(trl, name, None) or getattr(peft, name, None)
+        if config is None:
+            print(f"{name} is in neither trl nor peft; its settings stay unchecked")
+            continue
+        schema = json.dumps(config_schema(config), indent=1)
+        (TRAINER_CONFIGS_DIRECTORY / f"{name}.json").write_text(schema + "\n")
 
 
 if __name__ == "__main__":
