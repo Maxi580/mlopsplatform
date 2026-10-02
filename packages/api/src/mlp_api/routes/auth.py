@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from mlp_api.account import password_matches
-from mlp_api.config import SESSION_COOKIE, TOKEN_LIFETIME
 from mlp_api.session import issue_token, record_failed_login, too_many_failed_logins
 from mlp_core import api_paths
+from mlp_core.config import SESSION_COOKIE, TOKEN_LIFETIME
 
 router = APIRouter()
 

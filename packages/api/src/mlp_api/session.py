@@ -5,7 +5,7 @@ import jwt
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-from mlp_api.config import (
+from mlp_core.config import (
     FAILED_LOGIN_WINDOW,
     JWT_ALGORITHM,
     MAX_FAILED_LOGINS,

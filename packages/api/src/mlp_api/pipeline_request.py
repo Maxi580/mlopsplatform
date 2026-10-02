@@ -3,7 +3,6 @@ import json
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
-from mlp_api.config import DEFAULT_HF_REVISION, HF_TOKEN_PATTERN, MIN_SECRET_LENGTH
 from mlp_api.hugging_face import HuggingFace
 from mlp_core import config
 from mlp_core.pipeline_request.references import base_model_reference, split_base_model_reference
@@ -25,7 +24,9 @@ def validate_pipeline_request(
 
     # 3. The Base Model on Hugging Face.
     repo, revision = split_base_model_reference(request.finetune.base_model)
-    model = hugging_face.find_model(repo, revision or DEFAULT_HF_REVISION, secrets.get("hf_token"))
+    model = hugging_face.find_model(
+        repo, revision or config.DEFAULT_HF_REVISION, secrets.get("hf_token")
+    )
     base_model_loc = ["finetune", "base_model"]
     if model is None:
         reason = "is missing, gated for this token, or has no such revision"
@@ -79,11 +80,11 @@ def value_matches(field_schema: dict, value) -> bool:
 
 
 def secret_value_errors(request: PipelineRequest, secrets: dict[str, str]) -> list[dict]:
-    values = [value for value in secrets.values() if len(value) >= MIN_SECRET_LENGTH]
+    values = [value for value in secrets.values() if len(value) >= config.MIN_SECRET_LENGTH]
     return [
         error(loc, "contains a Secret value; name the Secret instead")
         for loc, text in strings(request.model_dump(), [])
-        if HF_TOKEN_PATTERN.search(text) or any(value in text for value in values)
+        if config.HF_TOKEN_PATTERN.search(text) or any(value in text for value in values)
     ]
 
 

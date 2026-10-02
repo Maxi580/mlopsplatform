@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mlp_api.app import app
-from mlp_api.config import JWT_ALGORITHM
 from mlp_core import api_paths
+from mlp_core.config import JWT_ALGORITHM
 
 from .conftest import JWT_SECRET, PASSWORD
 
