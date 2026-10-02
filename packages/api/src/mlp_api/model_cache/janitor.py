@@ -8,7 +8,7 @@ from huggingface_hub import scan_cache_dir
 from huggingface_hub.errors import CacheNotFound
 from sqlalchemy import Engine
 
-from mlp_api.in_use import refuse_while_in_use, users_of
+from mlp_api.in_use.users import refuse_while_in_use, users_of
 from mlp_core import config
 from mlp_core.pipeline_request.references import base_model_reference
 from mlp_core.settings import Settings, size_in_bytes

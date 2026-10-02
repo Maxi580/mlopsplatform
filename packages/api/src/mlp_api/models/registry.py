@@ -1,6 +1,6 @@
 from sqlalchemy import Engine
 
-from mlp_api.in_use import refuse_while_in_use
+from mlp_api.in_use.users import refuse_while_in_use
 from mlp_api.models.mlflow import MLflow, ModelVersion
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core.pipeline_request.references import model_reference, split_model_reference
