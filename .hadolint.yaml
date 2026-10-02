@@ -1,0 +1,3 @@
+ignored:
+  # Base images come in as build args, tagged in deploy/values.yaml.
+  - DL3006
