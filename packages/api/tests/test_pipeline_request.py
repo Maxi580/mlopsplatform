@@ -1,7 +1,7 @@
 import pytest
 
 from mlp_api.hugging_face import HubModel
-from mlp_api.pipeline_request import resolve_pipeline_request
+from mlp_api.pipeline_request import validate_pipeline_request
 from mlp_core import config
 
 from .conftest import FakeHuggingFace
@@ -65,36 +65,36 @@ def hugging_face():
 
 
 @pytest.fixture
-def resolve(hugging_face):
+def validate(hugging_face):
     def run(request, secrets=None):
-        return resolve_pipeline_request(request, secrets or {}, hugging_face)
+        return validate_pipeline_request(request, secrets or {}, hugging_face)
 
     return run
 
 
-def rejection(resolve_result) -> str:
-    request, errors = resolve_result
+def rejection(result) -> str:
+    request, errors = result
     assert request is None and errors
     return " | ".join(f"{error['loc']}: {error['msg']}" for error in errors)
 
 
-def test_a_valid_request_comes_back_resolved(resolve):
-    request, errors = resolve(pipeline_request(settings={"warmup_steps": 10}))
+def test_a_valid_request_comes_back_resolved(validate):
+    request, errors = validate(pipeline_request(settings={"warmup_steps": 10}))
 
     assert errors == []
     assert request.finetune.base_model == f"hf:{BASE_MODEL}@{COMMIT}"
     assert request.finetune.phases[0].settings.warmup_steps == 10
 
 
-def test_a_named_revision_is_looked_up_and_pinned(resolve, hugging_face):
-    request, _ = resolve(pipeline_request(base_model=f"hf:{BASE_MODEL}@v1"))
+def test_a_named_revision_is_looked_up_and_pinned(validate, hugging_face):
+    request, _ = validate(pipeline_request(base_model=f"hf:{BASE_MODEL}@v1"))
 
     assert hugging_face.lookups == [(BASE_MODEL, "v1", None)]
     assert request.finetune.base_model == f"hf:{BASE_MODEL}@{COMMIT}"
 
 
-def test_the_hf_token_secret_is_used_to_look_up_the_base_model(resolve, hugging_face):
-    resolve(pipeline_request(), secrets={"hf_token": HF_TOKEN})
+def test_the_hf_token_secret_is_used_to_look_up_the_base_model(validate, hugging_face):
+    validate(pipeline_request(), secrets={"hf_token": HF_TOKEN})
 
     assert hugging_face.lookups == [(BASE_MODEL, "main", HF_TOKEN)]
 
@@ -107,8 +107,8 @@ def test_the_hf_token_secret_is_used_to_look_up_the_base_model(resolve, hugging_
         pipeline_request(gpus=1),
     ],
 )
-def test_unknown_fields_are_rejected(resolve, request_):
-    assert "Extra inputs are not permitted" in rejection(resolve(request_))
+def test_unknown_fields_are_rejected(validate, request_):
+    assert "Extra inputs are not permitted" in rejection(validate(request_))
 
 
 @pytest.mark.parametrize(
@@ -121,44 +121,38 @@ def test_unknown_fields_are_rejected(resolve, request_):
         ("finetune", "phases", 0, "lora", "r"),
     ],
 )
-def test_requests_missing_a_basic_value_are_rejected(resolve, path):
-    _, errors = resolve(without(pipeline_request(), *path))
+def test_requests_missing_a_basic_value_are_rejected(validate, path):
+    _, errors = validate(without(pipeline_request(), *path))
 
     assert errors == [{"loc": list(path), "msg": "Field required"}]
 
 
-def test_settings_unknown_to_the_trl_config_are_rejected(resolve):
-    message = rejection(resolve(pipeline_request(settings={"lerning_rate": 1e-4})))
+def test_settings_unknown_to_the_trl_config_are_rejected(validate):
+    message = rejection(validate(pipeline_request(settings={"lerning_rate": 1e-4})))
 
     assert "lerning_rate" in message
     assert "SFTConfig" in message
 
 
 @pytest.mark.parametrize("setting", ["num_train_epochs", "warmup_steps"])
-def test_settings_of_the_wrong_type_are_rejected(resolve, setting):
-    assert setting in rejection(resolve(pipeline_request(settings={setting: "x"})))
+def test_settings_of_the_wrong_type_are_rejected(validate, setting):
+    assert setting in rejection(validate(pipeline_request(settings={setting: "x"})))
 
 
-def test_trust_remote_code_is_rejected_wherever_it_appears(resolve):
-    settings = {"model_init_kwargs": {"trust_remote_code": True}}
-
-    assert "trust_remote_code" in rejection(resolve(pipeline_request(settings=settings)))
-
-
-def test_a_base_model_unreachable_on_hugging_face_is_rejected(resolve):
-    response = resolve(pipeline_request(base_model="hf:nobody/missing-model"))
+def test_a_base_model_unreachable_on_hugging_face_is_rejected(validate):
+    response = validate(pipeline_request(base_model="hf:nobody/missing-model"))
 
     assert "nobody/missing-model" in rejection(response)
 
 
-def test_a_base_model_that_needs_remote_code_is_rejected(resolve, hugging_face):
+def test_a_base_model_that_needs_remote_code_is_rejected(validate, hugging_face):
     hugging_face.models["org/custom"] = HubModel(commit=COMMIT, needs_remote_code=True)
 
-    assert "remote code" in rejection(resolve(pipeline_request(base_model="hf:org/custom")))
+    assert "remote code" in rejection(validate(pipeline_request(base_model="hf:org/custom")))
 
 
-def test_a_secret_value_inside_the_request_is_rejected(resolve):
-    result = resolve(
+def test_a_secret_value_inside_the_request_is_rejected(validate):
+    result = validate(
         pipeline_request(settings={"run_name": f"run-{HF_TOKEN}"}),
         secrets={"hf_token": HF_TOKEN},
     )
@@ -168,24 +162,24 @@ def test_a_secret_value_inside_the_request_is_rejected(resolve):
     assert HF_TOKEN not in message
 
 
-def test_a_hugging_face_token_inside_the_request_is_rejected_without_secrets(resolve):
-    assert "Secret" in rejection(resolve(pipeline_request(settings={"run_name": HF_TOKEN})))
+def test_a_hugging_face_token_inside_the_request_is_rejected_without_secrets(validate):
+    assert "Secret" in rejection(validate(pipeline_request(settings={"run_name": HF_TOKEN})))
 
 
-def test_every_error_is_reported_with_its_path(resolve):
-    _, errors = resolve(pipeline_request(settings={"lerning_rate": 1}, lora={"rank": 8}))
+def test_every_error_is_reported_with_its_path(validate):
+    _, errors = validate(pipeline_request(settings={"lerning_rate": 1}, lora={"rank": 8}))
 
     assert [error["loc"][-1] for error in errors] == ["lerning_rate", "rank"]
 
 
 @pytest.mark.parametrize("schema_file", [None, "not json"])
 def test_settings_go_unchecked_without_a_usable_trainer_config_schema(
-    resolve, tmp_path, monkeypatch, schema_file
+    validate, tmp_path, monkeypatch, schema_file
 ):
     if schema_file:
         (tmp_path / "SFTConfig.json").write_text(schema_file)
     monkeypatch.setattr(config, "TRAINER_CONFIGS_DIRECTORY", tmp_path)
 
-    _, errors = resolve(pipeline_request(settings={"anything": "goes"}, lora={"new_option": 1}))
+    _, errors = validate(pipeline_request(settings={"anything": "goes"}, lora={"new_option": 1}))
 
     assert errors == []

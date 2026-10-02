@@ -34,6 +34,16 @@ Judgement calls only. Anything a linter can check lives in the linter config.
 - One line, explaining why the code is the way it is if necessary. Don´t do comments if they are unecessary because its obvious what happens.
 - Don't put huge Docstrings at the beginning of files.
 - Delete commented-out code; git keeps history.
+- A function that runs several steps gets a one-line docstring saying what it returns, and a numbered one-line comment above each step, so it reads top to bottom:
+  ```python
+  def validate_pipeline_request(data, secrets, hugging_face):
+      """The request with its Base Model pinned to a commit, or None and every error with its path."""
+      # 1. The schema: required values, types, no unknown fields.
+      ...
+      # 2. The settings TRL/PEFT would receive, and no Secret value anywhere.
+      ...
+  ```
+- Put the main function first in a file and its helpers below, in the order it calls them.
 
 #### Size
 - Reuse existing helpers before writing new ones.

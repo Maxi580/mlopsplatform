@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from mlp_api.pipeline_request import resolve_pipeline_request
+from mlp_api.pipeline_request import validate_pipeline_request
 from mlp_core import api_paths
 from mlp_core.pipeline_request.schema import PipelineRequest
 
@@ -26,7 +26,7 @@ def schema() -> dict:
 # Errors carry paths inside the Pipeline Request, not FastAPI's `body.request` prefix.
 @router.post(api_paths.VALIDATE_PIPELINE)
 def validate(submission: Submission, request: Request) -> dict:
-    resolved, errors = resolve_pipeline_request(
+    resolved, errors = validate_pipeline_request(
         submission.request, submission.secrets, request.app.state.hugging_face
     )
     if errors:
