@@ -49,9 +49,7 @@ def submit(submission: Submission, request: Request) -> dict:
     )
     make_room_for_downloads(state, downloads["download_bytes"])
     try:
-        pipeline_id = submit_pipeline(
-            state.engine, state.cluster, state.settings, resolved, submission.secrets
-        )
+        pipeline_id = submit_pipeline(state, resolved, submission.secrets)
     except RuntimeError as error:
         raise HTTPException(502, str(error)) from None
     return {"id": pipeline_id, **downloads}

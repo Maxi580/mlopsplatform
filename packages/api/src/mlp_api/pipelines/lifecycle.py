@@ -14,13 +14,13 @@ from sqlalchemy import (
     update,
 )
 
+from mlp_api.auth.session import issue_serve_token
 from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.compiler import compile_pipeline
 from mlp_api.smoke_tests.cases import case_results
 from mlp_api.storage.database import metadata
 from mlp_core import config
 from mlp_core.pipeline_request.schema import PipelineRequest
-from mlp_core.settings import Settings
 
 pipeline = Table(
     "pipeline",
@@ -42,21 +42,18 @@ pipeline = Table(
 unfinished = pipeline.c.status.not_in(config.FINISHED_STATUSES)
 
 
-def submit_pipeline(
-    engine: Engine,
-    cluster: Cluster,
-    settings: Settings,
-    request: PipelineRequest,
-    secrets: dict[str, str],
-) -> int:
+def submit_pipeline(state, request: PipelineRequest, secrets: dict[str, str]) -> int:
     """The new Pipeline's ID, once its Kubeflow run is submitted; RuntimeError if that failed."""
-    # 1. The Pipeline, whose ID names its Secret.
+    # 1. The Pipeline, whose ID names its Secret and its serve token.
+    engine, cluster = state.engine, state.cluster
     pipeline_id = create_pipeline(engine, request.name, request.model_dump(mode="json"))
 
     # 2. The Secret and the run; a failure leaves the Secret to the reconciler.
     try:
+        if request.serve:
+            secrets = {**secrets, "serve_token": issue_serve_token(state.jwt_secret, pipeline_id)}
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
-        spec = compile_pipeline(pipeline_id, request, cluster.steps, settings)
+        spec = compile_pipeline(pipeline_id, request, cluster.steps, state.settings)
         run_id = cluster.submit_run(f"{request.name}-{pipeline_id}", spec)
     except Exception as error:
         set_pipeline(engine, pipeline_id, status="failed")
@@ -112,7 +109,7 @@ def pipeline_summary(row) -> dict:
         "name": row.name,
         "owner": row.owner,
         "status": row.status,
-        "stages": [stage for stage in config.STAGES if stage in row.request],
+        "stages": [stage for stage in config.STAGES if row.request.get(stage)],
         "created_at": row.created_at.isoformat(),
         "kubeflow_run_url": row.kubeflow_run_id and kubeflow_run_url(row.kubeflow_run_id),
         "mlflow_run_url": row.mlflow_run_url,

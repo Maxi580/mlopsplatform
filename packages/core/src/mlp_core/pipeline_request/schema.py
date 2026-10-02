@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mlp_core.config import ALGORITHMS, BACKENDS, MAX_LORA_RANK
+from mlp_core.endpoint_spec import EndpointName, ServingOptions
 from mlp_core.pipeline_request.references import (
     MODEL_NAME_PATTERN,
     BaseModelReference,
@@ -69,7 +70,15 @@ class Finetune(Strict):
         return self.base_model or self.from_
 
 
+class Serve(ServingOptions):
+    """An Endpoint for the Pipeline's last Model Version, started once the Pipeline made it."""
+
+    # Validation pins the Pipeline's name when none is given.
+    name: EndpointName | None = Field(None, title="Endpoint name")
+
+
 class PipelineRequest(Strict):
     schema_version: Literal[1] = 1
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
     finetune: Finetune
+    serve: Serve | None = None

@@ -2,6 +2,7 @@
 export const KUBEFLOW_UI_URL = "/pipeline/";
 export const MLFLOW_UI_URL = "/mlflow/";
 export const PIPELINE_LIST_REFRESH_MS = 5000;
+export const ENDPOINT_LIST_REFRESH_MS = 5000;
 // Where the New Pipeline form keeps its draft across reloads; Secrets are never stored.
 export const DRAFT_KEY = "mlp:new-pipeline";
 export const FINISHED_STATUSES = ["succeeded", "failed", "cancelled"];
@@ -25,3 +26,5 @@ export const BUCKET_CONTENTS: Record<string, string> = {
 export const STORAGE_WARNING_PERCENT = 90;
 // How long the New Pipeline form waits after a change before asking what the request downloads.
 export const DOWNLOAD_PREVIEW_DELAY_MS = 400;
+// The form's value under an optional section's name, e.g. the `serve` Stage, once switched on.
+export const SWITCHED_ON = "on";

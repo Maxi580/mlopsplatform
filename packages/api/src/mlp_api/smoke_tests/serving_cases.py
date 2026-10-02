@@ -29,6 +29,13 @@ def run_serving_cases(state) -> None:
                 cases[case] = serving_case_result(state, name, row.request[case], cases, endpoints)
         set_pipeline(state.engine, row.id, cases=cases)
 
+        # 3. The `serve` Stage case's Endpoint only had to start; it would hold a GPU from the rest.
+        serve_stage = config.SMOKE_TEST_SERVE_STAGE_CASE
+        endpoint = endpoints.get(f"{row.name}-{serve_stage}")
+        has_result = cases.get(serve_stage, "pending") != "pending"
+        if has_result and endpoint and endpoint["status"] != "stopped":
+            stop_endpoint(state.engine, state.cluster, endpoint["name"])
+
 
 def serving_case_result(state, name: str, serving: dict, cases: dict, endpoints: dict) -> str:
     """Starts, waits for or stops the case's Endpoint; returns the case's result so far."""

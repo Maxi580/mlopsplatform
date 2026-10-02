@@ -8,8 +8,17 @@ const schema = {
     schema_version: { const: 1, default: 1, type: "integer", title: "Schema Version" },
     name: { type: "string", title: "Name" },
     finetune: { $ref: "#/$defs/Finetune" },
+    serve: { anyOf: [{ $ref: "#/$defs/Serve" }, { type: "null" }], default: null },
   },
   $defs: {
+    Serve: {
+      type: "object",
+      title: "Serve",
+      properties: {
+        prefix_caching: { type: "boolean", default: true, title: "Prefix Caching" },
+        dtype: { anyOf: [{ enum: ["auto", "half"], type: "string" }, { type: "null" }] },
+      },
+    },
     Finetune: {
       type: "object",
       properties: {
@@ -152,4 +161,22 @@ test("each error goes to its field, a more setting's error to its section, the r
     "finetune.phases.0.settings.target_modules": ["str: bad"],
   });
   expect(placed.unplaced).toEqual(["Kubeflow did not start Pipeline 3"]);
+});
+
+test("an optional Stage is a section the request holds only once it is switched on", () => {
+  expect(byName.serve).toMatchObject({ kind: "section", optional: true });
+  expect(byName.finetune).toMatchObject({ kind: "section", optional: false });
+  const values = { fields: { "serve.dtype": "half" }, more: {} };
+
+  expect(pipelineRequestFromForm(form, values)).not.toHaveProperty("serve");
+  const switchedOn = { ...values, fields: { ...values.fields, serve: "on" } };
+  expect(pipelineRequestFromForm(form, switchedOn).serve).toEqual({ dtype: "half" });
+});
+
+test("booleans and optional choices are choices, read back as their values", () => {
+  expect(byName["serve.prefix_caching"]).toMatchObject({ kind: "choice", choices: [true, false] });
+  expect(byName["serve.dtype"]).toMatchObject({ kind: "choice", choices: ["auto", "half"] });
+  const values = { fields: { serve: "on", "serve.prefix_caching": "false" }, more: {} };
+
+  expect(pipelineRequestFromForm(form, values).serve).toEqual({ prefix_caching: false });
 });

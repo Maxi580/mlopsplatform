@@ -84,3 +84,15 @@ def delete_model_version(
     # 3. The registry entry, then its files.
     model_registry.delete_model_version(name, version)
     object_store.delete_all(model_registry.artifact_bucket, found.artifact_prefix)
+
+
+def find_pipeline_output(model_registry: MLflow, name: str, pipeline_id: int) -> ModelVersion:
+    """The last version of the Registered Model the Pipeline registered; ValueError if none."""
+    produced = [
+        version
+        for version in model_registry.model_versions()
+        if version.name == name and version.tags.get("pipeline") == str(pipeline_id)
+    ]
+    if not produced:
+        raise ValueError(f"Pipeline {pipeline_id} registered no Model Version")
+    return max(produced, key=lambda version: version.version)

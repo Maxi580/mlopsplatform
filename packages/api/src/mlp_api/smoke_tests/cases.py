@@ -20,7 +20,8 @@ class SmokeTestSelection(Strict):
     finetune: FinetuneCases | None = None
     # Uploads a tiny model and trains an sft/lora/hf Phase from it.
     uploaded_model: bool = False
-    # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints.
+    # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints;
+    # with a finetune case, also runs the `serve` Stage.
     serving: bool = False
 
 
@@ -39,8 +40,12 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, s
         for backend in chosen.backends
         if method in config.BACKENDS[backend]
     }
+    first_training = next(iter(cases.values()), None)
     if selection.uploaded_model:
         cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_UPLOADED_MODEL_TRAINING
+    # Last, as its serve step only runs once its training passed.
+    if selection.serving and first_training:
+        cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = first_training
     return cases
 
 
@@ -48,7 +53,9 @@ def finetune_case_request(
     case: str, smoke_test: str, starting_model: dict, phase: str, method: str, backend: str
 ) -> dict:
     """The Pipeline Request of one case, which trains on the Smoke Test's Dataset for the Phase."""
+    serve = {"serve": {}} if case == config.SMOKE_TEST_SERVE_STAGE_CASE else {}
     return {
+        **serve,
         "name": f"{smoke_test}-{case}",
         "finetune": {
             **starting_model,

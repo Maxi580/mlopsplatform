@@ -4,6 +4,7 @@ import { LOGGED_OUT_EVENT } from "./api";
 import LoginPage from "./login/LoginPage";
 import NewPipelinePage from "./pipelines/NewPipelinePage";
 import PipelinesPage from "./pipelines/PipelinesPage";
+import ServingPage from "./serving/ServingPage";
 import Shell from "./shell/Shell";
 import StoragePage from "./storage/StoragePage";
 
@@ -22,6 +23,7 @@ export default function App() {
         <Route index element={<PipelinesPage />} />
         <Route path="/pipelines/new" element={<NewPipelinePage />} />
         <Route path="/storage" element={<StoragePage />} />
+        <Route path="/serving" element={<ServingPage />} />
       </Route>
     </Routes>
   );

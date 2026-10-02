@@ -19,7 +19,7 @@ def smoke_test(
     ] = False,
     serving: Annotated[
         bool,
-        typer.Option(help="Serve the Base Model, a tiny model and an Adapter; runs a custom one"),
+        typer.Option(help="Serve models on Endpoints and run the serve Stage; runs a custom one"),
     ] = False,
 ) -> None:
     """Run the Smoke Test, every case or only the named ones, and print each result."""

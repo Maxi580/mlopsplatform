@@ -1,4 +1,4 @@
-import { MORE_SETTINGS } from "../config";
+import { MORE_SETTINGS, SWITCHED_ON } from "../config";
 
 export type FieldKind = "fixed" | "choice" | "text" | "list" | "integer" | "number";
 
@@ -9,6 +9,8 @@ export type FormSection = {
   children: FormNode[];
   // Whether the section takes settings beyond its fields, e.g. any SFTConfig field.
   moreSettings: boolean;
+  // Whether the request may leave it out, e.g. a Stage; it is in once switched on.
+  optional: boolean;
 };
 
 export type FormField = {
@@ -40,7 +42,7 @@ export function pipelineRequestFromForm(
   values: FormValues,
 ): Record<string, unknown> {
   const tree: Record<string, any> = {};
-  for (const node of nodesOf(form)) {
+  for (const node of nodesOf(form, values)) {
     if (node.kind === "section") {
       if (node.name) put(tree, parts(node.name), get(tree, parts(node.name)) ?? {});
       for (const { key, value } of values.more[node.name] ?? []) {
@@ -75,12 +77,19 @@ export function placeErrors(form: FormSection, errors: FieldError[]) {
   return { byName, unplaced };
 }
 
+export function isSwitchedOn(section: FormSection, values: FormValues): boolean {
+  return !section.optional || values.fields[section.name] === SWITCHED_ON;
+}
+
 export function moreName(section: string): string {
   return `${section}.${MORE_SETTINGS}`;
 }
 
 function nodeOf(schema: Schema, defs: Schema, name: string, title: string): FormNode {
-  const node = resolveRef(schema, defs);
+  // An optional value (`X | None`) shows as X; left empty, it is left out.
+  const options = schema.anyOf?.filter((option: Schema) => option.type !== "null") ?? [];
+  const optional = options.length === 1 && schema.anyOf.length === 2;
+  const node = resolveRef(optional ? options[0] : schema, defs);
   const types = new Set((node.anyOf ?? [node]).map((option: Schema) => option.type));
   // A field's own title, not its type's (e.g. "Settings", not "SftSettings").
   title = schema.title ?? humanize(title);
@@ -97,14 +106,16 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
       title,
       children,
       moreSettings: node.additionalProperties === true,
+      optional,
     };
   }
   if (node.type === "array" && resolveRef(node.items, defs).type === "object") {
     const children = Array.from({ length: node.minItems ?? 1 }, (_, index) =>
       nodeOf(node.items, defs, child(String(index)), `${title.replace(/s$/, "")} ${index + 1}`),
     );
-    return { kind: "section", name, title, children, moreSettings: false };
+    return { kind: "section", name, title, children, moreSettings: false, optional };
   }
+  if (types.has("boolean")) return { kind: "choice", name, title, choices: [true, false] };
   if (types.has("array")) return { kind: "list", name, title };
   if (types.has("integer")) return { kind: "integer", name, title };
   if (types.has("number")) return { kind: "number", name, title };
@@ -122,8 +133,11 @@ function resolveRef(node: Schema, defs: Schema): Schema {
   return node.$ref ? defs[node.$ref.split("/").pop()] : node;
 }
 
-function nodesOf(node: FormNode): FormNode[] {
-  return node.kind === "section" ? [node, ...node.children.flatMap(nodesOf)] : [node];
+// With values, only the sections switched on and their fields.
+function nodesOf(node: FormNode, values?: FormValues): FormNode[] {
+  if (node.kind !== "section") return [node];
+  if (values && !isSwitchedOn(node, values)) return [];
+  return [node, ...node.children.flatMap((child) => nodesOf(child, values))];
 }
 
 function nearestName(names: Set<string>, loc: string[]): [string | null, string[]] {

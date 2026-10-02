@@ -110,3 +110,36 @@ test("the form shows what the request still downloads as it changes", async () =
   await userEvent.type(screen.getByLabelText(/^Base Model/), "hf:x/cached");
   expect(await screen.findByText("0 B to download, 2.1 GB already cached")).toBeInTheDocument();
 });
+
+test("an optional Stage joins the request only once it is switched on", async () => {
+  const withServe = {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      serve: { anyOf: [{ $ref: "#/$defs/Serve" }, { type: "null" }], default: null },
+    },
+    $defs: {
+      Serve: {
+        type: "object",
+        properties: { max_model_len: { type: "integer", title: "Max Model Len" } },
+      },
+    },
+  };
+  const calls = fakeApi({
+    "GET /schema": [200, withServe],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 5 }],
+  });
+  renderApp("/pipelines/new");
+
+  const serve = await screen.findByRole("checkbox", { name: /run serve/i });
+  expect(screen.queryByLabelText(/^Max Model Len/)).not.toBeInTheDocument();
+  await userEvent.click(serve);
+  await userEvent.type(screen.getByLabelText(/^Max Model Len/), "4096");
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+  await screen.findByText(/Submitted Pipeline 5/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.serve).toEqual({ max_model_len: 4096 });
+});

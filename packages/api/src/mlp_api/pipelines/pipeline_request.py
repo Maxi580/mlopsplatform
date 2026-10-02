@@ -1,14 +1,16 @@
 import json
 
 from jsonschema import Draft202012Validator
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import Engine
 
 from mlp_api.datasets.registry import find_dataset_version
+from mlp_api.endpoints.lifecycle import find_endpoint
 from mlp_api.models.mlflow import MLflow
 from mlp_api.models.registry import pin_full_weights
 from mlp_api.pipelines.hugging_face import HuggingFace, pin_base_model
 from mlp_core import config
+from mlp_core.endpoint_spec import EndpointName
 from mlp_core.pipeline_request.references import dataset_reference, split_dataset_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 
@@ -60,6 +62,15 @@ def validate_pipeline_request(
             errors.append(error(loc, f"{has}; {trains_on}"))
         else:
             phase.dataset = dataset_reference(name, pinned.version)
+
+    # 5. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
+    if request.serve:
+        name = request.serve.name = request.serve.name or request.name
+        if not is_endpoint_name(name):
+            errors.append(error(["serve", "name"], f"`{name}` can't name an Endpoint; name one"))
+        elif find_endpoint(engine, name) is not None:
+            msg = f"Endpoint {name} is already running; stop it or name another"
+            errors.append(error(["serve", "name"], msg))
 
     if errors:
         return None, errors
@@ -131,3 +142,11 @@ def strings(node, loc: list) -> list[tuple[list, str]]:
     else:
         return []
     return [found for key, value in items for found in strings(value, [*loc, key])]
+
+
+def is_endpoint_name(name: str) -> bool:
+    try:
+        TypeAdapter(EndpointName).validate_python(name)
+    except ValidationError:
+        return False
+    return True

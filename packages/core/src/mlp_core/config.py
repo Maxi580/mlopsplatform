@@ -81,8 +81,11 @@ VLLM_TOOL_PARSERS = (
 VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 # Always run in this order.
 STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
-# Secret slot -> the environment variable of the one step that receives it.
-SECRET_ENV_VARS = {"hf_token": "HF_TOKEN"}
+# Secret slot -> the environment variable of the one step that receives it. The API adds
+# `serve_token` itself, for the `serve` step to call the API with.
+SECRET_ENV_VARS = {"hf_token": "HF_TOKEN", "serve_token": "MLP_SERVE_TOKEN"}
+# How long the `serve` step waits for the API to start the Endpoint.
+SERVE_REQUEST_TIMEOUT = timedelta(minutes=5)
 # Where steps mount the Model Cache; the Hugging Face cache lives inside it.
 MODEL_CACHE_PATH = "/model-cache"
 # The Kubernetes resource the NVIDIA device plugin offers GPUs as.
@@ -99,6 +102,8 @@ MIN_PASSWORD_LENGTH = 12
 SESSION_COOKIE = "mlp_session"
 TOKEN_LIFETIME = timedelta(hours=12)
 JWT_ALGORITHM = "HS256"
+# Marks a serve token: it only starts its Pipeline's Endpoint, and lives as long as Secrets do.
+SERVE_TOKEN_CLAIM = "serve_pipeline"
 MAX_FAILED_LOGINS = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
 PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN}
@@ -217,6 +222,9 @@ SMOKE_TEST_UPLOADED_MODEL_TRAINING = ("sft", "lora", "hf")
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
 # uploaded tiny full-weight model, and the Adapter of the first finetune case.
 SMOKE_TEST_SERVING_CASES = ("serve-base-model", "serve-full-weights", "serve-adapter")
+# Trains like the first finetune case, then its `serve` step starts an Endpoint; that Endpoint is
+# stopped once the case has a result, so it never holds a GPU the other cases wait for.
+SMOKE_TEST_SERVE_STAGE_CASE = "finetune-serve"
 # One tiny Dataset per Phase algorithm, named after it, uploaded the normal way by each Smoke Test.
 SMOKE_TEST_DATASETS_DIRECTORY = Path(__file__).parent / "smoke_test_datasets"
 # Every finetune case trains a few steps; only that it runs matters, not what it learns.

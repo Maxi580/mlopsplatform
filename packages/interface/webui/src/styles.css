@@ -818,3 +818,26 @@ select[aria-invalid="true"] {
     padding: 6px 10px;
   }
 }
+
+.stage-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.status-stopped {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.serve-form {
+  margin-top: 16px;
+}
+
+.serve-actions {
+  margin-top: 16px;
+}

@@ -1528,6 +1528,7 @@ version = "0.1.0"
 source = { editable = "packages/stages" }
 dependencies = [
     { name = "boto3" },
+    { name = "httpx2" },
     { name = "huggingface-hub" },
     { name = "mlp-core" },
 ]
@@ -1543,6 +1544,7 @@ hf = [
 [package.metadata]
 requires-dist = [
     { name = "boto3" },
+    { name = "httpx2" },
     { name = "huggingface-hub", specifier = ">=1.31,<2" },
     { name = "mlflow-skinny", marker = "extra == 'hf'" },
     { name = "mlp-core", editable = "packages/core" },

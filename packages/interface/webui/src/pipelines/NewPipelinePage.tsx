@@ -13,13 +13,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
 import { DATASETS, PIPELINES, SCHEMA, VALIDATE_PIPELINE } from "../apiPaths";
-import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS } from "../config";
+import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS, SWITCHED_ON } from "../config";
 import { formatBytes } from "../formatBytes";
 import FormSectionView from "./FormSectionView";
 import {
   type FieldError,
   type FormSection,
   type FormValues,
+  isSwitchedOn,
   pipelineForm,
   pipelineRequestFromForm,
   placeErrors,
@@ -138,8 +139,26 @@ function PipelineBuilder({
             <section key={stage.name} className="card">
               <h2>
                 {stage.title} <span className="chip">Stage</span>
+                {stage.optional && (
+                  <label className="stage-switch">
+                    <input
+                      type="checkbox"
+                      checked={isSwitchedOn(stage, values)}
+                      onChange={(event) =>
+                        setValues({
+                          ...values,
+                          fields: {
+                            ...values.fields,
+                            [stage.name]: event.target.checked ? SWITCHED_ON : "",
+                          },
+                        })
+                      }
+                    />
+                    Run {stage.name}
+                  </label>
+                )}
               </h2>
-              <FormSectionView section={stage} {...sectionProps} />
+              {isSwitchedOn(stage, values) && <FormSectionView section={stage} {...sectionProps} />}
             </section>
           ))}
           <section className="card">

@@ -31,6 +31,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("STAGES_IMAGE", "mlp-stages:real")
     monkeypatch.setenv("TRAINER_HF_IMAGE", "mlp-trainer-hf:real")
     monkeypatch.setenv("MODEL_CACHE_PVC", "model-cache")
+    monkeypatch.setenv("API_URL", "http://api.mlp.test:8000")
     monkeypatch.setenv("PLATFORM_NAMESPACE", "mlp")
     monkeypatch.setenv("DOMAIN", "platform.test")
     monkeypatch.setenv("VLLM_IMAGE", "vllm/vllm-openai:real")
@@ -197,6 +198,7 @@ class FakeCluster:
         model_cache_pvc="model-cache",
         object_store_url="http://seaweedfs.test:8333",
         object_store_bucket="platform",
+        api_url="http://api.mlp.test:8000",
     )
     endpoint_environment = EndpointEnvironment(
         namespace="mlp",

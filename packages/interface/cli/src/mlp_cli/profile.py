@@ -12,7 +12,9 @@ def load_profile() -> dict:
     return yaml.safe_load((mlp_directory() / "profile.yaml").read_text())
 
 
-def build_pipeline_request(profile: dict, name: str | None, finetune_phases: list[str]) -> dict:
+def build_pipeline_request(
+    profile: dict, name: str | None, finetune_phases: list[str], serve: bool = False
+) -> dict:
     """A Pipeline Request holding only the named Stages and Phases, in the order named."""
     request = {"name": name or profile.get("name")}
     if finetune_phases:
@@ -24,4 +26,6 @@ def build_pipeline_request(profile: dict, name: str | None, finetune_phases: lis
         # A variant's algorithm defaults to its name, so `sft:` needs no `algorithm: sft`.
         finetune["phases"] = [{"algorithm": phase, **variants[phase]} for phase in finetune_phases]
         request["finetune"] = finetune
+    if serve:
+        request["serve"] = profile.get("serve") or {}
     return request

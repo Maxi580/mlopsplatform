@@ -1,4 +1,4 @@
-import { ChartLine, Cpu, ExternalLink, HardDrive, Plus, Workflow } from "lucide-react";
+import { ChartLine, Cpu, ExternalLink, HardDrive, Plus, Server, Workflow } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useApi } from "../api";
 import { SETTINGS } from "../apiPaths";
@@ -21,6 +21,9 @@ export default function Shell() {
           </NavLink>
           <NavLink to="/storage">
             <HardDrive size={18} /> Storage
+          </NavLink>
+          <NavLink to="/serving">
+            <Server size={18} /> Serving
           </NavLink>
           <p className="nav-heading">Tools</p>
           <a href={KUBEFLOW_UI_URL} target="_blank" rel="noreferrer">

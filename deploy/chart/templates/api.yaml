@@ -83,6 +83,9 @@ spec:
               value: {{ .Values.images.trainerHf }}:{{ .Values.images.tag }}
             - name: MODEL_CACHE_PVC
               value: {{ .Values.modelCachePvc }}
+            # Where a Pipeline's `serve` step asks the API to start its Endpoint, inside the cluster.
+            - name: API_URL
+              value: http://api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.api }}
             # Endpoints run in this namespace, mount the Model Cache from the node and are routed
             # under the domain.
             - name: PLATFORM_NAMESPACE

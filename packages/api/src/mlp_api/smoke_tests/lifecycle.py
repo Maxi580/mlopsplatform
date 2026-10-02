@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import select, update
 
+from mlp_api.auth.session import issue_serve_token
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
 from mlp_api.endpoints.lifecycle import list_endpoints, stop_endpoint
 from mlp_api.model_cache.downloads import preview_downloads
@@ -16,6 +17,7 @@ from mlp_api.pipelines.lifecycle import (
     create_pipeline,
     kubeflow_run_url,
     pipeline,
+    pipeline_secret_name,
     set_pipeline,
     unfinished,
 )
@@ -82,7 +84,10 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             cases={**cases, **dict.fromkeys(serving, "pending")},
         )
 
-        # 7. The run, one node per case.
+        # 7. The run, one node per case; a serve step calls the API with its serve token.
+        if config.SMOKE_TEST_SERVE_STAGE_CASE in requests:
+            token = issue_serve_token(state.jwt_secret, pipeline_id)
+            state.cluster.create_secret(pipeline_secret_name(pipeline_id), {"serve_token": token})
         spec = compile_smoke_test(
             pipeline_id,
             name,

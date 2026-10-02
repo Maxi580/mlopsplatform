@@ -100,3 +100,18 @@ def test_a_phase_missing_from_the_profile_is_an_error(profile, fake_api):
     assert result.exit_code != 0
     assert "dpo" in result.output
     assert fake_api.received == []
+
+
+def test_serve_adds_the_profiles_serve_block(home, fake_api, platform_ca):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE, serve={"max_model_len": 4096})
+    fake_api.answers[api_paths.VALIDATE_PIPELINE] = (200, {"request": {}})
+
+    mlp_validate("--finetune", "sft", "--serve")
+
+    assert sent_submission(fake_api)["request"]["serve"] == {"max_model_len": 4096}
+
+
+def test_serve_works_without_a_serve_block_in_the_profile(profile, fake_api):
+    mlp_validate("--finetune", "sft", "--serve")
+
+    assert sent_submission(fake_api)["request"]["serve"] == {}

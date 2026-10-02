@@ -12,6 +12,8 @@ DATASET_DOWNLOAD = "/datasets/{name}/versions/{version}/download"
 PIPELINES = "/pipelines"
 PIPELINE = "/pipelines/{id}"
 CANCEL_PIPELINE = "/pipelines/{id}/cancel"
+# Only the Pipeline's own `serve` step calls it, with the serve token from its Secret.
+SERVE_PIPELINE = "/pipelines/{id}/serve"
 MODELS = "/models"
 MODEL_VERSION = "/models/{name}/versions/{version}"
 MODEL_VERSION_FILES = "/models/{name}/versions/{version}/files"

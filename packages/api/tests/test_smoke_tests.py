@@ -62,7 +62,13 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
     started = response.json()
     assert started["name"].startswith("smoketest-")
     assert started["kubeflow_run_url"] == "/pipeline/#/runs/details/run-1"
-    assert case_names(cluster) == ["fetch", "sft-lora-hf", "uploaded-model"]
+    assert case_names(cluster) == [
+        "fetch",
+        "sft-lora-hf",
+        "uploaded-model",
+        "finetune-serve-finetune",
+        "finetune-serve",
+    ]
     assert cluster.submitted["display_name"] == started["name"]
 
 
@@ -71,8 +77,10 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
 ):
     start(logged_in_api)
 
-    first, *later = nodes(cluster)
+    # Only a serve step waits for its own training to pass.
+    first, *later, serve = nodes(cluster)
     assert "triggerPolicy" not in first
+    assert "triggerPolicy" not in serve
     assert later
     assert all(t["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED" for t in later)
 
@@ -114,7 +122,7 @@ def test_a_finetune_case_trains_the_pinned_base_model_on_its_uploaded_bundled_da
 ):
     name = start(logged_in_api).json()["name"]
 
-    _, finetune, _ = nodes(cluster)
+    _, finetune, *_ = nodes(cluster)
     parameters = finetune["inputs"]["parameters"]
     request = json.loads(parameters["request"]["runtimeValue"]["constant"])
     assert request["name"] == f"{name}-sft-lora-hf"
@@ -130,7 +138,7 @@ def test_the_uploaded_model_case_finetunes_a_tiny_model_uploaded_the_normal_way(
 ):
     name = start(logged_in_api).json()["name"]
 
-    *_, uploaded_model = nodes(cluster)
+    _, _, uploaded_model, *_ = nodes(cluster)
     parameters = uploaded_model["inputs"]["parameters"]
     request = json.loads(parameters["request"]["runtimeValue"]["constant"])
     assert request["name"] == f"{name}-uploaded-model"
@@ -276,6 +284,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "fetch",
         "sft-lora-hf",
         "uploaded-model",
+        "finetune-serve",
         *SERVING_CASES,
     ]
     assert running_endpoints(logged_in_api) == {
@@ -340,7 +349,7 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
 ):
     name = start(logged_in_api).json()["name"]
     register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
-    steps = dict.fromkeys(["fetch", "sft-lora-hf", "uploaded-model"], "SUCCEEDED")
+    steps = dict.fromkeys(["fetch", "sft-lora-hf", "uploaded-model", "finetune-serve"], "SUCCEEDED")
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)
 
     reconcile(logged_in_api)
@@ -366,3 +375,45 @@ def test_a_cancelled_smoke_test_stops_its_endpoints(logged_in_api, qwen_on_the_h
 
     assert cluster.endpoints == {}
     assert running_endpoints(logged_in_api) == {}
+
+
+def test_the_serve_stage_case_trains_like_the_first_finetune_case_then_serves_it(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    started = start(logged_in_api).json()
+
+    *_, finetune, serve = nodes(cluster)
+    parameters = finetune["inputs"]["parameters"]
+    request = json.loads(parameters["request"]["runtimeValue"]["constant"])
+    assert request["name"] == f"{started['name']}-finetune-serve"
+    assert request["serve"]["name"] == f"{started['name']}-finetune-serve"
+    assert request["finetune"]["phases"][0]["algorithm"] == "sft"
+    assert serve["dependentTasks"] == [next(k for k, t in tasks(cluster).items() if t is finetune)]
+    assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"serve_token"}
+
+
+def tasks(cluster) -> dict:
+    return cluster.submitted["pipeline_spec"]["pipeline_spec"]["root"]["dag"]["tasks"]
+
+
+def test_the_serve_stage_case_stops_its_endpoint_once_it_has_a_result(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api).json()["name"]
+    # What its serve step did.
+    endpoint = {"name": f"{name}-finetune-serve", "model": f"hf:{QWEN}"}
+    logged_in_api.post(api_paths.ENDPOINTS, json=endpoint)
+    cluster.runs["run-1"] = KubeflowRun("RUNNING", None, {"finetune-serve": "SUCCEEDED"})
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["finetune-serve"] == "passed"
+    assert f"{name}-finetune-serve" not in running_endpoints(logged_in_api)
+
+
+def test_a_smoke_test_without_the_serve_stage_case_has_no_secret(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, WITHOUT_SERVING)
+
+    assert cluster.secrets == {}

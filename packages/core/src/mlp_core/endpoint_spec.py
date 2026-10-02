@@ -1,21 +1,23 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mlp_core.config import VLLM_LORA_RANKS, VLLM_TOOL_PARSERS
+from mlp_core.config import ENDPOINT_NAME_MAX_LENGTH, VLLM_LORA_RANKS, VLLM_TOOL_PARSERS
 from mlp_core.pipeline_request.references import BaseModelReference, ModelReference
 
 # Names the Endpoint's Kubernetes objects and its URL, so it must be a DNS label.
 ENDPOINT_NAME_PATTERN = r"[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+EndpointName = Annotated[
+    str, Field(pattern=f"^{ENDPOINT_NAME_PATTERN}$", max_length=ENDPOINT_NAME_MAX_LENGTH)
+]
 
 
-class EndpointSpec(BaseModel):
+class ServingOptions(BaseModel):
     """The curated serving options; GPUs come from platform settings, never from here."""
 
     model_config = ConfigDict(extra="forbid")
 
-    model: BaseModelReference | ModelReference
     max_model_len: int | None = Field(None, gt=0)
     prefix_caching: bool = True
     dtype: Literal["auto", "half", "float16", "bfloat16", "float32"] | None = None
@@ -28,6 +30,10 @@ class EndpointSpec(BaseModel):
     quantization: Literal["fp8", "bitsandbytes"] | None = None
     # Overrides the parser the model's `model_type` maps to.
     tool_parser: Literal[VLLM_TOOL_PARSERS] | None = None
+
+
+class EndpointSpec(ServingOptions):
+    model: BaseModelReference | ModelReference
 
 
 @dataclass(frozen=True)
