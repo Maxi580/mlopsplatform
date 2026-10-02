@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-set-password = "mlp_api.account:set_password"
+set-password = "mlp_api.auth.account:set_password"
 
 [tool.uv.sources]
 mlp-core = { workspace = true }

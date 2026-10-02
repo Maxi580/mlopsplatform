@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi import Path as PathParameter
 from starlette.concurrency import run_in_threadpool
 
-from mlp_api.datasets import (
+from mlp_api.datasets.registry import (
     dataset_key,
     delete_dataset_version,
     find_dataset_version,

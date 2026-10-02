@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from mlp_api.pipeline_request import validate_pipeline_request
+from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_core import api_paths
 from mlp_core.pipeline_request.schema import PipelineRequest
 

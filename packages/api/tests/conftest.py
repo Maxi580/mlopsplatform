@@ -3,8 +3,8 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 
-from mlp_api.account import set_password
 from mlp_api.app import app
+from mlp_api.auth.account import set_password
 from mlp_core import api_paths
 
 PASSWORD = "correct horse battery staple"
