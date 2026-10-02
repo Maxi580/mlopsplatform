@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from sqlalchemy import Engine
 
 from mlp_api.datasets.registry import find_dataset_version
-from mlp_api.external.hugging_face import HuggingFace
+from mlp_api.pipelines.hugging_face import HuggingFace
 from mlp_core import config
 from mlp_core.pipeline_request.references import (
     base_model_reference,

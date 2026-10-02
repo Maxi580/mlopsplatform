@@ -1,4 +1,4 @@
-from mlp_api.external.hugging_face import HubModel
+from mlp_api.pipelines.hugging_face import HubModel
 from mlp_core import api_paths
 
 from .test_datasets import CHAT, jsonl, upload
