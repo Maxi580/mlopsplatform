@@ -18,18 +18,25 @@ class HubModel:
 class HuggingFace:
     """Hugging Face Hub lookups and downloads; tests swap in a fake."""
 
+    def __init__(self):
+        # (repo, commit) -> bytes, from validation's lookup, so the download preview needn't ask.
+        self.sizes: dict[tuple[str, str], int] = {}
+
     def find_model(self, repo: str, revision: str, token: str | None) -> HubModel | None:
         hub = HfApi(token=token or False)
         try:
-            info = hub.model_info(repo, revision=revision)
+            info = hub.model_info(repo, revision=revision, files_metadata=True)
             if info.gated:
                 hub.auth_check(repo)
         except (HfHubHTTPError, httpx.HTTPError):
             return None
+        self.sizes[(repo, info.sha)] = sum(file.size or 0 for file in info.siblings or [])
         return HubModel(commit=info.sha, needs_remote_code="auto_map" in (info.config or {}))
 
     def model_size(self, repo: str, commit: str, token: str | None) -> int | None:
         """The bytes a download of every file at the commit takes, or None if Hugging Face fails."""
+        if (repo, commit) in self.sizes:
+            return self.sizes[(repo, commit)]
         try:
             info = HfApi(token=token or False).model_info(
                 repo, revision=commit, files_metadata=True

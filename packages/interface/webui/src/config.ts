@@ -23,3 +23,5 @@ export const BUCKET_CONTENTS: Record<string, string> = {
 };
 // Object store usage, in percent, from which the meter shows a warning.
 export const STORAGE_WARNING_PERCENT = 90;
+// How long the New Pipeline form waits after a change before asking what the request downloads.
+export const DOWNLOAD_PREVIEW_DELAY_MS = 400;

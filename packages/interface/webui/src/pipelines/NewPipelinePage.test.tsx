@@ -81,3 +81,32 @@ test("validation errors appear next to their fields", async () => {
   expect(screen.getByText(/Kubeflow did not start Pipeline 4/)).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "New Pipeline" })).toBeInTheDocument();
 });
+
+test("the form shows what the request still downloads as it changes", async () => {
+  const GB = 1024 ** 3;
+  fakeApi({
+    "GET /schema": [200, schema],
+    "GET /datasets": [200, []],
+    "POST /pipelines/validate": ({ request }) => {
+      const cached = request.finetune?.base_model === "hf:x/cached";
+      const bytes = cached ? 2.1 * GB : 9.4 * GB;
+      return [
+        200,
+        {
+          request,
+          downloads: [{ kind: "base_model", ref: request.finetune?.base_model, bytes, cached }],
+          download_bytes: cached ? 0 : bytes,
+          cached_bytes: cached ? bytes : 0,
+        },
+      ];
+    },
+  });
+  renderApp("/pipelines/new");
+
+  await userEvent.type(await screen.findByLabelText(/^Base Model/), "hf:x/new");
+  expect(await screen.findByText("9.4 GB to download, 0 B already cached")).toBeInTheDocument();
+
+  await userEvent.clear(screen.getByLabelText(/^Base Model/));
+  await userEvent.type(screen.getByLabelText(/^Base Model/), "hf:x/cached");
+  expect(await screen.findByText("0 B to download, 2.1 GB already cached")).toBeInTheDocument();
+});

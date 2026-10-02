@@ -3,6 +3,7 @@ import {
   CircleCheck,
   Eye,
   EyeOff,
+  HardDrive,
   KeyRound,
   ListChecks,
   LoaderCircle,
@@ -12,7 +13,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
 import { DATASETS, PIPELINES, SCHEMA, VALIDATE_PIPELINE } from "../apiPaths";
-import { DRAFT_KEY, SECRET_SLOTS } from "../config";
+import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS } from "../config";
+import { formatBytes } from "../formatBytes";
 import FormSectionView from "./FormSectionView";
 import {
   type FieldError,
@@ -25,6 +27,8 @@ import {
 
 type Dataset = { name: string; versions: { version: number }[] };
 type PlacedErrors = ReturnType<typeof placeErrors>;
+type Download = { kind: string; ref: string; bytes: number | null; cached: boolean };
+type DownloadPreview = { downloads: Download[]; download_bytes: number; cached_bytes: number };
 
 const NO_ERRORS: PlacedErrors = { byName: {}, unplaced: [] };
 
@@ -56,6 +60,8 @@ function PipelineBuilder({
   const [resolved, setResolved] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
   const request = pipelineRequestFromForm(form, values);
+  const filledSecrets = Object.fromEntries(Object.entries(secrets).filter(([, value]) => value));
+  const downloads = useDownloadPreview(request, filledSecrets);
 
   useEffect(() => {
     try {
@@ -71,7 +77,6 @@ function PipelineBuilder({
     setBusy(path);
     setErrors(NO_ERRORS);
     setResolved(undefined);
-    const filledSecrets = Object.fromEntries(Object.entries(secrets).filter(([, value]) => value));
 
     // 2. The API's verdict: the new Pipeline, the resolved request, or every error in place.
     try {
@@ -160,6 +165,11 @@ function PipelineBuilder({
           <div className="card sticky">
             <h2>Pipeline Request</h2>
             <pre className="preview">{JSON.stringify(request, null, 2)}</pre>
+            {downloads && (
+              <p className="muted">
+                <HardDrive size={16} /> {downloadSummary(downloads)}
+              </p>
+            )}
             {errorCount > 0 && (
               <p className="field-error">
                 {errorCount} problem{errorCount === 1 ? "" : "s"} to fix
@@ -206,6 +216,32 @@ function PipelineBuilder({
       </div>
     </>
   );
+}
+
+/** What the API says the request downloads, asked again shortly after each change. */
+function useDownloadPreview(request: unknown, secrets: Record<string, string>) {
+  const [preview, setPreview] = useState<DownloadPreview>();
+  const submission = JSON.stringify({ request, secrets });
+  useEffect(() => {
+    let current = true;
+    const timer = setTimeout(() => {
+      callApi<DownloadPreview>(VALIDATE_PIPELINE, JSON.parse(submission)).then(
+        (answer) => current && setPreview(answer),
+        // An invalid request has no downloads yet; the Validate button explains why.
+        () => current && setPreview(undefined),
+      );
+    }, DOWNLOAD_PREVIEW_DELAY_MS);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [submission]);
+  return preview;
+}
+
+function downloadSummary(preview: DownloadPreview): string {
+  const toDownload = formatBytes(preview.download_bytes);
+  return `${toDownload} to download, ${formatBytes(preview.cached_bytes)} already cached`;
 }
 
 function SecretInput(props: {

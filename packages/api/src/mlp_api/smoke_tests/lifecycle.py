@@ -5,7 +5,8 @@ from pathlib import Path
 from sqlalchemy import Engine, select, update
 
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
-from mlp_api.model_cache.janitor import make_room_for_base_model
+from mlp_api.model_cache.downloads import preview_downloads
+from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.models.mlflow import MLflow
 from mlp_api.models.registry import delete_model_version
 from mlp_api.models.uploads import upload_model_directory
@@ -45,7 +46,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     try:
         # 3. The Base Model, pinned to a commit, with room for it in the Model Cache.
         base_model = pin_base_model(state.hugging_face, config.SMOKE_TEST_BASE_MODEL, None)
-        make_room_for_base_model(state, base_model, None)
+        make_room_for_downloads(state, preview_downloads(state, base_model, None)["download_bytes"])
 
         # 4. The bundled Datasets and the tiny model, uploaded the normal way.
         for phase in {phase for phase, _, _ in trainings.values()}:

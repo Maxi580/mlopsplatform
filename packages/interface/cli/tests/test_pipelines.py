@@ -10,6 +10,7 @@ from .test_validate import HF_TOKEN, PROFILE
 
 PROFILE_WITHOUT_SECRETS = {key: value for key, value in PROFILE.items() if key != "secrets"}
 OTHER_TOKEN = "hf_" + "y" * 34
+DOWNLOAD_BYTES, CACHED_BYTES = int(9.4 * 2**30), int(2.1 * 2**30)
 
 
 @pytest.fixture
@@ -144,3 +145,25 @@ def test_rerun_submits_the_stored_request_with_fresh_secrets(
     [(path, submission)] = [r for r in fake_api.received if r[0] == api_paths.PIPELINES]
     assert submission == {"request": stored, "secrets": {"hf_token": OTHER_TOKEN}}
     assert "Pipeline 7" in result.output
+
+
+def test_run_dry_run_prints_the_downloads_without_submitting(
+    logged_in, home, fake_api, platform_ca
+):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE)
+    downloads = [
+        {"kind": "base_model", "ref": "hf:Qwen/a@1", "bytes": DOWNLOAD_BYTES, "cached": False},
+        {"kind": "base_model", "ref": "hf:Qwen/b@2", "bytes": CACHED_BYTES, "cached": True},
+    ]
+    totals = {"download_bytes": DOWNLOAD_BYTES, "cached_bytes": CACHED_BYTES}
+    answer = {"request": {}, "downloads": downloads, **totals}
+    fake_api.answers[api_paths.VALIDATE_PIPELINE] = (200, answer)
+
+    result = mlp("run", "--finetune", "sft", "--dry-run")
+
+    assert result.exit_code == 0, result.output
+    [(path, _)] = fake_api.received
+    assert path == api_paths.VALIDATE_PIPELINE
+    assert "base_model  hf:Qwen/a@1  9.4 GB" in result.output
+    assert "base_model  hf:Qwen/b@2  2.1 GB  cached" in result.output
+    assert "9.4 GB to download, 2.1 GB already cached" in result.output

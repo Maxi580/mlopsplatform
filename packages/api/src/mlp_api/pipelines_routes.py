@@ -3,7 +3,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from mlp_api.model_cache.janitor import make_room_for_base_model
+from mlp_api.model_cache.downloads import preview_downloads
+from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.pipelines.lifecycle import (
     cancel_pipeline,
     get_pipeline,
@@ -32,23 +33,28 @@ def schema() -> dict:
 
 @router.post(api_paths.VALIDATE_PIPELINE)
 def validate(submission: Submission, request: Request) -> dict:
-    return {"request": resolve(submission, request).model_dump(mode="json")}
+    resolved = resolve(submission, request)
+    downloads = preview_downloads(
+        request.app.state, resolved.finetune.base_model, submission.secrets.get("hf_token")
+    )
+    return {"request": resolved.model_dump(mode="json"), **downloads}
 
 
 @router.post(api_paths.PIPELINES, status_code=202)
 def submit(submission: Submission, request: Request) -> dict:
     resolved = resolve(submission, request)
     state = request.app.state
-    if resolved.finetune.base_model:
-        token = submission.secrets.get("hf_token")
-        make_room_for_base_model(state, resolved.finetune.base_model, token)
+    downloads = preview_downloads(
+        state, resolved.finetune.base_model, submission.secrets.get("hf_token")
+    )
+    make_room_for_downloads(state, downloads["download_bytes"])
     try:
         pipeline_id = submit_pipeline(
             state.engine, state.cluster, state.settings, resolved, submission.secrets
         )
     except RuntimeError as error:
         raise HTTPException(502, str(error)) from None
-    return {"id": pipeline_id}
+    return {"id": pipeline_id, **downloads}
 
 
 @router.get(api_paths.PIPELINES)

@@ -13,6 +13,7 @@ import {
   STORAGE,
 } from "../apiPaths";
 import { BUCKET_CONTENTS, STORAGE_WARNING_PERCENT } from "../config";
+import { formatBytes } from "../formatBytes";
 import ModelUploadForm from "./ModelUploadForm";
 import type {
   CachedBaseModels,
@@ -325,14 +326,4 @@ function VersionRow({
       </td>
     </tr>
   );
-}
-
-function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let index = 0;
-  while (bytes >= 1024 && index < units.length - 1) {
-    bytes /= 1024;
-    index++;
-  }
-  return index === 0 ? `${bytes} B` : `${bytes.toFixed(1)} ${units[index]}`;
 }

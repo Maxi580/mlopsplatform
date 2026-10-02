@@ -10,7 +10,7 @@ from sqlalchemy import Engine
 
 from mlp_api.pipelines.lifecycle import pipelines_using, refuse_while_in_use
 from mlp_core import config
-from mlp_core.pipeline_request.references import base_model_reference, split_base_model_reference
+from mlp_core.pipeline_request.references import base_model_reference
 from mlp_core.settings import Settings, size_in_bytes
 
 logger = logging.getLogger(__name__)
@@ -51,13 +51,10 @@ def evict_least_recently_used(
             used -= entry.size_bytes
 
 
-def make_room_for_base_model(state, reference: str, token: str | None) -> None:
-    """Evicts for a Base Model the Model Cache lacks; fetch fails if it still doesn't fit."""
-    if find_cached_base_model(state.model_cache, reference):
-        return
-    size = state.hugging_face.model_size(*split_base_model_reference(reference), token)
-    if size is not None:
-        evict_least_recently_used(state.engine, state.model_cache, state.settings, size)
+def make_room_for_downloads(state, download_bytes: int) -> None:
+    """Evicts so the downloads fit; fetch fails if they still don't."""
+    if download_bytes:
+        evict_least_recently_used(state.engine, state.model_cache, state.settings, download_bytes)
 
 
 def free_cached_base_model(engine: Engine, model_cache: Path, reference: str) -> None:

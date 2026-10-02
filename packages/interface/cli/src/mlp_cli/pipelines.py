@@ -10,6 +10,7 @@ from mlp_core import api_paths
 
 FinetunePhases = Annotated[str, typer.Option(help="Phases from the CLI Profile, e.g. sft,dpo")]
 PipelineName = Annotated[str | None, typer.Option(help="Pipeline name; default: the Profile's")]
+DryRun = Annotated[bool, typer.Option(help="Only list what the Pipeline would download")]
 
 
 def validate(finetune: FinetunePhases = "", name: PipelineName = None) -> None:
@@ -19,8 +20,11 @@ def validate(finetune: FinetunePhases = "", name: PipelineName = None) -> None:
     typer.echo("Valid")
 
 
-def run(finetune: FinetunePhases = "", name: PipelineName = None) -> None:
+def run(finetune: FinetunePhases = "", name: PipelineName = None, dry_run: DryRun = False) -> None:
     """Submit the Pipeline Request built from the CLI Profile; returns once it is queued."""
+    if dry_run:
+        print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, finetune, name))
+        return
     pipeline = send_pipeline_request(api_paths.PIPELINES, finetune, name)
     typer.echo(f"Submitted Pipeline {pipeline['id']}; follow it with `mlp ls`")
 
@@ -88,3 +92,24 @@ def send_with_secrets(path: str, request: dict, profile: dict) -> dict:
             typer.echo(f"{loc}: {error['msg']}", err=True)
         raise typer.Exit(1)
     return exit_on_error(response).json()
+
+
+def print_downloads(answer: dict) -> None:
+    for download in answer["downloads"]:
+        size = "unknown size" if download["bytes"] is None else format_bytes(download["bytes"])
+        cached = "  cached" if download["cached"] else ""
+        typer.echo(f"{download['kind']}  {download['ref']}  {size}{cached}")
+    typer.echo(
+        f"{format_bytes(answer['download_bytes'])} to download, "
+        f"{format_bytes(answer['cached_bytes'])} already cached"
+    )
+
+
+# Binary units, like the Web UI.
+def format_bytes(size: float) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    index = 0
+    while size >= 1024 and index < len(units) - 1:
+        size /= 1024
+        index += 1
+    return f"{size} B" if index == 0 else f"{size:.1f} {units[index]}"

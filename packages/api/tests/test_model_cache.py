@@ -8,7 +8,7 @@ from mlp_api.pipelines.hugging_face import HubModel
 from mlp_core import api_paths
 
 from .test_datasets import CHAT, jsonl, upload
-from .test_pipeline_request import BASE_MODEL, COMMIT
+from .test_pipeline_request import BASE_MODEL, COMMIT, pipeline_request
 from .test_pipelines import finish_run, reconcile, submit
 
 USED_BASE_MODEL = f"hf:{BASE_MODEL}@{COMMIT}"
@@ -181,3 +181,50 @@ def test_submitting_a_cached_base_model_evicts_nothing(
 
 def test_the_model_cache_requires_login(api):
     assert api.get(api_paths.CACHED_BASE_MODELS).status_code == 401
+
+
+def validate(api):
+    return api.post(api_paths.VALIDATE_PIPELINE, json={"request": pipeline_request()})
+
+
+@pytest.fixture
+def hub_and_dataset(logged_in_api, hugging_face):
+    hugging_face.models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
+    upload(logged_in_api, "chat", jsonl(CHAT))
+
+
+def test_validate_lists_an_uncached_base_model_as_still_to_download(
+    logged_in_api, model_cache, hugging_face, hub_and_dataset
+):
+    hugging_face.sizes[BASE_MODEL] = 400
+
+    answer = validate(logged_in_api).json()
+
+    assert answer["downloads"] == [
+        {"kind": "base_model", "ref": USED_BASE_MODEL, "bytes": 400, "cached": False}
+    ]
+    assert (answer["download_bytes"], answer["cached_bytes"]) == (400, 0)
+
+
+def test_a_cached_base_model_is_marked_cached_and_left_out_of_the_total(
+    logged_in_api, model_cache, hugging_face, hub_and_dataset
+):
+    cache_base_model(model_cache, USED_BASE_MODEL, 300, days_since_use=1)
+
+    answer = validate(logged_in_api).json()
+
+    assert answer["downloads"] == [
+        {"kind": "base_model", "ref": USED_BASE_MODEL, "bytes": 300, "cached": True}
+    ]
+    assert (answer["download_bytes"], answer["cached_bytes"]) == (0, 300)
+
+
+def test_submit_answers_with_the_downloads_too(
+    logged_in_api, model_cache, hugging_face, hub_and_dataset
+):
+    hugging_face.sizes[BASE_MODEL] = 400
+
+    answer = submit(logged_in_api).json()
+
+    assert [download["ref"] for download in answer["downloads"]] == [USED_BASE_MODEL]
+    assert answer["download_bytes"] == 400
