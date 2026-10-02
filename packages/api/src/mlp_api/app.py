@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import create_engine
 
-from mlp_api import auth_routes, datasets_routes, health_routes, pipelines_routes
+from mlp_api import auth_routes, datasets_routes, health_routes, pipelines_routes, web_routes
 from mlp_api.auth.session import require_login
 from mlp_api.database import create_tables
 from mlp_api.datasets.object_store import ObjectStore
@@ -42,3 +42,4 @@ app.include_router(auth_routes.router)
 app.include_router(datasets_routes.router)
 app.include_router(health_routes.router)
 app.include_router(pipelines_routes.router)
+app.include_router(web_routes.router)

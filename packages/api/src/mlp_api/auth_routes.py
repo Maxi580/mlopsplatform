@@ -1,10 +1,8 @@
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 
-from mlp_api.auth.account import password_matches
-from mlp_api.auth.session import issue_token, record_failed_login, too_many_failed_logins
+from mlp_api.auth.session import log_in, set_session_cookie
 from mlp_core import api_paths
-from mlp_core.config import SESSION_COOKIE, TOKEN_LIFETIME
 
 router = APIRouter()
 
@@ -15,22 +13,8 @@ class Login(BaseModel):
 
 @router.post(api_paths.LOGIN)
 def login(login: Login, request: Request, response: Response) -> dict:
-    failed_logins = request.app.state.failed_logins[request.client.host]
-    if too_many_failed_logins(failed_logins):
-        raise HTTPException(429, "Too many failed logins, try again later")
-    if not password_matches(request.app.state.engine, login.password):
-        record_failed_login(failed_logins)
-        raise HTTPException(401, "Wrong password")
-
-    token = issue_token(request.app.state.jwt_secret)
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        max_age=int(TOKEN_LIFETIME.total_seconds()),
-        httponly=True,
-        secure=True,
-        samesite="lax",
-    )
+    token = log_in(request, login.password)
+    set_session_cookie(response, token)
     return {"token": token}
 
 

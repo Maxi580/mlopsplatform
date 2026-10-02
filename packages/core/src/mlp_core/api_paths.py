@@ -1,4 +1,4 @@
-# Route paths of the platform API, shared by the API and the CLI.
+# Route paths of the platform API, shared by the API and the CLI, and of its Web UI.
 HEALTH = "/health"
 LOGIN = "/auth/login"
 VERIFY = "/auth/verify"
@@ -10,3 +10,8 @@ DATASET_VERSION = "/datasets/{name}/versions/{version}"
 DATASET_DOWNLOAD = "/datasets/{name}/versions/{version}/download"
 PIPELINES = "/pipelines"
 CANCEL_PIPELINE = "/pipelines/{id}/cancel"
+WEB_LOGIN = "/login"
+WEB_PIPELINES = "/"
+WEB_PIPELINE_LIST = "/ui/pipelines/list"
+WEB_PIPELINE_FORM = "/ui/pipelines/form"
+WEB_CANCEL_PIPELINE = "/ui/pipelines/{id}/cancel"

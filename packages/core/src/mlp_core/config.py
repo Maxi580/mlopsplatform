@@ -23,7 +23,7 @@ TOKEN_LIFETIME = timedelta(hours=12)
 JWT_ALGORITHM = "HS256"
 MAX_FAILED_LOGINS = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
-PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN}
+PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN, api_paths.WEB_LOGIN}
 DEFAULT_HF_REVISION = "main"
 # Shorter Secret values would match ordinary request strings.
 MIN_SECRET_LENGTH = 8
@@ -54,6 +54,14 @@ RECONCILE_INTERVAL = timedelta(seconds=10)
 SECRET_MAX_AGE = timedelta(hours=48)
 # The KFP UI's run page, behind the platform's /pipeline/ route.
 KUBEFLOW_RUN_URL = "/pipeline/#/runs/details/{run_id}"
+
+# Web UI
+KUBEFLOW_UI_URL = "/pipeline/"
+MLFLOW_UI_URL = "/mlflow/"
+# The last part of a form field's name that takes further TRL/PEFT settings as YAML.
+MORE_SETTINGS = "*"
+# How often the Pipelines list reloads.
+PIPELINE_LIST_REFRESH = "5s"
 
 # Datasets
 # TRL's standard Dataset row formats -> required field -> its value; the first match wins.

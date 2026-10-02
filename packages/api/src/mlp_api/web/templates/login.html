@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>MLOps Platform</h1>
+<form method="post" action="{{ api_paths.WEB_LOGIN }}">
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <label>Shared password <input type="password" name="password" autofocus required></label>
+  <button>Log in</button>
+</form>
+{% endblock %}

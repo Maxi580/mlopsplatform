@@ -82,6 +82,10 @@ mlp cancel 7             # stops the run and deletes its Secrets
 
 Each Pipeline first runs `fetch`, which downloads the Base Model at its pinned commit into the Model Cache, and ends with a `cleanup` step that runs even after a failure. The Hugging Face token comes from the Profile's `secrets`, else `HF_TOKEN` or `hf auth login`, else a hidden prompt (Enter skips it; public models download anonymously). It lives in a per-Pipeline Kubernetes Secret that only `fetch` sees, is redacted from step logs, and is deleted once the Pipeline finishes or is cancelled (any left over are swept after 48 hours). A step whose GPUs are busy waits and shows as `waiting for GPU`. Pipelines are never retried automatically.
 
+## Web UI
+
+Open `https://<domain>/` and log in with the shared password; the cookie lasts 12 hours and also opens the KFP UI (`/pipeline/`) and the MLflow UI (`/mlflow/`), which send a logged-out browser to the same login page. The Pipelines page shows the platform's GPU count, a list of every Pipeline that updates every few seconds (with Cancel and links to its Kubeflow run and MLflow Run), and a form built from the published schema. The form makes the same Pipeline Request the CLI does: a comma in a list field (e.g. `target_modules`) makes a list, and each "More settings" box takes further `SFTConfig`/`LoraConfig` keys as YAML. Errors appear next to their field, and the Hugging Face token is sent as a Secret beside the request.
+
 ## Development
 
 ```sh

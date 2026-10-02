@@ -1,0 +1,34 @@
+<form id="pipeline-form" hx-post="{{ api_paths.WEB_PIPELINE_FORM }}" hx-swap="outerHTML">
+  {% if notice %}<p><mark>{{ notice }}</mark></p>{% endif %}
+  {% for error in form_errors %}<p class="error">{{ error }}</p>{% endfor %}
+  {% for field in fields %}
+  <div style="margin-left: {{ field.depth - 1 }}rem">
+    {% if field.kind == "section" %}
+    <h4>{{ field.label }}</h4>
+    {% elif field.kind == "more" %}
+    <label>More settings (YAML)
+      <textarea name="{{ field.name }}" rows="3" placeholder="weight_decay: 0.01">{{ field.value }}</textarea></label>
+    {% elif field.kind == "choice" %}
+    <label>{{ field.label }}
+      <select name="{{ field.name }}">
+        {% for choice in field.choices %}
+        <option {% if choice | string == field.value %}selected{% endif %}>{{ choice }}</option>
+        {% endfor %}
+      </select></label>
+    {% elif field.kind == "fixed" %}
+    <label>{{ field.label }} <input name="{{ field.name }}" value="{{ field.fixed }}" readonly></label>
+    {% else %}
+    <label>{{ field.label }}
+      <input name="{{ field.name }}" value="{{ field.value }}"
+             {% if field.kind == "integer" %}type="number" step="1"{% elif field.kind == "number" %}type="number" step="any"{% endif %}
+             {% if field.kind == "list" %}placeholder="one value, or several separated by commas"{% endif %}></label>
+    {% endif %}
+    {% if field.error %}<small class="error" id="{{ field.name }}-error">{{ field.error }}</small>{% endif %}
+  </div>
+  {% endfor %}
+  <h4>Secrets</h4>
+  {% for slot in config.SECRET_ENV_VARS %}
+  <label>{{ slot }} (optional) <input type="password" name="{{ slot }}" autocomplete="off"></label>
+  {% endfor %}
+  <button>Submit</button>
+</form>

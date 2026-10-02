@@ -7,10 +7,15 @@ from fastapi.testclient import TestClient
 from mlp_api.app import app
 from mlp_api.auth.account import set_password
 from mlp_api.pipelines.cluster import KubeflowRun
+from mlp_api.pipelines.hugging_face import HubModel
 from mlp_core import api_paths, config
+
+from .test_datasets import CHAT, jsonl, upload
 
 PASSWORD = "correct horse battery staple"
 JWT_SECRET = "test-jwt-secret-of-at-least-32-bytes"
+BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+COMMIT = "7ae557604adf67be50417f59c2c2f167def9a775"
 
 
 @pytest.fixture
@@ -136,3 +141,9 @@ def cluster(api):
 def logged_in_api(api, hugging_face, object_store, cluster):
     api.post(api_paths.LOGIN, json={"password": PASSWORD})
     return api
+
+
+@pytest.fixture
+def submittable(logged_in_api, hugging_face):
+    hugging_face.models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
+    upload(logged_in_api, "chat", jsonl(CHAT))

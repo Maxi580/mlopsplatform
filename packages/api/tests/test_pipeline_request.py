@@ -7,10 +7,8 @@ from mlp_api.pipelines.hugging_face import HubModel
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_core import config
 
-from .conftest import FakeHuggingFace, FakeObjectStore
+from .conftest import BASE_MODEL, COMMIT, FakeHuggingFace, FakeObjectStore
 
-BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
-COMMIT = "7ae557604adf67be50417f59c2c2f167def9a775"
 HF_TOKEN = "hf_" + "a1B2c3D4" * 5
 
 

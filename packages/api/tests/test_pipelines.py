@@ -53,12 +53,6 @@ def test_validation_requires_login(api, hugging_face):
 HF_TOKEN = "hf_" + "s3cr3tT0ken" * 4
 
 
-@pytest.fixture
-def submittable(logged_in_api, hugging_face):
-    hugging_face.models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
-    upload(logged_in_api, "chat", jsonl(CHAT))
-
-
 def submit(api, request=None, secrets=None):
     submission = {"request": request or pipeline_request(), "secrets": secrets or {}}
     return api.post(api_paths.PIPELINES, json=submission)
