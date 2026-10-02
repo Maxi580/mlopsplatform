@@ -25,6 +25,14 @@ def run(finetune: FinetunePhases = "", name: PipelineName = None) -> None:
     typer.echo(f"Submitted Pipeline {pipeline['id']}; follow it with `mlp ls`")
 
 
+def rerun(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:
+    """Submit a Pipeline's resolved request again as a new Pipeline, with Secrets read afresh."""
+    with api_client() as client:
+        original = exit_on_error(client.get(api_paths.PIPELINE.format(id=pipeline_id))).json()
+    pipeline = send_with_secrets(api_paths.PIPELINES, original["request"], load_profile())
+    typer.echo(f"Submitted Pipeline {pipeline['id']}; follow it with `mlp ls`")
+
+
 def ls() -> None:
     """List Pipelines with their Owner, status, Stages and links."""
     profile = load_profile()
@@ -66,6 +74,11 @@ def send_pipeline_request(path: str, finetune: str, name: str | None) -> dict:
         raise typer.Exit(1) from None
 
     # 2. The API's verdict, with the Secrets beside the request.
+    return send_with_secrets(path, request, profile)
+
+
+def send_with_secrets(path: str, request: dict, profile: dict) -> dict:
+    """The API's answer to the request with the Secrets read now; exits on a rejection."""
     submission = {"request": request, "secrets": collect_secrets(profile)}
     with api_client() as client:
         response = client.post(path, json=submission)

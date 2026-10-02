@@ -129,3 +129,18 @@ def test_cancel_cancels_the_pipeline(logged_in, home, fake_api, platform_ca):
     assert result.exit_code == 0, result.output
     assert fake_api.received[0][0] == path
     assert "cancelled" in result.output
+
+
+def test_rerun_submits_the_stored_request_with_fresh_secrets(
+    logged_in, home, fake_api, platform_ca
+):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE_WITHOUT_SECRETS)
+    stored = {"name": "qwen-sft", "finetune": {"base_model": "hf:Qwen/Qwen3-0.6B@abc"}}
+    fake_api.answers[api_paths.PIPELINE.format(id=3)] = (200, {"id": 3, "request": stored})
+
+    result = mlp("rerun", "3", input=f"{OTHER_TOKEN}\n")
+
+    assert result.exit_code == 0, result.output
+    [(path, submission)] = [r for r in fake_api.received if r[0] == api_paths.PIPELINES]
+    assert submission == {"request": stored, "secrets": {"hf_token": OTHER_TOKEN}}
+    assert "Pipeline 7" in result.output

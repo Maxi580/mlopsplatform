@@ -165,6 +165,40 @@ def test_a_pipeline_kubeflow_refused_is_failed(logged_in_api, submittable, clust
     assert pipelines(logged_in_api)[0]["status"] == "failed"
 
 
+def pipeline(api, pipeline_id):
+    return api.get(api_paths.PIPELINE.format(id=pipeline_id))
+
+
+def test_a_pipeline_returns_its_resolved_request_without_its_secrets(logged_in_api, submittable):
+    pipeline_id = submit(logged_in_api, secrets={"hf_token": HF_TOKEN}).json()["id"]
+
+    response = pipeline(logged_in_api, pipeline_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["id"] == pipeline_id
+    finetune = response.json()["request"]["finetune"]
+    assert finetune["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
+    assert finetune["phases"][0]["dataset"] == "dataset:chat@1"
+    assert HF_TOKEN not in response.text
+
+
+def test_a_resolved_request_submits_again_as_a_new_pipeline(logged_in_api, submittable, cluster):
+    first = submit(logged_in_api, secrets={"hf_token": HF_TOKEN}).json()["id"]
+    request = pipeline(logged_in_api, first).json()["request"]
+
+    response = submit(logged_in_api, request, secrets={"hf_token": "hf_fresh"})
+
+    assert response.status_code == 202, response.text
+    second = response.json()["id"]
+    assert second != first
+    assert pipeline(logged_in_api, second).json()["request"] == request
+    assert cluster.secrets[f"pipeline-{second}"] == {"hf_token": "hf_fresh"}
+
+
+def test_an_unknown_pipeline_is_not_found(logged_in_api):
+    assert pipeline(logged_in_api, 42).status_code == 404
+
+
 def reconcile(api):
     reconcile_pipelines(api.app.state.engine, api.app.state.cluster)
 
@@ -282,6 +316,7 @@ def test_cancelling_an_unknown_pipeline_is_not_found(logged_in_api):
 def test_pipelines_require_login(api, cluster):
     assert submit(api).status_code == 401
     assert cancel(api, 1).status_code == 401
+    assert pipeline(api, 1).status_code == 401
 
 
 def test_a_cancel_during_a_reconcile_stays_cancelled(logged_in_api, submittable, cluster):

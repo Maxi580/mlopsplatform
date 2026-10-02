@@ -3,7 +3,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from mlp_api.pipelines.lifecycle import cancel_pipeline, list_pipelines, submit_pipeline
+from mlp_api.pipelines.lifecycle import (
+    cancel_pipeline,
+    get_pipeline,
+    list_pipelines,
+    submit_pipeline,
+)
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_core import api_paths
 from mlp_core.pipeline_request.schema import PipelineRequest
@@ -45,6 +50,15 @@ def submit(submission: Submission, request: Request) -> dict:
 @router.get(api_paths.PIPELINES)
 def pipelines(request: Request) -> list[dict]:
     return list_pipelines(request.app.state.engine)
+
+
+# Secrets are never stored, so the resolved request is safe to return.
+@router.get(api_paths.PIPELINE)
+def pipeline(id: int, request: Request) -> dict:
+    try:
+        return get_pipeline(request.app.state.engine, id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
 
 
 @router.post(api_paths.CANCEL_PIPELINE)

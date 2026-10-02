@@ -83,8 +83,6 @@ def create_pipeline(engine: Engine, name: str, request: dict, cases: dict | None
 def cancel_pipeline(engine: Engine, cluster: Cluster, pipeline_id: int) -> None:
     """Stops the run and deletes the Secret; LookupError if unknown, ValueError if it can't."""
     row = find_pipeline(engine, pipeline_id)
-    if row is None:
-        raise LookupError(f"No Pipeline {pipeline_id}")
     if row.status in config.FINISHED_STATUSES:
         raise ValueError(f"Pipeline {pipeline_id} already {row.status}")
     if row.kubeflow_run_id is None:
@@ -100,20 +98,27 @@ def list_pipelines(engine: Engine) -> list[dict]:
     """Every Pipeline, newest first, with its enabled Stages and links."""
     with engine.connect() as connection:
         rows = connection.execute(select(pipeline).order_by(pipeline.c.id.desc())).all()
-    return [
-        {
-            "id": row.id,
-            "name": row.name,
-            "owner": row.owner,
-            "status": row.status,
-            "stages": [stage for stage in config.STAGES if stage in row.request],
-            "created_at": row.created_at.isoformat(),
-            "kubeflow_run_url": row.kubeflow_run_id and kubeflow_run_url(row.kubeflow_run_id),
-            "mlflow_run_url": row.mlflow_run_url,
-            "cases": row.cases,
-        }
-        for row in rows
-    ]
+    return [pipeline_summary(row) for row in rows]
+
+
+def get_pipeline(engine: Engine, pipeline_id: int) -> dict:
+    """The Pipeline as listed, plus its resolved request; LookupError if unknown."""
+    row = find_pipeline(engine, pipeline_id)
+    return {**pipeline_summary(row), "request": row.request}
+
+
+def pipeline_summary(row) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "owner": row.owner,
+        "status": row.status,
+        "stages": [stage for stage in config.STAGES if stage in row.request],
+        "created_at": row.created_at.isoformat(),
+        "kubeflow_run_url": row.kubeflow_run_id and kubeflow_run_url(row.kubeflow_run_id),
+        "mlflow_run_url": row.mlflow_run_url,
+        "cases": row.cases,
+    }
 
 
 def kubeflow_run_url(run_id: str) -> str:
@@ -158,4 +163,7 @@ def set_pipeline(engine: Engine, pipeline_id: int, **values) -> None:
 
 def find_pipeline(engine: Engine, pipeline_id: int):
     with engine.connect() as connection:
-        return connection.execute(select(pipeline).where(pipeline.c.id == pipeline_id)).first()
+        row = connection.execute(select(pipeline).where(pipeline.c.id == pipeline_id)).first()
+    if row is None:
+        raise LookupError(f"No Pipeline {pipeline_id}")
+    return row
