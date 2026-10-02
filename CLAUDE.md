@@ -40,6 +40,9 @@ Judgement calls only. Anything a linter can check lives in the linter config.
 - Prefer deleting code to adding configuration options.
 - Keep everything as small as possible.
 
+#### Constants
+- Declare Constants in env files and not at the top of the file
+
 ## Agent skills
 
 ### Issue tracker
