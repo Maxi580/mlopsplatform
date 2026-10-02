@@ -9,6 +9,7 @@ from mlp_api.pipelines.reconciler import reconcile_pipelines
 from mlp_core import api_paths
 
 from .test_datasets import CHAT, jsonl, upload
+from .test_models import register
 from .test_pipeline_request import BASE_MODEL, COMMIT, pipeline_request, without
 
 
@@ -38,12 +39,10 @@ def test_validate_returns_the_resolved_request(logged_in_api, hugging_face):
 
 
 def test_validate_rejects_with_paths_inside_the_pipeline_request(logged_in_api):
-    response = validate(logged_in_api, without(pipeline_request(), "finetune", "base_model"))
+    response = validate(logged_in_api, without(pipeline_request(), "finetune", "backend"))
 
     assert response.status_code == 422
-    assert response.json()["detail"] == [
-        {"loc": ["finetune", "base_model"], "msg": "Field required"}
-    ]
+    assert response.json()["detail"] == [{"loc": ["finetune", "backend"], "msg": "Field required"}]
 
 
 def test_validation_requires_login(api, hugging_face):
@@ -356,6 +355,23 @@ def test_finetune_trains_after_fetch_on_the_backends_trainer_image_with_the_plat
     request = json.loads(inputs["request"])
     assert request["finetune"]["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
     assert request["finetune"]["phases"][0]["dataset"] == "dataset:chat@1"
+
+
+def test_a_pipeline_starting_from_a_model_version_fetches_nothing(
+    logged_in_api, submittable, cluster, model_registry, object_store
+):
+    register(model_registry, object_store, "uploaded", 1, weights="full")
+    request = without(pipeline_request(), "finetune", "base_model")
+    request["finetune"]["from"] = "model:uploaded"
+
+    assert submit(logged_in_api, request).status_code == 202
+
+    pipeline, _ = submitted_pipeline(cluster)
+    tasks = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"]
+    assert list(tasks) == ["finetune"]
+    parameters = tasks["finetune"]["inputs"]["parameters"]
+    request = json.loads(parameters["request"]["runtimeValue"]["constant"])
+    assert request["finetune"]["from"] == "model:uploaded@1"
 
 
 def test_finetune_runs_offline_from_the_model_cache_and_reads_datasets_from_the_object_store(

@@ -13,4 +13,8 @@ export const datasetDownload = (name: string, version: number) =>
 export const MODELS = "/models";
 export const modelVersion = (name: string, version: number) =>
   `/models/${name}/versions/${version}`;
+export const modelVersionFiles = (name: string, version: number) =>
+  `${modelVersion(name, version)}/files`;
+export const MODEL_UPLOADS = "/models/uploads";
+export const modelUploadComplete = (id: string) => `/models/uploads/${id}/complete`;
 export const STORAGE = "/storage";

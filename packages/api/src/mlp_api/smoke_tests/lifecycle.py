@@ -1,11 +1,15 @@
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import Engine, select, update
 
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
 from mlp_api.models.mlflow import MLflow
 from mlp_api.models.registry import delete_model_version
+from mlp_api.models.uploads import upload_model_directory
 from mlp_api.pipelines.compiler import compile_smoke_test
+from mlp_api.pipelines.hugging_face import pin_base_model
 from mlp_api.pipelines.lifecycle import (
     create_pipeline,
     kubeflow_run_url,
@@ -17,7 +21,7 @@ from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.smoke_tests.cases import SmokeTestSelection, finetune_case_request, finetune_cases
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core import config
-from mlp_core.pipeline_request.references import base_model_reference, split_base_model_reference
+from mlp_core.pipeline_request.references import model_reference, split_base_model_reference
 
 is_smoke_test = pipeline.c.cases.is_not(None)
 
@@ -39,22 +43,24 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
 
     try:
         # 3. The Base Model, pinned to a commit.
-        repo, _ = split_base_model_reference(config.SMOKE_TEST_BASE_MODEL)
-        model = state.hugging_face.find_model(repo, config.DEFAULT_HF_REVISION, None)
-        if model is None:
-            raise RuntimeError(f"{repo} is not reachable on Hugging Face")
-        base_model = base_model_reference(repo, model.commit)
+        base_model = pin_base_model(state.hugging_face, config.SMOKE_TEST_BASE_MODEL, None)
 
-        # 4. The bundled Datasets, uploaded the normal way.
+        # 4. The bundled Datasets and the tiny model, uploaded the normal way.
         for phase in {phase for phase, _, _ in trainings.values()}:
             dataset = config.SMOKE_TEST_DATASETS_DIRECTORY / f"{phase}.jsonl"
             upload_dataset_version(engine, state.object_store, f"{name}-{phase}", dataset)
+        starting_models = dict.fromkeys(trainings, {"base_model": base_model})
+        if config.SMOKE_TEST_UPLOADED_MODEL_CASE in trainings:
+            uploaded = upload_tiny_model(state, f"{name}-uploaded")
+            starting_models[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = {"from": uploaded}
 
         # 5. Each case's Pipeline Request, resolved the way users' are and stored for in-use checks.
         requests = {}
         for case, training in trainings.items():
-            data = finetune_case_request(case, name, base_model, *training)
-            requests[case], errors = validate_pipeline_request(data, {}, state.hugging_face, engine)
+            data = finetune_case_request(case, name, starting_models[case], *training)
+            requests[case], errors = validate_pipeline_request(
+                data, {}, state.hugging_face, engine, state.model_registry
+            )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")
         resolved = {case: request.model_dump(mode="json") for case, request in requests.items()}
@@ -75,6 +81,19 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         raise RuntimeError(f"Smoke Test {name} did not start: {error}") from None
     set_pipeline(engine, pipeline_id, kubeflow_run_id=run_id)
     return {"id": pipeline_id, "name": name, "kubeflow_run_url": kubeflow_run_url(run_id)}
+
+
+def upload_tiny_model(state, name: str) -> str:
+    """The `model:` Reference of the Smoke Test's tiny model, downloaded and then uploaded."""
+    repo, commit = split_base_model_reference(
+        pin_base_model(state.hugging_face, config.SMOKE_TEST_UPLOADED_MODEL, None)
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        state.hugging_face.download_model(repo, commit, Path(directory))
+        uploaded = upload_model_directory(
+            state.object_store, state.model_registry, name, Path(directory)
+        )
+    return model_reference(uploaded["name"], uploaded["version"])
 
 
 def clean_up_smoke_tests(engine: Engine, object_store: ObjectStore, model_registry: MLflow) -> None:

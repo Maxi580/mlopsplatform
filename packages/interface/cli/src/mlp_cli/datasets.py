@@ -3,7 +3,7 @@ from typing import Annotated
 
 import typer
 
-from mlp_cli.api import api_client, download_client, exit_on_error
+from mlp_cli.api import api_client, download_file, exit_on_error, object_store_client
 from mlp_cli.versions import split_version
 from mlp_core import api_paths
 
@@ -62,13 +62,8 @@ def download(
         url = exit_on_error(client.get(path)).json()["url"]
     # 2. The file, streamed straight from the object store.
     output = output or Path(f"{name}-{version}.jsonl")
-    with download_client() as client, client.stream("GET", url) as response:
-        if response.is_error:
-            typer.echo(f"Download failed ({response.status_code})", err=True)
-            raise typer.Exit(1)
-        with output.open("wb") as file:
-            for chunk in response.iter_bytes():
-                file.write(chunk)
+    with object_store_client() as client:
+        download_file(client, url, output)
     typer.echo(f"Saved {name}@{version} to {output}")
 
 

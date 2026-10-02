@@ -35,6 +35,12 @@ class FakeApi(BaseHTTPRequestHandler):
         else:
             self.answer(200 if self.headers["Authorization"] == f"Bearer {TOKEN}" else 401, None)
 
+    # Presigned part uploads, which carry no login.
+    def do_PUT(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        self.server.parts.append((self.path, self.headers["Authorization"], body))
+        self.answer(200, b"")
+
     def do_DELETE(self):
         self.server.received.append((self.path, self.headers["Authorization"]))
         self.answer(*self.server.answers[self.path])
@@ -58,7 +64,7 @@ def platform_ca():
 @pytest.fixture
 def fake_api(platform_ca):
     server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApi)
-    server.received, server.answers = [], {}
+    server.received, server.answers, server.parts = [], {}, []
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     platform_ca.issue_cert("127.0.0.1").configure_cert(context)
     server.socket = context.wrap_socket(server.socket, server_side=True)

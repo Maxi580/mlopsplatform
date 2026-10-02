@@ -10,14 +10,24 @@ from mlp_core import api_paths, config
 Cases = Annotated[str, typer.Option(help="Comma-separated; naming any runs a custom Smoke Test")]
 
 
-def smoke_test(phases: Cases = "", methods: Cases = "", backends: Cases = "") -> None:
-    """Run the Smoke Test, every case or only the named finetune ones, and print each result."""
+def smoke_test(
+    phases: Cases = "",
+    methods: Cases = "",
+    backends: Cases = "",
+    uploaded_model: Annotated[
+        bool, typer.Option(help="Upload a tiny model and finetune from it; runs a custom one")
+    ] = False,
+) -> None:
+    """Run the Smoke Test, every case or only the named ones, and print each result."""
     # 1. The complete Smoke Test, or a custom one when cases are named.
     named = {"phases": phases, "methods": methods, "backends": backends}
     finetune = {key: value.split(",") for key, value in named.items() if value}
+    selection = {"finetune": finetune} if finetune else {}
+    if uploaded_model:
+        selection["uploaded_model"] = True
     with api_client() as client:
-        if finetune:
-            response = client.post(api_paths.SMOKE_TEST_CUSTOM, json={"finetune": finetune})
+        if selection:
+            response = client.post(api_paths.SMOKE_TEST_CUSTOM, json=selection)
         else:
             response = client.post(api_paths.SMOKE_TEST_COMPLETE)
     started = exit_on_error(response).json()

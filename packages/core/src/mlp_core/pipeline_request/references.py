@@ -8,6 +8,7 @@ DATASET_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
 MODEL_NAME_PATTERN = r"[a-z0-9][a-z0-9.-]*"
 BaseModelReference = Annotated[str, Field(pattern=r"^hf:[\w.-]+/[\w.-]+(@[\w.-]+)?$")]
 DatasetReference = Annotated[str, Field(pattern=rf"^dataset:{DATASET_NAME_PATTERN}(@\d+)?$")]
+ModelReference = Annotated[str, Field(pattern=rf"^model:{MODEL_NAME_PATTERN}(@\d+)?$")]
 
 
 def split_base_model_reference(reference: str) -> tuple[str, str]:
@@ -28,6 +29,12 @@ def split_dataset_reference(reference: str) -> tuple[str, int | None]:
 
 def dataset_reference(name: str, version: int) -> str:
     return f"dataset:{name}@{version}"
+
+
+def split_model_reference(reference: str) -> tuple[str, int | None]:
+    """The Registered Model name and version; the version is None when none is named."""
+    name, _, version = reference.removeprefix("model:").partition("@")
+    return name, int(version) if version else None
 
 
 def model_reference(name: str, version: int) -> str:

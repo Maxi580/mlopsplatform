@@ -552,6 +552,21 @@ tr.highlighted {
   margin-top: 32px;
 }
 
+.model-files {
+  margin-top: 16px;
+}
+
+.model-files .buckets {
+  margin-top: 12px;
+}
+
+.upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
 /* Pipeline builder */
 
 .builder {

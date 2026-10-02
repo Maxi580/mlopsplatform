@@ -7,17 +7,26 @@ import {
   datasetVersion,
   MODELS,
   modelVersion,
+  modelVersionFiles,
   STORAGE,
 } from "../apiPaths";
 import { BUCKET_CONTENTS, STORAGE_WARNING_PERCENT } from "../config";
-import type { Dataset, RegisteredModel, Storage } from "./storage";
+import ModelUploadForm from "./ModelUploadForm";
+import type { Dataset, ModelVersionFile, RegisteredModel, Storage } from "./storage";
 
 export default function StoragePage() {
   const datasets = useApi<Dataset[]>(DATASETS);
   const models = useApi<RegisteredModel[]>(MODELS);
   const storage = useApi<Storage>(STORAGE);
   const [notice, setNotice] = useState<{ text: string; failed: boolean }>();
+  const [modelFiles, setModelFiles] = useState<{ label: string; files: ModelVersionFile[] }>();
   const error = datasets.error ?? models.error ?? storage.error;
+
+  function reload() {
+    datasets.reload();
+    models.reload();
+    storage.reload();
+  }
 
   async function remove(path: string, label: string) {
     try {
@@ -26,9 +35,19 @@ export default function StoragePage() {
     } catch (failure) {
       setNotice({ text: errorMessage(failure), failed: true });
     }
-    datasets.reload();
-    models.reload();
-    storage.reload();
+    reload();
+  }
+
+  // A Model Version has many files, so they are offered as links rather than saved at once.
+  async function showModelFiles(name: string, version: number) {
+    try {
+      const { files } = await callApi<{ files: ModelVersionFile[] }>(
+        modelVersionFiles(name, version),
+      );
+      setModelFiles({ label: `${name}@${version}`, files });
+    } catch (failure) {
+      setNotice({ text: errorMessage(failure), failed: true });
+    }
   }
 
   async function download(name: string, version: number) {
@@ -49,7 +68,9 @@ export default function StoragePage() {
       <header className="page-header">
         <div>
           <h1>Storage</h1>
-          <p className="muted">Datasets, Registered Models and how full the object store is.</p>
+          <p className="muted">
+            Datasets, Registered Models, model uploads and how full the object store is.
+          </p>
         </div>
       </header>
 
@@ -102,10 +123,44 @@ export default function StoragePage() {
               formatBytes(v.size_bytes),
             ],
             path: modelVersion(model.name, v.version),
+            onDownload: () => showModelFiles(model.name, v.version),
           })),
         )}
       />
+      {modelFiles && <ModelFilesCard {...modelFiles} />}
+
+      <section className="storage-section">
+        <h2>Upload a model</h2>
+        <p className="muted">
+          Full weights (config.json, tokenizer and *.safetensors), or an Adapter with its base.
+        </p>
+        <ModelUploadForm
+          onDone={(text, failed) => {
+            setNotice({ text, failed });
+            reload();
+          }}
+        />
+      </section>
     </>
+  );
+}
+
+function ModelFilesCard({ label, files }: { label: string; files: ModelVersionFile[] }) {
+  return (
+    <section className="card model-files">
+      <strong>Files of {label}</strong>
+      <ul className="buckets">
+        {files.map((file) => (
+          <li key={file.path}>
+            <a className="mono" href={file.url} download={file.path.split("/").pop()}>
+              {file.path}
+            </a>
+            <span />
+            <span>{formatBytes(file.size_bytes)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

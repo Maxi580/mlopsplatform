@@ -18,6 +18,14 @@ const schema = {
           pattern: "^hf:[\\w.-]+/[\\w.-]+(@[\\w.-]+)?$",
           title: "Base Model",
         },
+        from: {
+          anyOf: [
+            { type: "string", pattern: "^model:[a-z0-9][a-z0-9.-]*(@\\d+)?$" },
+            { type: "null" },
+          ],
+          default: null,
+          title: "From Model Version",
+        },
         backend: { enum: ["hf", "unsloth"], type: "string", title: "Backend" },
         phases: {
           type: "array",
@@ -69,6 +77,10 @@ test("every schema value becomes a field of the right kind", () => {
     moreSettings: true,
   });
   expect(byName.finetune).toMatchObject({ kind: "section", moreSettings: false });
+  expect(byName["finetune.from"]).toMatchObject({
+    kind: "text",
+    pattern: expect.stringMatching(/^\^model:/),
+  });
 });
 
 test("the form's values become a Pipeline Request", () => {

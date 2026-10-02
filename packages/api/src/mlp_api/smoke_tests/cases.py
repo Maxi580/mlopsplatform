@@ -17,33 +17,36 @@ class SmokeTestSelection(Strict):
     """The cases of a custom Smoke Test; `fetch` always runs, as every other case needs it."""
 
     finetune: FinetuneCases | None = None
+    # Uploads a tiny model and trains an sft/lora/hf Phase from it.
+    uploaded_model: bool = False
 
 
-COMPLETE_SMOKE_TEST = SmokeTestSelection(finetune=FinetuneCases())
+COMPLETE_SMOKE_TEST = SmokeTestSelection(finetune=FinetuneCases(), uploaded_model=True)
 
 
 def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, str]]:
     """Case name -> its Phase algorithm, method and backend."""
-    if selection.finetune is None:
-        return {}
-    chosen = selection.finetune
-    return {
+    chosen = selection.finetune or FinetuneCases(phases=[], methods=[], backends=[])
+    cases = {
         f"{phase}-{method}-{backend}": (phase, method, backend)
         for phase in chosen.phases
         for method in chosen.methods
         for backend in chosen.backends
         if method in config.BACKENDS[backend]
     }
+    if selection.uploaded_model:
+        cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_UPLOADED_MODEL_TRAINING
+    return cases
 
 
 def finetune_case_request(
-    case: str, smoke_test: str, base_model: str, phase: str, method: str, backend: str
+    case: str, smoke_test: str, starting_model: dict, phase: str, method: str, backend: str
 ) -> dict:
     """The Pipeline Request of one case, which trains on the Smoke Test's Dataset for the Phase."""
     return {
         "name": f"{smoke_test}-{case}",
         "finetune": {
-            "base_model": base_model,
+            **starting_model,
             "backend": backend,
             "phases": [
                 {

@@ -4,6 +4,7 @@ import mlflow
 from mlflow.exceptions import MlflowException
 
 from mlp_core import config
+from mlp_core.pipeline_request.references import split_model_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 
@@ -31,18 +32,25 @@ def register_model_version(
         if error.error_code != "RESOURCE_ALREADY_EXISTS":
             raise
     finetune = request.finetune
+    tool_parser = config.TOOL_PARSERS.get(model_type, "none")
+    if finetune.from_:
+        # A Model Version keeps its parser, which an upload may name for an unknown model_type.
+        name, version = split_model_reference(finetune.from_)
+        starting = client.get_model_version(name, str(version))
+        tool_parser = starting.tags.get("tool_parser", tool_parser)
     client.create_model_version(
         request.name,
         source=f"{client.get_run(run_id).info.artifact_uri}/model",
         run_id=run_id,
         tags={
             "weights": "adapter",
-            "base_model": finetune.base_model,
+            # The Adapter's base: the Base Model or the full-weight Model Version it started from.
+            "base_model": finetune.starting_model,
             "pipeline": pipeline_id,
             "phase": str(phase_index + 1),
             "algorithm": finetune.phases[phase_index].algorithm,
             "backend": finetune.backend,
-            "tool_parser": config.TOOL_PARSERS.get(model_type, "none"),
+            "tool_parser": tool_parser,
             "tools_rendered": str(renders_tools(tokenizer)).lower(),
         },
     )

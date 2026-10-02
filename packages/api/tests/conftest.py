@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from mlp_api.app import app
 from mlp_api.auth.account import set_password
+from mlp_api.models.mlflow import ModelVersion
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.compiler import StepEnvironment
 from mlp_core import api_paths, config
@@ -57,10 +58,17 @@ class FakeHuggingFace:
     def __init__(self):
         self.models = {}
         self.lookups = []
+        # Repo -> its files, for downloads.
+        self.files = {}
 
     def find_model(self, repo, revision, token):
         self.lookups.append((repo, revision, token))
         return self.models.get(repo)
+
+    def download_model(self, repo, commit, directory):
+        for path, content in self.files[repo].items():
+            (directory / path).parent.mkdir(parents=True, exist_ok=True)
+            (directory / path).write_bytes(content)
 
 
 @pytest.fixture
@@ -70,23 +78,58 @@ def hugging_face(api):
 
 
 class FakeObjectStore:
-    """Keeps objects in memory per bucket, `objects` being the platform bucket."""
+    """Keeps objects in memory per bucket, `objects` being the platform bucket.
+
+    A multipart upload's parts arrive through `receive_part`, as a client's PUT to a part URL.
+    """
 
     def __init__(self):
         self.objects = {}
         self.buckets = {"platform": self.objects, "mlflow": {}, "mlpipeline": {}}
+        # Part URL -> its content, and multipart upload ID -> its parts' URLs.
+        self.parts = {}
+        self.multipart_uploads = {}
 
-    def upload_file(self, path, key):
-        self.objects[key] = path.read_bytes()
+    def upload_file(self, path, key, bucket="platform"):
+        self.buckets[bucket][key] = path.read_bytes()
 
     def delete(self, key):
         self.objects.pop(key, None)
 
-    def download_url(self, key):
-        return f"https://objects.test/{key}?signature=x"
+    def download_url(self, key, bucket="platform"):
+        return f"https://objects.test/{bucket}/{key}?signature=x"
+
+    def start_multipart_upload(self, bucket, key):
+        upload_id = f"multipart-{len(self.multipart_uploads) + 1}"
+        self.multipart_uploads[upload_id] = []
+        return upload_id
+
+    def part_upload_urls(self, bucket, key, upload_id, parts):
+        urls = [
+            f"https://objects.test/{bucket}/{key}?uploadId={upload_id}&partNumber={number}"
+            for number in range(1, parts + 1)
+        ]
+        self.multipart_uploads[upload_id] = urls
+        return urls
+
+    def receive_part(self, url, content):
+        self.parts[url] = content
+
+    def complete_multipart_upload(self, bucket, key, upload_id):
+        urls = self.multipart_uploads.pop(upload_id)
+        self.buckets[bucket][key] = b"".join(self.parts.pop(url, b"") for url in urls)
+
+    def read(self, bucket, key):
+        return self.buckets[bucket][key]
+
+    def objects_under(self, bucket, prefix):
+        return {k: v for k, v in self.buckets[bucket].items() if k.startswith(prefix)}
+
+    def list_objects(self, bucket, prefix):
+        return [{"Key": k, "Size": len(v)} for k, v in self.objects_under(bucket, prefix).items()]
 
     def size_of(self, bucket, prefix):
-        return sum(len(v) for k, v in self.buckets[bucket].items() if k.startswith(prefix))
+        return sum(len(v) for v in self.objects_under(bucket, prefix).values())
 
     def delete_all(self, bucket, prefix):
         objects = self.buckets[bucket]
@@ -114,6 +157,11 @@ class FakeModelRegistry:
 
     def model_versions(self):
         return list(self.versions)
+
+    def create_model_version(self, name, artifact_prefix, tags):
+        version = 1 + max((v.version for v in self.versions if v.name == name), default=0)
+        self.versions.append(ModelVersion(name, version, tags, artifact_prefix))
+        return version
 
     def delete_model_version(self, name, version):
         self.versions = [v for v in self.versions if (v.name, v.version) != (name, version)]

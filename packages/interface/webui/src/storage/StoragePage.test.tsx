@@ -116,3 +116,88 @@ test("the sidebar links the Storage page", async () => {
     "/storage",
   );
 });
+
+function directoryFile(path: string, content: string): File {
+  const file = new File([content], path.split("/").pop()!);
+  Object.defineProperty(file, "webkitRelativePath", { value: `my-model/${path}` });
+  return file;
+}
+
+test("a model directory uploads in parts straight to the object store, then registers", async () => {
+  const started = {
+    id: "abc",
+    part_size_bytes: 4,
+    files: [
+      { path: "config.json", part_urls: ["https://objects.test/c1"] },
+      {
+        path: "model.safetensors",
+        part_urls: ["https://objects.test/m1", "https://objects.test/m2"],
+      },
+    ],
+  };
+  const calls = fakeApi({
+    ...routes,
+    "POST /models/uploads": [201, started],
+    "PUT https://objects.test/c1": [200, null],
+    "PUT https://objects.test/m1": [200, null],
+    "PUT https://objects.test/m2": [200, null],
+    "POST /models/uploads/abc/complete": [201, { name: "my-model", version: 1 }],
+  });
+  renderApp("/storage");
+
+  await userEvent.type(await screen.findByLabelText("Name"), "my-model");
+  await userEvent.upload(screen.getByLabelText("Model directory"), [
+    directoryFile("config.json", "{}"),
+    directoryFile("model.safetensors", "weights"),
+    directoryFile(".git/HEAD", "ref"),
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+  expect(await screen.findByText("Uploaded my-model@1")).toBeInTheDocument();
+  const start = calls.find((call) => call.route === "POST /models/uploads")!;
+  expect(start.body).toEqual({
+    name: "my-model",
+    files: [
+      { path: "config.json", size_bytes: 2 },
+      { path: "model.safetensors", size_bytes: 7 },
+    ],
+    base: null,
+    tool_parser: null,
+  });
+  const parts = calls.filter((call) => call.route.startsWith("PUT "));
+  expect(parts.map((call) => [call.route, call.body.size])).toEqual([
+    ["PUT https://objects.test/c1", 2],
+    ["PUT https://objects.test/m1", 4],
+    ["PUT https://objects.test/m2", 3],
+  ]);
+});
+
+test("a refused model upload shows the reason", async () => {
+  const reason = "Rejected my-model: config.json is missing";
+  fakeApi({ ...routes, "POST /models/uploads": [422, { detail: reason }] });
+  renderApp("/storage");
+
+  await userEvent.type(await screen.findByLabelText("Name"), "my-model");
+  await userEvent.upload(screen.getByLabelText("Model directory"), [
+    directoryFile("model.safetensors", "weights"),
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+  expect(await screen.findByText(reason)).toBeInTheDocument();
+});
+
+test("a Model Version's download lists a link per file", async () => {
+  const files = [
+    { path: "adapter_config.json", size_bytes: 300, url: "https://objects.test/a?sig=x" },
+    { path: "adapter_model.safetensors", size_bytes: 2048, url: "https://objects.test/m?sig=x" },
+  ];
+  fakeApi({ ...routes, "GET /models/qwen-sft/versions/3/files": [200, { files }] });
+  renderApp("/storage");
+
+  const row = (await screen.findByText("qwen-sft@3")).closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: /download/i }));
+
+  const link = await screen.findByRole("link", { name: "adapter_model.safetensors" });
+  expect(link).toHaveAttribute("href", "https://objects.test/m?sig=x");
+  expect(screen.getByRole("link", { name: "adapter_config.json" })).toBeInTheDocument();
+});

@@ -26,8 +26,20 @@ def api_client() -> httpx.Client:
 
 
 # Presigned URLs carry their own signature, which the login token would clash with.
-def download_client() -> httpx.Client:
+def object_store_client() -> httpx.Client:
     return httpx.Client(verify=platform_ca(load_profile()), timeout=None)
+
+
+def download_file(client: httpx.Client, url: str, output: Path) -> None:
+    """Streams the presigned URL's object into the file; exits if the object store refuses."""
+    with client.stream("GET", url) as response:
+        if response.is_error:
+            typer.echo(f"Download failed ({response.status_code})", err=True)
+            raise typer.Exit(1)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("wb") as file:
+            for chunk in response.iter_bytes():
+                file.write(chunk)
 
 
 def exit_on_error(response: httpx.Response) -> httpx.Response:

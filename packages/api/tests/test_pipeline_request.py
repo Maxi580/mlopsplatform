@@ -7,7 +7,8 @@ from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.storage.database import create_tables
 from mlp_core import config
 
-from .conftest import FakeHuggingFace, FakeObjectStore
+from .conftest import FakeHuggingFace, FakeModelRegistry, FakeObjectStore
+from .test_models import register
 
 BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 COMMIT = "7ae557604adf67be50417f59c2c2f167def9a775"
@@ -85,11 +86,25 @@ def chat_dataset(engine, tmp_path):
 
 
 @pytest.fixture
-def validate(hugging_face, engine, chat_dataset):
+def model_registry():
+    return FakeModelRegistry()
+
+
+@pytest.fixture
+def validate(hugging_face, engine, chat_dataset, model_registry):
     def run(request, secrets=None):
-        return validate_pipeline_request(request, secrets or {}, hugging_face, engine)
+        return validate_pipeline_request(
+            request, secrets or {}, hugging_face, engine, model_registry
+        )
 
     return run
+
+
+def starting_from(model: str) -> dict:
+    """A valid request that starts from a Model Version instead of a Base Model."""
+    request = without(pipeline_request(), "finetune", "base_model")
+    request["finetune"]["from"] = model
+    return request
 
 
 def rejection(result) -> str:
@@ -166,7 +181,7 @@ def test_unknown_fields_are_rejected(validate, request_):
 @pytest.mark.parametrize(
     "path",
     [
-        ("finetune", "base_model"),
+        ("finetune", "backend"),
         ("finetune", "phases", 0, "dataset"),
         ("finetune", "phases", 0, "settings", "learning_rate"),
         ("finetune", "phases", 0, "settings", "num_train_epochs"),
@@ -268,3 +283,45 @@ def test_a_dataset_the_algorithm_cannot_train_on_is_rejected(validate, engine, t
     message = rejection(validate(pipeline_request(phase={"dataset": "dataset:preferences"})))
 
     assert "`preferences@1` has preference rows; sft trains on" in message
+
+
+def test_a_full_weight_model_version_to_start_from_resolves_to_its_latest_version(
+    validate, model_registry
+):
+    for version in (1, 2):
+        register(model_registry, FakeObjectStore(), "uploaded", version, weights="full")
+
+    request, errors = validate(starting_from("model:uploaded"))
+
+    assert errors == []
+    assert request.finetune.base_model is None
+    assert request.model_dump(mode="json")["finetune"]["from"] == "model:uploaded@2"
+
+
+@pytest.mark.parametrize(
+    ("model", "message"),
+    [
+        ("model:missing", "no Registered Model `missing`"),
+        ("model:uploaded@3", "`uploaded` has no version 3"),
+        ("model:qwen-sft@1", "is an Adapter"),
+    ],
+)
+def test_a_model_version_to_start_from_must_exist_and_hold_full_weights(
+    validate, model_registry, model, message
+):
+    register(model_registry, FakeObjectStore(), "uploaded", 1, weights="full")
+    register(model_registry, FakeObjectStore(), "qwen-sft", 1)
+
+    assert message in rejection(validate(starting_from(model)))
+
+
+@pytest.mark.parametrize("both", [False, True], ids=["neither", "both"])
+def test_finetune_starts_from_exactly_one_model(validate, model_registry, both):
+    register(model_registry, FakeObjectStore(), "uploaded", 1, weights="full")
+    request = starting_from("model:uploaded@1")
+    if both:
+        request["finetune"]["base_model"] = f"hf:{BASE_MODEL}"
+    else:
+        del request["finetune"]["from"]
+
+    assert "exactly one" in rejection(validate(request))

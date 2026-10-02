@@ -33,9 +33,11 @@ spec:
         - name: ml-pipeline-ui
           namespace: {{ .Values.namespaces.kubeflow }}
           port: {{ .Values.ports.kfpUi }}
-    # Presigned Dataset downloads; their signature is the login, so the path goes to SeaweedFS as is.
+    # Presigned downloads and model part uploads; their signature is the login, so the path goes to
+    # SeaweedFS as is. Matched by signature, as the mlflow bucket's paths overlap the MLflow UI's.
     - kind: Rule
-      match: {{ $host }} && PathPrefix(`/{{ .Values.platformBucket }}/datasets/`) && Method(`GET`)
+      match: {{ $host }} && QueryRegexp(`X-Amz-Signature`, `.+`) && (Method(`GET`) || Method(`PUT`))
+      priority: 1000
       services:
         - name: seaweedfs
           namespace: {{ .Values.namespaces.kubeflow }}

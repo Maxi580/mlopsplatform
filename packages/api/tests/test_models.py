@@ -2,12 +2,14 @@ from mlp_api.models.mlflow import ModelVersion
 from mlp_core import api_paths
 
 
-def register(model_registry, object_store, name, version, pipeline_id=1, files=None):
+def register(
+    model_registry, object_store, name, version, pipeline_id=1, files=None, weights="adapter"
+):
     """A Model Version whose files sit in the mlflow bucket, as the finetune Stage leaves them."""
     prefix = f"1/run-{name}-{version}/artifacts/model/"
     for file, content in (files or {"adapter_model.safetensors": b"weights"}).items():
         object_store.buckets["mlflow"][prefix + file] = content
-    tags = {"weights": "adapter", "base_model": "hf:Qwen/Qwen3@abc", "pipeline": str(pipeline_id)}
+    tags = {"weights": weights, "base_model": "hf:Qwen/Qwen3@abc", "pipeline": str(pipeline_id)}
     model_registry.versions.append(ModelVersion(name, version, tags, prefix))
 
 

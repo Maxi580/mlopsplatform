@@ -13,6 +13,7 @@ export const SECRET_SLOTS = { hf_token: "Hugging Face token" };
 export const REFERENCE_PLACEHOLDERS: Record<string, string> = {
   "^hf:": "hf:org/name or hf:org/name@revision",
   "^dataset:": "dataset:name or dataset:name@version",
+  "^model:": "model:name or model:name@version",
 };
 // Object store bucket -> what it holds, shown beside its usage.
 export const BUCKET_CONTENTS: Record<string, string> = {

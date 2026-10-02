@@ -5,19 +5,20 @@ from pydantic import ValidationError
 from sqlalchemy import Engine
 
 from mlp_api.datasets.registry import find_dataset_version
-from mlp_api.pipelines.hugging_face import HuggingFace
+from mlp_api.models.mlflow import MLflow
+from mlp_api.models.registry import pin_full_weights
+from mlp_api.pipelines.hugging_face import HuggingFace, pin_base_model
 from mlp_core import config
-from mlp_core.pipeline_request.references import (
-    base_model_reference,
-    dataset_reference,
-    split_base_model_reference,
-    split_dataset_reference,
-)
+from mlp_core.pipeline_request.references import dataset_reference, split_dataset_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 
 def validate_pipeline_request(
-    data: dict, secrets: dict[str, str], hugging_face: HuggingFace, engine: Engine
+    data: dict,
+    secrets: dict[str, str],
+    hugging_face: HuggingFace,
+    engine: Engine,
+    model_registry: MLflow,
 ) -> tuple[PipelineRequest | None, list[dict]]:
     """The request with every Reference pinned, or None and every error with its path."""
     # 1. The schema: required values, types, no unknown fields.
@@ -29,17 +30,19 @@ def validate_pipeline_request(
     # 2. The settings TRL/PEFT would receive, and no Secret value anywhere.
     errors = trainer_config_errors(request) + secret_value_errors(request, secrets)
 
-    # 3. The Base Model on Hugging Face.
-    repo, revision = split_base_model_reference(request.finetune.base_model)
-    model = hugging_face.find_model(
-        repo, revision or config.DEFAULT_HF_REVISION, secrets.get("hf_token")
-    )
-    base_model_loc = ["finetune", "base_model"]
-    if model is None:
-        reason = "is missing, gated for this token, or has no such revision"
-        errors.append(error(base_model_loc, f"{repo} on Hugging Face {reason}"))
-    elif model.needs_remote_code:
-        errors.append(error(base_model_loc, f"{repo} needs remote code, which never runs here"))
+    # 3. The starting model: the Base Model on Hugging Face, or a full-weight Model Version.
+    finetune = request.finetune
+    try:
+        if finetune.base_model:
+            finetune.base_model = pin_base_model(
+                hugging_face, finetune.base_model, secrets.get("hf_token")
+            )
+        else:
+            finetune.from_ = pin_full_weights(model_registry, finetune.from_)
+    except ValueError as reason:
+        errors.append(
+            error(["finetune", "base_model" if finetune.base_model else "from"], str(reason))
+        )
 
     # 4. The Datasets in the Dataset registry, pinned to a version the algorithm trains on.
     for index, phase in enumerate(request.finetune.phases):
@@ -60,7 +63,6 @@ def validate_pipeline_request(
 
     if errors:
         return None, errors
-    request.finetune.base_model = base_model_reference(repo, model.commit)
     return request, []
 
 

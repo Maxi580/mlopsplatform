@@ -1,24 +1,23 @@
+from pathlib import Path
+
 import trl
 from peft import LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from mlp_core import config
-from mlp_core.pipeline_request.references import split_base_model_reference
 from mlp_core.pipeline_request.schema import Phase
 
 
-def load_tokenizer(base_model: str):
-    """The Base Model's tokenizer and chat template, from the Model Cache."""
-    repo, commit = split_base_model_reference(base_model)
-    return AutoTokenizer.from_pretrained(repo, revision=commit)
+def load_tokenizer(model_directory: Path):
+    """The starting model's tokenizer and chat template."""
+    return AutoTokenizer.from_pretrained(model_directory)
 
 
-def build_trainer(base_model: str, phase: Phase, tokenizer, dataset, output_directory: str):
-    """The catalog row's TRL trainer, training a fresh LoRA Adapter on the Base Model with PEFT."""
+def build_trainer(model_directory: Path, phase: Phase, tokenizer, dataset, output_directory: str):
+    """The catalog row's TRL trainer, training a fresh LoRA Adapter on the starting model."""
     algorithm = config.ALGORITHMS[phase.algorithm]
-    repo, commit = split_base_model_reference(base_model)
-    # The weights fetch put in the Model Cache, at their saved precision (usually bfloat16).
-    model = AutoModelForCausalLM.from_pretrained(repo, revision=commit, dtype="auto")
+    # At their saved precision (usually bfloat16).
+    model = AutoModelForCausalLM.from_pretrained(model_directory, dtype="auto")
     return getattr(trl, algorithm["trainer"])(
         model=model,
         args=getattr(trl, algorithm["config"])(

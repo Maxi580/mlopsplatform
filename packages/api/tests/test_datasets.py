@@ -106,7 +106,9 @@ def test_download_returns_a_presigned_url_for_the_version(logged_in_api):
     response = logged_in_api.get(api_paths.DATASET_DOWNLOAD.format(name="chat", version=1))
 
     assert response.status_code == 200
-    assert response.json() == {"url": "https://objects.test/datasets/chat/1/data.jsonl?signature=x"}
+    assert response.json() == {
+        "url": "https://objects.test/platform/datasets/chat/1/data.jsonl?signature=x"
+    }
 
 
 def test_downloading_an_unknown_version_is_not_found(logged_in_api):

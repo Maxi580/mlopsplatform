@@ -33,6 +33,22 @@ class MLflow:
                 return versions
             params["page_token"] = page["next_page_token"]
 
+    def create_model_version(self, name: str, artifact_prefix: str, tags: dict[str, str]) -> int:
+        """The new version's number, for files already in the artifact bucket."""
+        response = self.client.post("/registered-models/create", json={"name": name})
+        if response.json().get("error_code") != "RESOURCE_ALREADY_EXISTS":
+            response.raise_for_status()
+        response = self.client.post(
+            "/model-versions/create",
+            json={
+                "name": name,
+                "source": f"mlflow-artifacts:/{artifact_prefix.rstrip('/')}",
+                "tags": [{"key": key, "value": value} for key, value in tags.items()],
+            },
+        )
+        response.raise_for_status()
+        return int(response.json()["model_version"]["version"])
+
     def delete_model_version(self, name: str, version: int) -> None:
         response = self.client.request(
             "DELETE", "/model-versions/delete", json={"name": name, "version": str(version)}

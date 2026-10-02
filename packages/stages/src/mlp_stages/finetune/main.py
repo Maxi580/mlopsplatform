@@ -4,11 +4,18 @@ import tempfile
 from pathlib import Path
 
 import boto3
+import mlflow
 import torch
 from datasets import Dataset
+from huggingface_hub import snapshot_download
 
-from mlp_core.pipeline_request.references import dataset_key, split_dataset_reference
-from mlp_core.pipeline_request.schema import PipelineRequest
+from mlp_core.pipeline_request.references import (
+    dataset_key,
+    split_base_model_reference,
+    split_dataset_reference,
+    split_model_reference,
+)
+from mlp_core.pipeline_request.schema import Finetune, PipelineRequest
 from mlp_stages.finetune.model_version import register_model_version
 
 
@@ -18,7 +25,7 @@ def finetune(pipeline_id: str, phase_index: str, request: str) -> None:
     resolved = PipelineRequest.model_validate_json(request)
     index = int(phase_index)
     phase = resolved.finetune.phases[index]
-    base_model = resolved.finetune.base_model
+    starting_model = resolved.finetune.starting_model
     # Read now, as MLflow removes it from the environment once the trainer resumes the Run.
     run_id = os.environ["MLFLOW_RUN_ID"]
 
@@ -26,18 +33,21 @@ def finetune(pipeline_id: str, phase_index: str, request: str) -> None:
     # Only backends import transformers, TRL and PEFT; each has load_tokenizer and build_trainer.
     backend = importlib.import_module(f"mlp_stages.finetune.backends.{resolved.finetune.backend}")
 
-    # 3. The Dataset; conversations only ever use the Base Model's own chat template (#16).
-    tokenizer = backend.load_tokenizer(base_model)
-    dataset = load_dataset_version(phase.dataset)
-    if is_conversation(dataset[0]) and tokenizer.chat_template is None:
-        raise SystemExit(
-            f"{base_model} has no chat template, so it can't train on the conversations in "
-            f"{phase.dataset}; pick a Base Model with one, or a text Dataset"
-        )
-
     with tempfile.TemporaryDirectory() as output_directory:
-        # 4. The trainer: the Base Model with a fresh Adapter, the Phase's settings over defaults.
-        trainer = backend.build_trainer(base_model, phase, tokenizer, dataset, output_directory)
+        # 3. The Dataset; conversations only ever use the starting model's own chat template (#16).
+        starting_directory = starting_model_directory(resolved.finetune, Path(output_directory))
+        tokenizer = backend.load_tokenizer(starting_directory)
+        dataset = load_dataset_version(phase.dataset)
+        if is_conversation(dataset[0]) and tokenizer.chat_template is None:
+            raise SystemExit(
+                f"{starting_model} has no chat template, so it can't train on the conversations "
+                f"in {phase.dataset}; pick a model with one, or a text Dataset"
+            )
+
+        # 4. The trainer: the starting model, a fresh Adapter, the Phase's settings over defaults.
+        trainer = backend.build_trainer(
+            starting_directory, phase, tokenizer, dataset, output_directory
+        )
 
         # 5. Training, logged into the Run; with no size limits, out of memory must read plainly.
         try:
@@ -55,6 +65,17 @@ def finetune(pipeline_id: str, phase_index: str, request: str) -> None:
         register_model_version(
             model_directory, run_id, resolved, pipeline_id, index, tokenizer, model_type
         )
+
+
+def starting_model_directory(finetune: Finetune, scratch: Path) -> Path:
+    """Where the starting model's files lie: the Model Cache, or a download of the Model Version."""
+    if finetune.base_model:
+        repo, commit = split_base_model_reference(finetune.base_model)
+        # fetch put it in the Model Cache; offline, this only finds it there.
+        return Path(snapshot_download(repo, revision=commit))
+    name, version = split_model_reference(finetune.from_)
+    uri = f"models:/{name}/{version}"
+    return Path(mlflow.artifacts.download_artifacts(uri, dst_path=str(scratch / "starting-model")))
 
 
 def load_dataset_version(reference: str) -> Dataset:

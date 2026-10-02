@@ -1,12 +1,13 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mlp_core.config import ALGORITHMS, BACKENDS, MAX_LORA_RANK
 from mlp_core.pipeline_request.references import (
     MODEL_NAME_PATTERN,
     BaseModelReference,
     DatasetReference,
+    ModelReference,
 )
 
 METHODS = tuple(sorted({method for methods in BACKENDS.values() for method in methods}))
@@ -48,9 +49,24 @@ class Phase(Strict):
 
 
 class Finetune(Strict):
-    base_model: BaseModelReference
+    # `from` is a Python keyword, so the field has another name and is read and written as `from`.
+    model_config = ConfigDict(extra="forbid", serialize_by_alias=True)
+
+    # The first Phase starts from a Base Model or from a full-weight Model Version.
+    base_model: BaseModelReference | None = None
+    from_: ModelReference | None = Field(None, alias="from", title="From Model Version")
     backend: Literal[tuple(BACKENDS)]
     phases: list[Phase] = Field(min_length=1, max_length=1)
+
+    @model_validator(mode="after")
+    def check_one_starting_model(self) -> "Finetune":
+        if (self.base_model is None) == (self.from_ is None):
+            raise ValueError("name exactly one of `base_model` and `from`")
+        return self
+
+    @property
+    def starting_model(self) -> str:
+        return self.base_model or self.from_
 
 
 class PipelineRequest(Strict):

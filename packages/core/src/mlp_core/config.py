@@ -79,6 +79,8 @@ DEFAULT_HF_REVISION = "main"
 MIN_SECRET_LENGTH = 8
 HF_TOKEN_PATTERN = re.compile(r"hf_[A-Za-z0-9]{30,}")
 DOWNLOAD_URL_LIFETIME = timedelta(hours=1)
+# Long enough to upload a large model over a slow line.
+UPLOAD_URL_LIFETIME = timedelta(hours=24)
 # Where the API sends a browser without login; the Web UI is served under /ui/.
 WEB_UI_LOGIN_URL = "/ui/login"
 
@@ -134,11 +136,26 @@ QUANTITY_SUFFIXES = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, 
 # Registered Models
 # Model Versions per page of an MLflow registry search.
 MLFLOW_PAGE_SIZE = 10000
+# Uploaded files arrive in parts of this size; S3 allows 10,000 parts, so files up to 640 GiB.
+MODEL_UPLOAD_PART_SIZE = 64 * 2**20
+# A file's path inside an uploaded model directory; no part starts with a dot, so none is `..`.
+MODEL_FILE_PATH = re.compile(r"[\w-][\w.-]*(/[\w-][\w.-]*)*")
+# Lists which shard holds each tensor of sharded *.safetensors weights.
+SAFETENSORS_INDEX = "model.safetensors.index.json"
+# Weight formats that can run code when loaded; uploads hold *.safetensors weights only.
+UNSAFE_WEIGHT_SUFFIXES = (".bin", ".pt", ".pth", ".ckpt", ".pkl", ".h5", ".msgpack", ".gguf")
+# Besides tokenizer_config.json, an uploaded model needs one of these for its vocabulary.
+TOKENIZER_FILES = ("tokenizer.json", "tokenizer.model", "vocab.json")
 
 # Smoke Test
 # A strftime pattern; the name prefixes every Dataset and Registered Model a Smoke Test creates.
 SMOKE_TEST_NAME = "smoketest-%y%m%d-%H%M%S"
 SMOKE_TEST_BASE_MODEL = "hf:Qwen/Qwen2.5-0.5B-Instruct"
+# A tiny full-weight model, uploaded the normal way by each Smoke Test and finetuned from.
+SMOKE_TEST_UPLOADED_MODEL = "hf:trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
+# The case that finetunes from it, with its Phase algorithm, method and backend.
+SMOKE_TEST_UPLOADED_MODEL_CASE = "uploaded-model"
+SMOKE_TEST_UPLOADED_MODEL_TRAINING = ("sft", "lora", "hf")
 # One tiny Dataset per Phase algorithm, named after it, uploaded the normal way by each Smoke Test.
 SMOKE_TEST_DATASETS_DIRECTORY = Path(__file__).parent / "smoke_test_datasets"
 # Every finetune case trains a few steps; only that it runs matters, not what it learns.

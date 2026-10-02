@@ -10,7 +10,8 @@ export function fakeApi(routes: Record<string, Handler | Answer>) {
   const calls: { route: string; body: any }[] = [];
   vi.stubGlobal("fetch", async (path: string, init: RequestInit) => {
     const route = `${init.method} ${path}`;
-    const body = init.body ? JSON.parse(String(init.body)) : undefined;
+    // JSON for the API; anything else, such as a part of an uploaded file, as it is.
+    const body = typeof init.body === "string" ? JSON.parse(init.body) : init.body;
     calls.push({ route, body });
     const handler = routes[route] ?? [404, { detail: "Not Found" }];
     const [status, answer] = typeof handler === "function" ? handler(body) : handler;

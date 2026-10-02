@@ -43,15 +43,18 @@ def compile_pipeline(
     def pipeline():
         cleanup_task = cleanup().set_caching_options(False)
         with dsl.ExitHandler(cleanup_task):
-            fetch_task = fetch_step(request.finetune.base_model, steps)
-            # Only fetch gets the token, from the Secret; a pipeline parameter would be logged.
-            kubernetes.use_secret_as_env(
-                fetch_task,
-                config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
-                {"hf_token": config.SECRET_ENV_VARS["hf_token"]},
-                optional=True,
-            )
-            finetune_step(pipeline_id, request, steps, gpus_per_stage).after(fetch_task)
+            finetune_task = finetune_step(pipeline_id, request, steps, gpus_per_stage)
+            # A Model Version to start from lies in the object store; only a Base Model is fetched.
+            if request.finetune.base_model:
+                fetch_task = fetch_step(request.finetune.base_model, steps)
+                # Only fetch gets the token, from the Secret; a pipeline parameter would be logged.
+                kubernetes.use_secret_as_env(
+                    fetch_task,
+                    config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
+                    {"hf_token": config.SECRET_ENV_VARS["hf_token"]},
+                    optional=True,
+                )
+                finetune_task.after(fetch_task)
 
     return pipeline_run_spec(pipeline)
 

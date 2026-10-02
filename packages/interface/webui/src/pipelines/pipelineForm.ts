@@ -108,7 +108,9 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
   if (types.has("array")) return { kind: "list", name, title };
   if (types.has("integer")) return { kind: "integer", name, title };
   if (types.has("number")) return { kind: "number", name, title };
-  return { kind: "text", name, title, pattern: node.pattern };
+  // An optional value's pattern sits on its non-null option.
+  const pattern = node.pattern ?? node.anyOf?.find((option: Schema) => option.pattern)?.pattern;
+  return { kind: "text", name, title, pattern };
 }
 
 function humanize(key: string): string {
