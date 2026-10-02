@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from sqlalchemy import create_engine, text
 
-from mlp_api import auth
+from mlp_api import auth, pipeline_requests
+from mlp_api.cluster import Cluster
 from mlp_api.database import create_tables
 from mlp_core import api_paths
 from mlp_core.settings import Settings
@@ -14,6 +15,7 @@ from mlp_core.settings import Settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.settings = Settings()
+    app.state.cluster = Cluster()
     app.state.jwt_secret = os.environ["JWT_SECRET"]
     # In memory per client IP, which works because the API runs as one replica.
     app.state.failed_logins = defaultdict(list)
@@ -26,6 +28,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MLOps Platform", lifespan=lifespan)
 app.middleware("http")(auth.require_login)
 app.include_router(auth.router)
+app.include_router(pipeline_requests.router)
 
 
 @app.get(api_paths.HEALTH)

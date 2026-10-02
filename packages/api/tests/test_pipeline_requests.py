@@ -1,0 +1,163 @@
+import pytest
+
+from mlp_api.cluster import HubModel
+from mlp_core import api_paths
+
+BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+COMMIT = "7ae557604adf67be50417f59c2c2f167def9a775"
+HF_TOKEN = "hf_" + "a1B2c3D4" * 5
+
+
+def pipeline_request(phase=None, **finetune):
+    return {
+        "name": "qwen-sft",
+        "finetune": {
+            "base_model": f"hf:{BASE_MODEL}",
+            "phases": [{"algorithm": "sft", "dataset": "dataset:chat", **(phase or {})}],
+            **finetune,
+        },
+    }
+
+
+@pytest.fixture
+def validate(logged_in_api, cluster):
+    cluster.hub_models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
+
+    def run(request, secrets=None):
+        body = {"request": request, "secrets": secrets or {}}
+        return logged_in_api.post(api_paths.VALIDATE_PIPELINE, json=body)
+
+    return run
+
+
+def rejection(response) -> str:
+    assert response.status_code == 422, response.text
+    return " | ".join(f"{error['loc']}: {error['msg']}" for error in response.json()["detail"])
+
+
+def test_schema_publishes_the_pipeline_request_with_trl_settings(logged_in_api):
+    response = logged_in_api.get(api_paths.SCHEMA)
+
+    assert response.status_code == 200
+    schema = response.json()
+    assert set(schema["properties"]) >= {"name", "finetune"}
+    settings = schema["$defs"]["SftPhase"]["properties"]["settings"]["properties"]
+    assert "learning_rate" in settings
+    assert "output_dir" not in settings
+    assert "trust_remote_code" not in settings
+
+
+def test_a_valid_request_comes_back_resolved(validate):
+    response = validate(
+        pipeline_request(phase={"settings": {"learning_rate": 1e-4}, "lora": {"r": 16}})
+    )
+
+    assert response.status_code == 200, response.text
+    finetune = response.json()["request"]["finetune"]
+    assert finetune["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
+    assert finetune["backend"] == "hf"
+    assert finetune["phases"][0]["method"] == "lora"
+
+
+def test_the_hf_token_secret_is_used_to_look_up_the_base_model(validate, cluster):
+    validate(pipeline_request(), secrets={"hf_token": HF_TOKEN})
+
+    assert cluster.hub_lookups == [(BASE_MODEL, "main", HF_TOKEN)]
+
+
+@pytest.mark.parametrize(
+    "request_",
+    [
+        {**pipeline_request(), "gpus": 2},
+        pipeline_request(phase={"epochs": 3}),
+        pipeline_request(tensor_parallel_size=2),
+    ],
+)
+def test_unknown_fields_are_rejected(validate, request_):
+    assert "Extra inputs are not permitted" in rejection(validate(request_))
+
+
+def test_settings_unknown_to_the_trl_config_are_rejected(validate):
+    message = rejection(validate(pipeline_request(phase={"settings": {"lerning_rate": 1e-4}})))
+
+    assert "lerning_rate" in message
+    assert "SFTConfig" in message
+
+
+def test_settings_of_the_wrong_type_are_rejected(validate):
+    message = rejection(validate(pipeline_request(phase={"settings": {"num_train_epochs": "x"}})))
+
+    assert "num_train_epochs" in message
+
+
+@pytest.mark.parametrize("setting", ["output_dir", "hub_model_id", "save_steps", "report_to"])
+def test_deny_listed_settings_are_rejected(validate, setting):
+    message = rejection(validate(pipeline_request(phase={"settings": {setting: "x"}})))
+
+    assert setting in message
+    assert "set by the platform" in message
+
+
+@pytest.mark.parametrize("lora", [{"use_dora": True}, {"modules_to_save": ["lm_head"]}])
+def test_adapter_options_vllm_cannot_serve_are_rejected(validate, lora):
+    assert "vLLM" in rejection(validate(pipeline_request(phase={"lora": lora})))
+
+
+def test_adapters_above_rank_512_are_rejected(validate):
+    assert "512" in rejection(validate(pipeline_request(phase={"lora": {"r": 1024}})))
+
+
+def test_trust_remote_code_is_rejected_wherever_it_appears(validate):
+    settings = {"model_init_kwargs": {"trust_remote_code": True}}
+
+    message = rejection(validate(pipeline_request(phase={"settings": settings})))
+
+    assert "trust_remote_code" in message
+
+
+def test_a_base_model_unreachable_on_hugging_face_is_rejected(validate):
+    response = validate(pipeline_request(base_model="hf:nobody/missing-model"))
+
+    assert "nobody/missing-model" in rejection(response)
+
+
+def test_a_base_model_that_needs_remote_code_is_rejected(validate, cluster):
+    cluster.hub_models["org/custom"] = HubModel(commit=COMMIT, needs_remote_code=True)
+
+    assert "remote code" in rejection(validate(pipeline_request(base_model="hf:org/custom")))
+
+
+def test_a_stage_needing_more_gpus_than_the_platform_has_is_rejected(validate, logged_in_api):
+    logged_in_api.app.state.settings.gpus_per_stage = 2
+
+    assert "GPU" in rejection(validate(pipeline_request()))
+
+
+def test_a_secret_value_inside_the_request_is_rejected(validate):
+    response = validate(
+        pipeline_request(phase={"settings": {"run_name": f"run-{HF_TOKEN}"}}),
+        secrets={"hf_token": HF_TOKEN},
+    )
+
+    assert "Secret" in rejection(response)
+    assert HF_TOKEN not in response.text
+
+
+def test_a_hugging_face_token_inside_the_request_is_rejected_without_secrets(validate):
+    response = validate(pipeline_request(phase={"settings": {"run_name": HF_TOKEN}}))
+
+    assert "Secret" in rejection(response)
+
+
+def test_every_error_is_reported_with_its_path(validate):
+    settings = {"output_dir": "/tmp", "lerning_rate": 1}
+
+    detail = validate(pipeline_request(phase={"settings": settings})).json()["detail"]
+
+    assert [error["loc"][-1] for error in detail] == ["output_dir", "lerning_rate"]
+
+
+def test_validation_requires_login(api, cluster):
+    response = api.post(api_paths.VALIDATE_PIPELINE, json={"request": pipeline_request()})
+
+    assert response.status_code == 401

@@ -1,0 +1,149 @@
+import json
+from collections.abc import Iterator
+
+from fastapi import APIRouter, HTTPException, Request
+from jsonschema import Draft202012Validator
+from pydantic import BaseModel, ConfigDict
+
+from mlp_api.cluster import Cluster
+from mlp_api.config import (
+    DEFAULT_HF_REVISION,
+    HF_TOKEN_PATTERN,
+    MAX_LORA_RANK,
+    MIN_SECRET_LENGTH,
+)
+from mlp_core import api_paths
+from mlp_core.pipeline_request import PipelineRequest
+from mlp_core.settings import Settings
+from mlp_core.trainers import (
+    ALGORITHMS,
+    DENIED_LORA,
+    DENIED_SETTINGS,
+    is_denied,
+    trainer_config_schema,
+)
+
+router = APIRouter()
+
+
+class Submission(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request: PipelineRequest
+    # Secret values by slot name (e.g. `hf_token`); never stored and never part of the request.
+    secrets: dict[str, str] = {}
+
+
+@router.get(api_paths.SCHEMA)
+def schema() -> dict:
+    return PipelineRequest.model_json_schema()
+
+
+@router.post(api_paths.VALIDATE_PIPELINE)
+def validate(submission: Submission, request: Request) -> dict:
+    resolved = resolve_pipeline_request(
+        submission, request.app.state.settings, request.app.state.cluster
+    )
+    return {"request": resolved.model_dump(mode="json")}
+
+
+def resolve_pipeline_request(
+    submission: Submission, settings: Settings, cluster: Cluster
+) -> PipelineRequest:
+    """The request with every reference pinned, or a 422 listing every error with its path."""
+    request = submission.request
+    errors = [
+        *remote_code_errors(request),
+        *secret_value_errors(request, submission.secrets),
+        *phase_errors(request),
+        *gpu_errors(settings),
+    ]
+    base_model, base_model_errors = pin_base_model(request, submission.secrets, cluster)
+    errors += base_model_errors
+    if errors:
+        raise HTTPException(
+            422, [{**error, "loc": ["body", "request", *error["loc"]]} for error in errors]
+        )
+    finetune = request.finetune.model_copy(update={"base_model": base_model})
+    return request.model_copy(update={"finetune": finetune})
+
+
+def error(loc: list, msg: str) -> dict:
+    return {"loc": loc, "msg": msg}
+
+
+def nodes(node, loc: list) -> Iterator[tuple[list, object]]:
+    yield loc, node
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from nodes(value, [*loc, key])
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from nodes(value, [*loc, index])
+
+
+def remote_code_errors(request: PipelineRequest) -> Iterator[dict]:
+    for loc, _ in nodes(request.model_dump(), []):
+        if loc and loc[-1] == "trust_remote_code":
+            yield error(loc, "`trust_remote_code` is never allowed: repository code doesn't run")
+
+
+def secret_value_errors(request: PipelineRequest, secrets: dict[str, str]) -> Iterator[dict]:
+    values = [value for value in secrets.values() if len(value) >= MIN_SECRET_LENGTH]
+    for loc, node in nodes(request.model_dump(), []):
+        if isinstance(node, str) and (
+            HF_TOKEN_PATTERN.search(node) or any(value in node for value in values)
+        ):
+            yield error(loc, "contains a Secret value; name the Secret instead")
+
+
+def phase_errors(request: PipelineRequest) -> Iterator[dict]:
+    for index, phase in enumerate(request.finetune.phases):
+        loc = ["finetune", "phases", index]
+        config = ALGORITHMS[phase.algorithm]
+        yield from config_errors(
+            [*loc, "settings"], phase.settings, config, DENIED_SETTINGS, "is set by the platform"
+        )
+        yield from config_errors(
+            [*loc, "lora"], phase.lora, "LoraConfig", DENIED_LORA, "makes Adapters vLLM can't serve"
+        )
+        rank = phase.lora.get("r")
+        if isinstance(rank, int) and rank > MAX_LORA_RANK:
+            yield error([*loc, "lora", "r"], f"vLLM serves Adapters up to rank {MAX_LORA_RANK}")
+
+
+def config_errors(
+    loc: list, values: dict, config: str, denied: tuple[str, ...], denied_reason: str
+) -> Iterator[dict]:
+    fields = trainer_config_schema(config)["properties"]
+    for name, value in values.items():
+        if is_denied(name, denied):
+            yield error([*loc, name], f"`{name}` {denied_reason}")
+        elif name not in fields:
+            yield error([*loc, name], f"`{name}` is not a {config} setting")
+        elif not Draft202012Validator(fields[name]).is_valid(value):
+            expected = json.dumps({k: v for k, v in fields[name].items() if k != "default"})
+            yield error([*loc, name], f"`{name}` must match {expected}")
+
+
+def gpu_errors(settings: Settings) -> Iterator[dict]:
+    if settings.gpus_per_stage > settings.gpu_count:
+        yield error(
+            ["finetune"],
+            f"finetune needs {settings.gpus_per_stage} GPUs, the platform has {settings.gpu_count}",
+        )
+
+
+def pin_base_model(
+    request: PipelineRequest, secrets: dict[str, str], cluster: Cluster
+) -> tuple[str, list[dict]]:
+    reference = request.finetune.base_model
+    repo, _, revision = reference.removeprefix("hf:").partition("@")
+    model = cluster.find_hub_model(repo, revision or DEFAULT_HF_REVISION, secrets.get("hf_token"))
+    loc = ["finetune", "base_model"]
+    if model is None:
+        reason = "is missing, gated for this token, or has no such revision"
+        return reference, [error(loc, f"{repo} on Hugging Face {reason}")]
+    if model.needs_remote_code:
+        return reference, [error(loc, f"{repo} needs remote code, which never runs here")]
+    return f"hf:{repo}@{model.commit}", []

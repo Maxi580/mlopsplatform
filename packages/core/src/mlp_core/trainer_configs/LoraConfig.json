@@ -1,0 +1,778 @@
+{
+ "type": "object",
+ "properties": {
+  "task_type": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "enum": [
+      "SEQ_CLS",
+      "SEQ_2_SEQ_LM",
+      "CAUSAL_LM",
+      "TOKEN_CLS",
+      "QUESTION_ANS",
+      "FEATURE_EXTRACTION"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "peft_type": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "enum": [
+      "PROMPT_TUNING",
+      "MULTITASK_PROMPT_TUNING",
+      "P_TUNING",
+      "PREFIX_TUNING",
+      "LORA",
+      "ADALORA",
+      "ADAMSS",
+      "BOFT",
+      "ADAPTION_PROMPT",
+      "IA3",
+      "BEFT",
+      "LILY",
+      "LOHA",
+      "LOKR",
+      "OFT",
+      "POLY",
+      "LN_TUNING",
+      "VERA",
+      "FROD",
+      "PVERA",
+      "FOURIERFT",
+      "GLORA",
+      "XLORA",
+      "HRA",
+      "VBLORA",
+      "UNILORA",
+      "CPT",
+      "MISS",
+      "RANDLORA",
+      "ROAD",
+      "TRAINABLE_TOKENS",
+      "HIRA",
+      "SHIRA",
+      "C3A",
+      "WAVEFT",
+      "OSF",
+      "DELORA",
+      "GRALORA",
+      "CARTRIDGE",
+      "TINYLORA",
+      "PSOFT",
+      "PEANUT",
+      "SHADOW",
+      "SUPERTUNING",
+      "DEFT"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "auto_mapping": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "peft_version": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "base_model_name_or_path": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "revision": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "inference_mode": {
+   "type": "boolean",
+   "default": false
+  },
+  "r": {
+   "type": "integer",
+   "default": 8
+  },
+  "target_modules": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "exclude_modules": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "lora_alpha": {
+   "type": "integer",
+   "default": 8
+  },
+  "lora_dropout": {
+   "type": "number",
+   "default": 0.0
+  },
+  "fan_in_fan_out": {
+   "type": "boolean",
+   "default": false
+  },
+  "bias": {
+   "enum": [
+    "none",
+    "all",
+    "lora_only"
+   ],
+   "type": "string",
+   "default": "none"
+  },
+  "use_rslora": {
+   "type": "boolean",
+   "default": false
+  },
+  "modules_to_save": {
+   "anyOf": [
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "init_lora_weights": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "enum": [
+      "gaussian",
+      "eva",
+      "olora",
+      "pissa",
+      "pissa_niter_[number of iters]",
+      "corda",
+      "loftq",
+      "orthogonal",
+      "mica"
+     ],
+     "type": "string"
+    }
+   ],
+   "default": true
+  },
+  "layers_to_transform": {
+   "anyOf": [
+    {
+     "items": {
+      "type": "integer"
+     },
+     "type": "array"
+    },
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "layers_pattern": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "rank_pattern": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": {}
+  },
+  "alpha_pattern": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": {}
+  },
+  "megatron_config": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "megatron_core": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": "megatron.core"
+  },
+  "trainable_token_indices": {
+   "anyOf": [
+    {
+     "items": {
+      "type": "integer"
+     },
+     "type": "array"
+    },
+    {
+     "additionalProperties": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "loftq_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "loftq_bits": {
+       "default": 4,
+       "type": "integer"
+      },
+      "loftq_iter": {
+       "default": 1,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "additionalProperties": true,
+     "type": "object"
+    }
+   ],
+   "default": {}
+  },
+  "eva_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "rho": {
+       "default": 2.0,
+       "type": "number"
+      },
+      "tau": {
+       "default": 0.99,
+       "type": "number"
+      },
+      "use_label_mask": {
+       "default": true,
+       "type": "boolean"
+      },
+      "label_mask_value": {
+       "default": -100,
+       "type": "integer"
+      },
+      "whiten": {
+       "default": false,
+       "type": "boolean"
+      },
+      "adjust_scaling_factors": {
+       "default": true,
+       "type": "boolean"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "corda_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "cache_file": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "covariance_file": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "corda_method": {
+       "default": "ipm",
+       "enum": [
+        "ipm",
+        "kpm"
+       ],
+       "type": "string"
+      },
+      "verbose": {
+       "default": false,
+       "type": "boolean"
+      },
+      "use_float16_for_covariance": {
+       "default": false,
+       "type": "boolean"
+      },
+      "prune_temporary_fields": {
+       "default": true,
+       "type": "boolean"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "lora_ga_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "direction": {
+       "default": "ArB2r",
+       "enum": [
+        "ArBr",
+        "A2rBr",
+        "ArB2r",
+        "random"
+       ],
+       "type": "string"
+      },
+      "scale": {
+       "default": "stable",
+       "enum": [
+        "stable",
+        "weight_svd",
+        "gd_scale",
+        "unit"
+       ],
+       "type": "string"
+      },
+      "stable_gamma": {
+       "default": 16,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_dora": {
+   "type": "boolean",
+   "default": false
+  },
+  "velora_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "num_groups": {
+       "default": 64,
+       "type": "integer"
+      },
+      "scale": {
+       "default": 1.0,
+       "type": "number"
+      },
+      "init_type": {
+       "default": "batch_average",
+       "enum": [
+        "batch_average",
+        "batch_average_once",
+        "random"
+       ],
+       "type": "string"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "alora_invocation_tokens": {
+   "anyOf": [
+    {
+     "items": {
+      "type": "integer"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_qalora": {
+   "type": "boolean",
+   "default": false
+  },
+  "qalora_group_size": {
+   "type": "integer",
+   "default": 16
+  },
+  "monteclora_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "num_samples": {
+       "default": 8,
+       "type": "integer"
+      },
+      "use_entropy": {
+       "default": false,
+       "type": "boolean"
+      },
+      "dirichlet_prior": {
+       "default": 0.1,
+       "type": "number"
+      },
+      "sample_scaler": {
+       "default": 0.0001,
+       "type": "number"
+      },
+      "kl_loss_weight": {
+       "default": 1e-05,
+       "type": "number"
+      },
+      "buffer_size": {
+       "default": 150,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "layer_replication": {
+   "anyOf": [
+    {
+     "items": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "integer"
+       }
+      ],
+      "type": "array"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "runtime_config": {
+   "properties": {
+    "ephemeral_gpu_offload": {
+     "default": false,
+     "type": "boolean"
+    }
+   },
+   "type": "object"
+  },
+  "lora_bias": {
+   "type": "boolean",
+   "default": false
+  },
+  "target_parameters": {
+   "anyOf": [
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_bdlora": {
+   "anyOf": [
+    {
+     "properties": {
+      "target_modules_bd_a": {
+       "anyOf": [
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "target_modules_bd_b": {
+       "anyOf": [
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "nblocks": {
+       "default": 1,
+       "type": "integer"
+      },
+      "match_strict": {
+       "default": true,
+       "type": "boolean"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "arrow_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "top_k": {
+       "default": 3,
+       "type": "integer"
+      },
+      "router_temperature": {
+       "default": 1.0,
+       "type": "number"
+      },
+      "use_gks": {
+       "default": false,
+       "type": "boolean"
+      },
+      "task_adapter_names": {
+       "anyOf": [
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "gks_adapter_names": {
+       "anyOf": [
+        {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "rng_seed": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "kasa_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "beta": {
+       "default": 0.0001,
+       "type": "number"
+      },
+      "gamma": {
+       "default": 0.001,
+       "type": "number"
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "ensure_weight_tying": {
+   "type": "boolean",
+   "default": false
+  }
+ },
+ "additionalProperties": false
+}

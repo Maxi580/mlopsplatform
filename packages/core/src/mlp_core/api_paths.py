@@ -2,3 +2,5 @@
 HEALTH = "/health"
 LOGIN = "/auth/login"
 VERIFY = "/auth/verify"
+SCHEMA = "/schema"
+VALIDATE_PIPELINE = "/pipelines/validate"
