@@ -6,9 +6,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from sqlalchemy import Engine, create_engine, text
 
+from mlp_api.config import MIN_PASSWORD_LENGTH
 from mlp_api.database import upgrade_database
-
-MIN_PASSWORD_LENGTH = 12
 
 # argon2-cffi hashes with Argon2id by default.
 password_hasher = PasswordHasher()

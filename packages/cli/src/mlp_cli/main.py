@@ -3,6 +3,7 @@ from typing import Annotated
 import typer
 
 from mlp_cli.api import api_client, save_token
+from mlp_core import api_paths
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -20,7 +21,7 @@ def login(
 ) -> None:
     """Log in with the shared account; later commands use the stored token for 12 hours."""
     with api_client() as client:
-        response = client.post("/auth/login", json={"password": password})
+        response = client.post(api_paths.LOGIN, json={"password": password})
     if response.is_error:
         typer.echo(f"Login failed ({response.status_code}): {response.text}", err=True)
         raise typer.Exit(1)

@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from mlp_cli.api import api_client
 from mlp_cli.main import app
+from mlp_core import api_paths
 
 PASSWORD = "correct horse battery staple"
 TOKEN = "issued-token"
@@ -78,7 +79,7 @@ def test_login_stores_a_token_that_later_commands_send(home, platform_url, platf
 
     assert result.exit_code == 0, result.output
     with api_client() as client:
-        assert client.get("/auth/verify").status_code == 200
+        assert client.get(api_paths.VERIFY).status_code == 200
 
 
 def test_login_with_a_wrong_password_fails_without_a_token(home, platform_url, platform_ca):

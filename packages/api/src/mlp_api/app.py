@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, text
 
 from mlp_api import auth
 from mlp_api.database import upgrade_database
+from mlp_core import api_paths
 from mlp_core.settings import Settings
 
 
@@ -27,7 +28,7 @@ app.middleware("http")(auth.require_login)
 app.include_router(auth.router)
 
 
-@app.get("/health")
+@app.get(api_paths.HEALTH)
 def health(request: Request) -> dict:
     with request.app.state.engine.connect() as connection:
         connection.execute(text("SELECT 1"))
