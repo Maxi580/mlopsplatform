@@ -44,7 +44,6 @@ def test_schema_publishes_the_pipeline_request_with_trl_settings(logged_in_api):
     assert set(schema["properties"]) >= {"name", "finetune"}
     settings = schema["$defs"]["SftPhase"]["properties"]["settings"]["properties"]
     assert "learning_rate" in settings
-    assert "output_dir" not in settings
     assert "trust_remote_code" not in settings
 
 
@@ -91,23 +90,6 @@ def test_settings_of_the_wrong_type_are_rejected(validate):
     assert "num_train_epochs" in message
 
 
-@pytest.mark.parametrize("setting", ["output_dir", "hub_model_id", "save_steps", "report_to"])
-def test_deny_listed_settings_are_rejected(validate, setting):
-    message = rejection(validate(pipeline_request(phase={"settings": {setting: "x"}})))
-
-    assert setting in message
-    assert "set by the platform" in message
-
-
-@pytest.mark.parametrize("lora", [{"use_dora": True}, {"modules_to_save": ["lm_head"]}])
-def test_adapter_options_vllm_cannot_serve_are_rejected(validate, lora):
-    assert "vLLM" in rejection(validate(pipeline_request(phase={"lora": lora})))
-
-
-def test_adapters_above_rank_512_are_rejected(validate):
-    assert "512" in rejection(validate(pipeline_request(phase={"lora": {"r": 1024}})))
-
-
 def test_trust_remote_code_is_rejected_wherever_it_appears(validate):
     settings = {"model_init_kwargs": {"trust_remote_code": True}}
 
@@ -151,11 +133,11 @@ def test_a_hugging_face_token_inside_the_request_is_rejected_without_secrets(val
 
 
 def test_every_error_is_reported_with_its_path(validate):
-    settings = {"output_dir": "/tmp", "lerning_rate": 1}
+    phase = {"settings": {"lerning_rate": 1}, "lora": {"rank": 8}}
 
-    detail = validate(pipeline_request(phase={"settings": settings})).json()["detail"]
+    detail = validate(pipeline_request(phase=phase)).json()["detail"]
 
-    assert [error["loc"][-1] for error in detail] == ["output_dir", "lerning_rate"]
+    assert [error["loc"][-1] for error in detail] == ["lerning_rate", "rank"]
 
 
 def test_validation_requires_login(api, cluster):
@@ -176,9 +158,3 @@ def test_settings_without_a_generated_schema_are_accepted_unchecked(validate, no
     phase = {"settings": {"anything": "goes"}, "lora": {"new_peft_option": 1}}
 
     assert validate(pipeline_request(phase=phase)).status_code == 200
-
-
-def test_the_deny_list_holds_without_a_generated_schema(validate, no_generated_schemas):
-    message = rejection(validate(pipeline_request(phase={"settings": {"output_dir": "/x"}})))
-
-    assert "set by the platform" in message

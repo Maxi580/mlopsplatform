@@ -11,7 +11,6 @@ MAX_FAILED_LOGINS = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
 PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN}
 DEFAULT_HF_REVISION = "main"
-MAX_LORA_RANK = 512
 # Shorter Secret values would match ordinary request strings.
 MIN_SECRET_LENGTH = 8
 HF_TOKEN_PATTERN = re.compile(r"hf_[A-Za-z0-9]{30,}")
