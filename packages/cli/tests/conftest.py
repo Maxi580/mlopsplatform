@@ -27,10 +27,7 @@ class FakeApi(BaseHTTPRequestHandler):
             self.answer(401, {"detail": "Wrong password"})
 
     def do_GET(self):
-        if self.path in self.server.answers:
-            self.answer(*self.server.answers[self.path])
-        else:
-            self.answer(200 if self.headers["Authorization"] == f"Bearer {TOKEN}" else 401, None)
+        self.answer(200 if self.headers["Authorization"] == f"Bearer {TOKEN}" else 401, None)
 
     def answer(self, status, body):
         content = json.dumps(body).encode()

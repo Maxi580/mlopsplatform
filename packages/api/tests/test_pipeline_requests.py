@@ -2,7 +2,6 @@ import pytest
 
 from mlp_api.hugging_face import HubModel
 from mlp_core import api_paths, config
-from mlp_core.pipeline_request.standard import STANDARD_PIPELINE_REQUEST
 
 BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 COMMIT = "7ae557604adf67be50417f59c2c2f167def9a775"
@@ -10,8 +9,34 @@ HF_TOKEN = "hf_" + "a1B2c3D4" * 5
 
 
 def pipeline_request(settings=None, lora=None, phase=None, **finetune):
-    """The standard request with the given values added or replaced."""
-    request = STANDARD_PIPELINE_REQUEST.model_dump(mode="json")
+    """A valid request with the given values added or replaced."""
+    request = {
+        "name": "qwen-sft",
+        "finetune": {
+            "base_model": f"hf:{BASE_MODEL}",
+            "backend": "hf",
+            "phases": [
+                {
+                    "algorithm": "sft",
+                    "dataset": "dataset:chat",
+                    "method": "lora",
+                    "settings": {
+                        "learning_rate": 1e-4,
+                        "num_train_epochs": 3,
+                        "per_device_train_batch_size": 8,
+                        "gradient_accumulation_steps": 1,
+                        "max_length": 1024,
+                    },
+                    "lora": {
+                        "r": 16,
+                        "lora_alpha": 32,
+                        "lora_dropout": 0.05,
+                        "target_modules": "all-linear",
+                    },
+                }
+            ],
+        },
+    }
     first_phase = request["finetune"]["phases"][0]
     first_phase["settings"].update(settings or {})
     first_phase["lora"].update(lora or {})
@@ -52,13 +77,6 @@ def test_schema_publishes_the_pipeline_request_and_its_basic_values(logged_in_ap
     schema = response.json()
     assert set(schema["properties"]) >= {"name", "finetune"}
     assert "learning_rate" in schema["$defs"]["SftSettings"]["required"]
-
-
-def test_the_standard_request_is_published_and_valid(validate, logged_in_api):
-    standard = logged_in_api.get(api_paths.STANDARD_PIPELINE).json()
-
-    assert standard["finetune"]["phases"][0]["settings"]["learning_rate"] == 1e-4
-    assert validate(standard).status_code == 200
 
 
 def test_a_valid_request_comes_back_resolved(validate):

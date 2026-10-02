@@ -41,7 +41,7 @@ The token is stored in `~/.mlp/token` and is valid for 12 hours.
 
 ## Pipeline Requests
 
-The CLI Profile also holds reusable Stage settings, named Phase variants and Secrets. A command builds a Pipeline Request from only the Stages and Phases it names; Secrets travel beside the request, never inside it. `mlp standard` prints a good standard request to start from; the API publishes the request's JSON Schema at `/schema`.
+The CLI Profile also holds reusable Stage settings, named Phase variants and Secrets. A command builds a Pipeline Request from only the Stages and Phases it names; Secrets travel beside the request, never inside it. The API publishes the request's JSON Schema at `/schema`.
 
 ```yaml
 name: qwen-sft

@@ -8,7 +8,6 @@ from mlp_api.config import DEFAULT_HF_REVISION, HF_TOKEN_PATTERN, MIN_SECRET_LEN
 from mlp_api.hugging_face import HuggingFace
 from mlp_core import api_paths
 from mlp_core.pipeline_request.schema import PipelineRequest
-from mlp_core.pipeline_request.standard import STANDARD_PIPELINE_REQUEST
 from mlp_core.pipeline_request.validate import validate_pipeline_request
 from mlp_core.settings import Settings
 
@@ -26,11 +25,6 @@ class Submission(BaseModel):
 @router.get(api_paths.SCHEMA)
 def schema() -> dict:
     return PipelineRequest.model_json_schema()
-
-
-@router.get(api_paths.STANDARD_PIPELINE)
-def standard() -> dict:
-    return STANDARD_PIPELINE_REQUEST.model_dump(mode="json")
 
 
 @router.post(api_paths.VALIDATE_PIPELINE)
