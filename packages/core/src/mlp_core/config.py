@@ -134,3 +134,32 @@ QUANTITY_SUFFIXES = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, 
 # Registered Models
 # Model Versions per page of an MLflow registry search.
 MLFLOW_PAGE_SIZE = 10000
+
+# Smoke Test
+# A strftime pattern; the name prefixes every Dataset and Registered Model a Smoke Test creates.
+SMOKE_TEST_NAME = "smoketest-%y%m%d-%H%M%S"
+SMOKE_TEST_BASE_MODEL = "hf:Qwen/Qwen2.5-0.5B-Instruct"
+# One tiny Dataset per Phase algorithm, named after it, uploaded the normal way by each Smoke Test.
+SMOKE_TEST_DATASETS_DIRECTORY = Path(__file__).parent / "smoke_test_datasets"
+# Every finetune case trains a few steps; only that it runs matters, not what it learns.
+SMOKE_TEST_PHASE = {
+    "settings": {
+        "learning_rate": 1e-4,
+        "num_train_epochs": 1,
+        "max_steps": 3,
+        "per_device_train_batch_size": 2,
+        "gradient_accumulation_steps": 1,
+        "max_length": 256,
+    },
+    "lora": {"r": 8, "lora_alpha": 16, "lora_dropout": 0.0, "target_modules": "all-linear"},
+}
+# Kubeflow task state -> case result; other states are pending.
+SMOKE_TEST_CASE_RESULTS = {
+    "SUCCEEDED": "passed",
+    "CACHED": "passed",
+    "FAILED": "failed",
+    "SKIPPED": "failed",
+    "CANCELED": "failed",
+}
+# How often `mlp smoke-test` asks for new case results.
+SMOKE_TEST_POLL_INTERVAL = timedelta(seconds=30)

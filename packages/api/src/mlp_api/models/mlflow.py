@@ -39,6 +39,10 @@ class MLflow:
         )
         response.raise_for_status()
 
+    def delete_registered_model(self, name: str) -> None:
+        response = self.client.request("DELETE", "/registered-models/delete", json={"name": name})
+        response.raise_for_status()
+
 
 # MLflow proxies artifacts: `mlflow-artifacts:/<path>` lives at `<path>` in its bucket.
 def model_version(found: dict) -> ModelVersion:

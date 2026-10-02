@@ -40,8 +40,12 @@ A running, OpenAI-compatible server for one model (a Model Version or a Base Mod
 _Avoid_: Deployment, served model, inference service
 
 **Smoke Test**:
-A built-in Pipeline, started by a user, that runs every Stage, every Phase algorithm, every weight method and every training backend on the smallest Qwen model, to prove the platform runs without errors. Output quality is ignored. A failed check doesn't stop the rest. Afterwards it deletes everything it created except its Kubeflow run.
+A built-in Pipeline, started by a user, that runs every Stage, every Phase algorithm, every weight method and every training backend on the smallest Qwen model, to prove the platform runs without errors. Output quality is ignored. A failed Case doesn't stop the rest. Afterwards it deletes everything it created except its Kubeflow run.
 _Avoid_: Health check, e2e test
+
+**Case**:
+One independent check inside a Smoke Test (e.g. `fetch` or `sft-lora-hf`), run as one Kubeflow node, that passes if it runs without errors.
+_Avoid_: Check, test
 
 **Owner**:
 The user a Pipeline belongs to. Recorded on every Pipeline even while there is only one user.

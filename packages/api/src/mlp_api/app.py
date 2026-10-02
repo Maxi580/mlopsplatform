@@ -13,6 +13,7 @@ from mlp_api import (
     models_routes,
     pipelines_routes,
     settings_routes,
+    smoke_tests_routes,
     storage_routes,
 )
 from mlp_api.auth.session import require_login
@@ -54,4 +55,5 @@ app.include_router(health_routes.router)
 app.include_router(models_routes.router)
 app.include_router(pipelines_routes.router)
 app.include_router(settings_routes.router)
+app.include_router(smoke_tests_routes.router)
 app.include_router(storage_routes.router)

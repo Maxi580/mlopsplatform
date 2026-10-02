@@ -110,12 +110,17 @@ class FakeModelRegistry:
 
     def __init__(self):
         self.versions = []
+        self.deleted_models = []
 
     def model_versions(self):
         return list(self.versions)
 
     def delete_model_version(self, name, version):
         self.versions = [v for v in self.versions if (v.name, v.version) != (name, version)]
+
+    def delete_registered_model(self, name):
+        self.versions = [v for v in self.versions if v.name != name]
+        self.deleted_models.append(name)
 
 
 @pytest.fixture

@@ -84,6 +84,15 @@ Each Pipeline first runs `fetch`, which downloads the Base Model at its pinned c
 
 Next comes `finetune`, which trains the Phase on the backend's trainer image (`hf`: TRL + PEFT) with `gpus_per_stage` GPUs from the platform settings. It runs offline from the Model Cache and logs its params and metrics into its own MLflow Run (KFP's MLflow plugin creates one per step, under the Pipeline's Run). Its output is registered in the MLflow Model Registry as the next Model Version of the Registered Model named after the Pipeline (`qwen-sft` version 1, 2, …). Each version holds the Adapter, the Base Model's tokenizer and chat template, and `pipeline_request.json` with the resolved request. Its tags are `weights: adapter`, `base_model`, `pipeline`, `phase`, `algorithm`, `backend`, `tool_parser` (the vLLM tool parser for the Base Model's `model_type`, or `none`) and `tools_rendered` (`false` when the chat template drops the tools a client sends, so tool calling won't work). There are no size limits: a Phase that runs out of GPU memory fails with a plain message naming the settings to lower.
 
+## Smoke Test
+
+```sh
+mlp smoke-test                              # every case; prints each result, exits 1 if one failed
+mlp smoke-test --phases sft --backends hf   # a custom one: only the finetune cases named
+```
+
+The API routes are `POST /smoke-tests/complete` and `POST /smoke-tests/custom` (body e.g. `{"finetune": {"phases": ["sft"]}}`; an unnamed list means all of it). Both answer 202 with the Kubeflow run link, or 409 while a Smoke Test runs. It is one Kubeflow run, `smoketest-YYMMDD-HHMMSS`, on `Qwen/Qwen2.5-0.5B-Instruct`, with one node per case: `fetch`, then one per finetune Phase × method × backend the backend supports (e.g. `sft-lora-hf`), each training 3 steps on a bundled Dataset from `packages/core/src/mlp_core/smoke_test_datasets/`. A case passes if it runs without errors; what it learns is ignored. Each node runs once the one before it ended, even if that failed, so one failure shows red and the rest still run. It also lists in `mlp ls`. Once the run finished, the API deletes every Dataset and Registered Model named `smoketest-YYMMDD-HHMMSS-…`; only the Kubeflow run, its logs and its MLflow Runs remain, and the Base Model stays in the Model Cache.
+
 ## Phase algorithms
 
 Each algorithm is one row of `ALGORITHMS` in `packages/core/src/mlp_core/config.py`: its TRL trainer and config, the Dataset row formats it trains on, its blocked settings and the platform's defaults, which the Phase's `settings` override. Every algorithm uses LoRA (`method: lora`): `lora` goes to PEFT's `LoraConfig` with `task_type: CAUSAL_LM`. Adapters must be servable by vLLM, so `r` is at most 512 and `use_dora`, `modules_to_save`, `bias` and `task_type` are blocked.

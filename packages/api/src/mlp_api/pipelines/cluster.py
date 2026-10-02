@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import cached_property
 
@@ -16,6 +16,8 @@ from mlp_core import config
 class KubeflowRun:
     state: str
     mlflow_run_url: str | None
+    # Display name of each step that started -> its Kubeflow state.
+    step_states: dict[str, str] = field(default_factory=dict)
 
 
 class Cluster:
@@ -68,7 +70,12 @@ class Cluster:
         run = response.json()
         # KFP's MLflow plugin reports the run's MLflow Run here once it is configured.
         mlflow = run.get("plugins_output", {}).get("mlflow", {}).get("entries", {})
-        return KubeflowRun(run["state"], mlflow.get("run_url", {}).get("value"))
+        steps = run.get("run_details", {}).get("task_details", [])
+        return KubeflowRun(
+            run["state"],
+            mlflow.get("run_url", {}).get("value"),
+            {step.get("display_name"): step.get("state") for step in steps},
+        )
 
     def terminate_run(self, run_id: str) -> None:
         response = self.kubeflow.post(f"/runs/{run_id}:terminate")

@@ -34,21 +34,6 @@ def compile_pipeline(
     pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, gpus_per_stage: int
 ) -> dict:
     """The Kubeflow pipeline spec for a resolved request, in the form KFP's run API takes."""
-    trainer_image = steps.trainer_images[request.finetune.backend]
-
-    @dsl.container_component
-    def fetch(base_model: str):
-        return dsl.ContainerSpec(
-            image=steps.stages_image, command=["mlp-stage", "fetch"], args=[base_model]
-        )
-
-    @dsl.container_component
-    def finetune(pipeline_id: str, phase_index: str, request: str):
-        return dsl.ContainerSpec(
-            image=trainer_image,
-            command=["mlp-stage", "finetune"],
-            args=[pipeline_id, phase_index, request],
-        )
 
     @dsl.container_component
     def cleanup():
@@ -58,8 +43,7 @@ def compile_pipeline(
     def pipeline():
         cleanup_task = cleanup().set_caching_options(False)
         with dsl.ExitHandler(cleanup_task):
-            fetch_task = fetch(base_model=request.finetune.base_model)
-            use_model_cache(fetch_task, steps)
+            fetch_task = fetch_step(request.finetune.base_model, steps)
             # Only fetch gets the token, from the Secret; a pipeline parameter would be logged.
             kubernetes.use_secret_as_env(
                 fetch_task,
@@ -67,17 +51,74 @@ def compile_pipeline(
                 {"hf_token": config.SECRET_ENV_VARS["hf_token"]},
                 optional=True,
             )
+            finetune_step(pipeline_id, request, steps, gpus_per_stage).after(fetch_task)
 
-            # The request holds no Secret value, so it can be a parameter.
-            finetune_task = finetune(
-                pipeline_id=str(pipeline_id), phase_index="0", request=request.model_dump_json()
-            ).after(fetch_task)
-            use_model_cache(finetune_task, steps)
-            finetune_task.set_env_variable("HF_HUB_OFFLINE", "1")
-            finetune_task.set_accelerator_type(config.GPU_RESOURCE)
-            finetune_task.set_accelerator_limit(gpus_per_stage)
-            use_object_store(finetune_task, steps)
+    return pipeline_run_spec(pipeline)
 
+
+def compile_smoke_test(
+    pipeline_id: int,
+    name: str,
+    base_model: str,
+    finetune_cases: dict[str, PipelineRequest],
+    steps: StepEnvironment,
+    gpus_per_stage: int,
+) -> dict:
+    """The Smoke Test's Kubeflow pipeline spec: one node per case, named after it, in a chain."""
+
+    @dsl.pipeline(name=name)
+    def pipeline():
+        previous = fetch_step(base_model, steps).set_display_name("fetch")
+        for case, request in finetune_cases.items():
+            # Runs once the case before it ended, even if that failed; no data passes between them.
+            previous = (
+                finetune_step(pipeline_id, request, steps, gpus_per_stage)
+                .set_display_name(case)
+                .after(previous)
+                .ignore_upstream_failure()
+            )
+
+    return pipeline_run_spec(pipeline)
+
+
+def fetch_step(base_model: str, steps: StepEnvironment):
+    @dsl.container_component
+    def fetch(base_model: str):
+        return dsl.ContainerSpec(
+            image=steps.stages_image, command=["mlp-stage", "fetch"], args=[base_model]
+        )
+
+    task = fetch(base_model=base_model)
+    use_model_cache(task, steps)
+    return task
+
+
+def finetune_step(
+    pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, gpus_per_stage: int
+):
+    trainer_image = steps.trainer_images[request.finetune.backend]
+
+    @dsl.container_component
+    def finetune(pipeline_id: str, phase_index: str, request: str):
+        return dsl.ContainerSpec(
+            image=trainer_image,
+            command=["mlp-stage", "finetune"],
+            args=[pipeline_id, phase_index, request],
+        )
+
+    # The request holds no Secret value, so it can be a parameter.
+    task = finetune(
+        pipeline_id=str(pipeline_id), phase_index="0", request=request.model_dump_json()
+    )
+    use_model_cache(task, steps)
+    task.set_env_variable("HF_HUB_OFFLINE", "1")
+    task.set_accelerator_type(config.GPU_RESOURCE)
+    task.set_accelerator_limit(gpus_per_stage)
+    use_object_store(task, steps)
+    return task
+
+
+def pipeline_run_spec(pipeline) -> dict:
     return {
         "pipeline_spec": json_format.MessageToDict(pipeline.pipeline_spec),
         "platform_spec": json_format.MessageToDict(pipeline.platform_spec),
