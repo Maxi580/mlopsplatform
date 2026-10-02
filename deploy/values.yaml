@@ -42,6 +42,8 @@ postgres:
 
 # Created in SeaweedFS next to KFP's own mlpipeline bucket.
 buckets: [mlflow, platform]
+# Holds Dataset Versions and Checkpoints.
+platformBucket: platform
 
 # Rendered into the platform settings ConfigMap, read through mlp_core.settings.
 settings:

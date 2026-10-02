@@ -22,3 +22,22 @@ DEFAULT_HF_REVISION = "main"
 # Shorter Secret values would match ordinary request strings.
 MIN_SECRET_LENGTH = 8
 HF_TOKEN_PATTERN = re.compile(r"hf_[A-Za-z0-9]{30,}")
+DOWNLOAD_URL_LIFETIME = timedelta(hours=1)
+# TRL's standard Dataset row formats -> required field -> its value; the first match wins.
+ROW_FORMATS = {
+    "preference": {"chosen": "a string or messages", "rejected": "a string or messages"},
+    "unpaired_preference": {
+        "prompt": "a string or messages",
+        "completion": "a string or messages",
+        "label": "true or false",
+    },
+    "stepwise_supervision": {
+        "prompt": "a string",
+        "completions": "a list of strings",
+        "labels": "a list of true or false",
+    },
+    "prompt_completion": {"prompt": "a string or messages", "completion": "a string or messages"},
+    "prompt_only": {"prompt": "a string or messages"},
+    "messages": {"messages": "messages"},
+    "text": {"text": "a string"},
+}

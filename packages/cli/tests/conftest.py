@@ -14,10 +14,12 @@ TOKEN = "issued-token"
 
 
 class FakeApi(BaseHTTPRequestHandler):
-    """Answers logins itself and other POSTs with the test's `answers`, recording every body."""
+    """Answers logins itself and the rest with `answers`; records POST bodies and other auth."""
 
     def do_POST(self):
-        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        if self.headers["Content-Type"] == "application/json":
+            body = json.loads(body)
         self.server.received.append((self.path, body))
         if self.path != api_paths.LOGIN:
             self.answer(*self.server.answers[self.path])
@@ -27,10 +29,18 @@ class FakeApi(BaseHTTPRequestHandler):
             self.answer(401, {"detail": "Wrong password"})
 
     def do_GET(self):
-        self.answer(200 if self.headers["Authorization"] == f"Bearer {TOKEN}" else 401, None)
+        self.server.received.append((self.path, self.headers["Authorization"]))
+        if self.path in self.server.answers:
+            self.answer(*self.server.answers[self.path])
+        else:
+            self.answer(200 if self.headers["Authorization"] == f"Bearer {TOKEN}" else 401, None)
+
+    def do_DELETE(self):
+        self.server.received.append((self.path, self.headers["Authorization"]))
+        self.answer(*self.server.answers[self.path])
 
     def answer(self, status, body):
-        content = json.dumps(body).encode()
+        content = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()

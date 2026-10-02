@@ -118,7 +118,8 @@ create_credentials() {
   for namespace in "$platform" "$kubeflow" "$mlflow"; do
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
   done
-  kubectl label namespace "$platform" "$mlflow" mlp-object-store=allowed --overwrite
+  # Traefik (in kube-system) forwards presigned downloads to SeaweedFS.
+  kubectl label namespace "$platform" "$mlflow" "$(value .namespaces.kubeSystem)" mlp-object-store=allowed --overwrite
 
   kubectl -n "$platform" get secret mlp-credentials >/dev/null 2>&1 || kubectl -n "$platform" create secret generic mlp-credentials \
     --from-literal=postgresPassword="$(openssl rand -hex 24)" \

@@ -1,6 +1,7 @@
 from mlp_api.hugging_face import HubModel
 from mlp_core import api_paths
 
+from .test_datasets import CHAT, jsonl, upload
 from .test_pipeline_request import BASE_MODEL, COMMIT, pipeline_request, without
 
 
@@ -19,11 +20,14 @@ def test_schema_publishes_the_pipeline_request_and_its_basic_values(logged_in_ap
 
 def test_validate_returns_the_resolved_request(logged_in_api, hugging_face):
     hugging_face.models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
+    upload(logged_in_api, "chat", jsonl(CHAT))
 
     response = validate(logged_in_api, pipeline_request())
 
     assert response.status_code == 200, response.text
-    assert response.json()["request"]["finetune"]["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
+    finetune = response.json()["request"]["finetune"]
+    assert finetune["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
+    assert finetune["phases"][0]["dataset"] == "dataset:chat@1"
 
 
 def test_validate_rejects_with_paths_inside_the_pipeline_request(logged_in_api):

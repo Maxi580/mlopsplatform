@@ -51,6 +51,22 @@ spec:
                   key: postgresPassword
             - name: DATABASE_URL
               value: postgresql+psycopg://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@postgres:{{ .Values.ports.postgres }}/{{ .Values.postgres.database }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: mlp-credentials
+                  key: s3AccessKey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlp-credentials
+                  key: s3SecretKey
+            - name: S3_ENDPOINT_URL
+              value: http://seaweedfs.{{ .Values.namespaces.kubeflow }}.svc.cluster.local:{{ .Values.ports.seaweedfs }}
+            - name: S3_PUBLIC_URL
+              value: https://{{ .Values.domain }}
+            - name: S3_BUCKET
+              value: {{ .Values.platformBucket }}
           ports:
             - containerPort: {{ .Values.ports.api }}
           readinessProbe:

@@ -13,6 +13,7 @@ dependencies = [
     "huggingface-hub>=2.1.1",
     "httpx2>=2.13.1",
     "jsonschema>=4.26.0",
+    "boto3>=1.43.107",
 ]
 
 [project.scripts]

@@ -27,7 +27,10 @@ def schema() -> dict:
 @router.post(api_paths.VALIDATE_PIPELINE)
 def validate(submission: Submission, request: Request) -> dict:
     resolved, errors = validate_pipeline_request(
-        submission.request, submission.secrets, request.app.state.hugging_face
+        submission.request,
+        submission.secrets,
+        request.app.state.hugging_face,
+        request.app.state.engine,
     )
     if errors:
         raise HTTPException(422, errors)

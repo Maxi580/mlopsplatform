@@ -16,6 +16,9 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     database = tmp_path / "platform.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database}")
     monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
+    monkeypatch.setenv("S3_ENDPOINT_URL", "http://seaweedfs.test:8333")
+    monkeypatch.setenv("S3_PUBLIC_URL", "https://platform.test")
+    monkeypatch.setenv("S3_BUCKET", "platform")
     return database
 
 
@@ -54,7 +57,29 @@ def hugging_face(api):
     return api.app.state.hugging_face
 
 
+class FakeObjectStore:
+    """Keeps objects in memory; download URLs point at the key."""
+
+    def __init__(self):
+        self.objects = {}
+
+    def upload_file(self, path, key):
+        self.objects[key] = path.read_bytes()
+
+    def delete(self, key):
+        self.objects.pop(key, None)
+
+    def download_url(self, key):
+        return f"https://objects.test/{key}?signature=x"
+
+
 @pytest.fixture
-def logged_in_api(api, hugging_face):
+def object_store(api):
+    api.app.state.object_store = FakeObjectStore()
+    return api.app.state.object_store
+
+
+@pytest.fixture
+def logged_in_api(api, hugging_face, object_store):
     api.post(api_paths.LOGIN, json={"password": PASSWORD})
     return api

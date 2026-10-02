@@ -1,10 +1,13 @@
 import pytest
+from sqlalchemy import create_engine
 
+from mlp_api.database import create_tables
+from mlp_api.datasets import delete_dataset_version, upload_dataset_version
 from mlp_api.hugging_face import HubModel
 from mlp_api.pipeline_request import validate_pipeline_request
 from mlp_core import config
 
-from .conftest import FakeHuggingFace
+from .conftest import FakeHuggingFace, FakeObjectStore
 
 BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 COMMIT = "7ae557604adf67be50417f59c2c2f167def9a775"
@@ -65,9 +68,26 @@ def hugging_face():
 
 
 @pytest.fixture
-def validate(hugging_face):
+def engine(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'platform.db'}")
+    create_tables(engine)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def chat_dataset(engine, tmp_path):
+    """Dataset `chat` with versions 1 and 2."""
+    path = tmp_path / "chat.jsonl"
+    path.write_text('{"messages": [{"role": "user", "content": "Hi"}]}\n')
+    for _ in range(2):
+        upload_dataset_version(engine, FakeObjectStore(), "chat", path)
+
+
+@pytest.fixture
+def validate(hugging_face, engine, chat_dataset):
     def run(request, secrets=None):
-        return validate_pipeline_request(request, secrets or {}, hugging_face)
+        return validate_pipeline_request(request, secrets or {}, hugging_face, engine)
 
     return run
 
@@ -84,6 +104,38 @@ def test_a_valid_request_comes_back_resolved(validate):
     assert errors == []
     assert request.finetune.base_model == f"hf:{BASE_MODEL}@{COMMIT}"
     assert request.finetune.phases[0].settings.warmup_steps == 10
+
+
+def test_a_dataset_name_resolves_to_its_latest_version(validate):
+    request, _ = validate(pipeline_request())
+
+    assert request.finetune.phases[0].dataset == "dataset:chat@2"
+
+
+def test_a_named_dataset_version_is_kept(validate):
+    request, _ = validate(pipeline_request(phase={"dataset": "dataset:chat@1"}))
+
+    assert request.finetune.phases[0].dataset == "dataset:chat@1"
+
+
+@pytest.mark.parametrize(
+    ("dataset", "message"),
+    [
+        ("dataset:missing", "no Dataset `missing`"),
+        ("dataset:chat@3", "`chat` has no version 3"),
+        ("dataset:chat@0", "`chat` has no version 0"),
+    ],
+)
+def test_unknown_datasets_and_versions_are_rejected(validate, dataset, message):
+    assert message in rejection(validate(pipeline_request(phase={"dataset": dataset})))
+
+
+def test_a_deleted_dataset_version_is_rejected(validate, engine):
+    delete_dataset_version(engine, FakeObjectStore(), "chat", 2)
+
+    assert "`chat` has no version 2" in rejection(
+        validate(pipeline_request(phase={"dataset": "dataset:chat@2"}))
+    )
 
 
 def test_a_named_revision_is_looked_up_and_pinned(validate, hugging_face):

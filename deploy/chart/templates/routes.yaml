@@ -21,6 +21,13 @@ spec:
         - name: ml-pipeline-ui
           namespace: {{ .Values.namespaces.kubeflow }}
           port: {{ .Values.ports.kfpUi }}
+    # Presigned Dataset downloads; their signature is the login, so the path goes to SeaweedFS as is.
+    - kind: Rule
+      match: {{ $host }} && PathPrefix(`/{{ .Values.platformBucket }}/datasets/`) && Method(`GET`)
+      services:
+        - name: seaweedfs
+          namespace: {{ .Values.namespaces.kubeflow }}
+          port: {{ .Values.ports.seaweedfs }}
     - kind: Rule
       match: {{ $host }} && Path(`/mlflow`)
       middlewares:

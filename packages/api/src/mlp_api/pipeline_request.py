@@ -2,17 +2,24 @@ import json
 
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
+from sqlalchemy import Engine
 
+from mlp_api.datasets import find_dataset_version
 from mlp_api.hugging_face import HuggingFace
 from mlp_core import config
-from mlp_core.pipeline_request.references import base_model_reference, split_base_model_reference
+from mlp_core.pipeline_request.references import (
+    base_model_reference,
+    dataset_reference,
+    split_base_model_reference,
+    split_dataset_reference,
+)
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 
 def validate_pipeline_request(
-    data: dict, secrets: dict[str, str], hugging_face: HuggingFace
+    data: dict, secrets: dict[str, str], hugging_face: HuggingFace, engine: Engine
 ) -> tuple[PipelineRequest | None, list[dict]]:
-    """The request with its Base Model pinned to a commit, or None and every error with its path."""
+    """The request with every Reference pinned, or None and every error with its path."""
     # 1. The schema: required values, types, no unknown fields.
     try:
         request = PipelineRequest.model_validate(data)
@@ -33,6 +40,18 @@ def validate_pipeline_request(
         errors.append(error(base_model_loc, f"{repo} on Hugging Face {reason}"))
     elif model.needs_remote_code:
         errors.append(error(base_model_loc, f"{repo} needs remote code, which never runs here"))
+
+    # 4. The Datasets in the Dataset registry, pinned to a version.
+    for index, phase in enumerate(request.finetune.phases):
+        name, version = split_dataset_reference(phase.dataset)
+        pinned = find_dataset_version(engine, name, version)
+        if pinned is not None:
+            phase.dataset = dataset_reference(name, pinned)
+        elif version is None:
+            errors.append(error(["finetune", "phases", index, "dataset"], f"no Dataset `{name}`"))
+        else:
+            missing = f"`{name}` has no version {version}"
+            errors.append(error(["finetune", "phases", index, "dataset"], missing))
 
     if errors:
         return None, errors
