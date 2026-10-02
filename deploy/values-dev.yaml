@@ -1,0 +1,6 @@
+domain: localhost
+
+settings:
+  gpu_count: 1
+  model_cache_size: 100Gi
+  object_store_size: 50Gi

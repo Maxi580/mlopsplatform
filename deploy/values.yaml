@@ -1,0 +1,77 @@
+# The one place naming namespaces, images, upstream versions, ports and platform settings defaults.
+# values-<env>.yaml override only what differs per environment.
+
+domain: ""
+
+namespaces:
+  platform: mlp
+  kubeflow: kubeflow
+  mlflow: mlflow
+  certManager: cert-manager
+  kubeSystem: kube-system
+
+versions:
+  k3s: v1.37.1+k3s1
+  nerdctl: 2.4.0
+  buildkit: v0.33.1
+  helm: v3.22.0
+  certManager: v1.21.2
+  kfp: 2.17.2
+  mlflowChart: 1.11.7
+  nvidiaDevicePlugin: v0.20.1
+
+images:
+  python: python:3.12-slim
+  uv: ghcr.io/astral-sh/uv:0.12.22
+  postgres: postgres:17
+  api: mlp-api
+  # Set by install.sh to the short git SHA.
+  tag: ""
+
+ports:
+  api: 8000
+  postgres: 5432
+  kfpUi: 80
+  mlflow: 80
+  seaweedfs: 8333
+
+postgres:
+  user: mlp
+  database: platform
+  storage: 10Gi
+
+# Created in SeaweedFS next to KFP's own mlpipeline bucket.
+buckets: [mlflow, platform]
+
+# Rendered into the platform settings ConfigMap, read through mlp_core.settings.
+settings:
+  gpu_count: 1
+  gpus_per_stage: 1
+  gpus_per_endpoint: 1
+  sandbox_timeout_seconds: 10
+  sandbox_memory_mb: 1024
+  model_cache_size: 200Gi
+  model_cache_high_water_mark: 0.9
+  object_store_size: 100Gi
+  checkpoint_minutes: 30
+  speculate_dataloader_workers: 4
+
+# Values for the upstream MLflow chart; install.sh adds the in-cluster hostnames.
+mlflow:
+  backendStore:
+    databaseMigration: true
+    databaseConnectionCheck: true
+    postgres:
+      enabled: true
+      database: mlflow
+    existingDatabaseSecret:
+      name: mlflow-credentials
+  artifactRoot:
+    proxiedArtifactStorage: true
+    s3:
+      enabled: true
+      bucket: mlflow
+      existingSecret:
+        name: mlflow-credentials
+  # The edge login protects MLflow; in-cluster callers and kubelet probes use other host names.
+  serverAllowedHosts: ["*"]

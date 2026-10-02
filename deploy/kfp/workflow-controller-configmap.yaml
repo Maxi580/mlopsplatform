@@ -1,0 +1,18 @@
+# Upstream's workflowDefaults plus podGC; logs stay readable because upstream archives them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-controller-configmap
+data:
+  workflowDefaults: |
+    spec:
+      podGC:
+        strategy: OnPodCompletion
+      ttlStrategy:
+        secondsAfterCompletion: 3600
+        secondsAfterSuccess: 3600
+        secondsAfterFailure: 3600
+      templateDefaults:
+        retryStrategy:
+          limit: '2'
+          retryPolicy: OnError

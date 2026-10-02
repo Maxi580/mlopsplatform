@@ -1,0 +1,55 @@
+# One domain, split by path: the free Azure DNS name has no subdomains.
+{{- $host := printf "Host(`%s`)" .Values.domain }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: platform
+spec:
+  entryPoints: [websecure]
+  tls: {}
+  routes:
+    - kind: Rule
+      match: {{ $host }}
+      services:
+        - name: api
+          port: {{ .Values.ports.api }}
+    - kind: Rule
+      match: {{ $host }} && PathPrefix(`/pipeline`)
+      services:
+        - name: ml-pipeline-ui
+          namespace: {{ .Values.namespaces.kubeflow }}
+          port: {{ .Values.ports.kfpUi }}
+    - kind: Rule
+      match: {{ $host }} && Path(`/mlflow`)
+      middlewares:
+        - name: mlflow-add-slash
+      services:
+        - name: noop@internal
+          kind: TraefikService
+    - kind: Rule
+      match: {{ $host }} && PathPrefix(`/mlflow/`)
+      middlewares:
+        - name: mlflow-strip-prefix
+      services:
+        - name: mlflow
+          namespace: {{ .Values.namespaces.mlflow }}
+          port: {{ .Values.ports.mlflow }}
+---
+# The MLflow UI uses relative URLs, so it works under /mlflow/ once the prefix is stripped.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: mlflow-strip-prefix
+spec:
+  stripPrefix:
+    prefixes: [/mlflow]
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: mlflow-add-slash
+spec:
+  redirectRegex:
+    regex: ^(.*)/mlflow$
+    replacement: ${1}/mlflow/
+    permanent: true

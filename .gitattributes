@@ -1,0 +1,2 @@
+# Scripts and manifests run on Linux, even from a Windows checkout.
+* text=auto eol=lf

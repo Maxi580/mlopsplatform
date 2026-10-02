@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: api
+  ports:
+    - port: {{ .Values.ports.api }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+      annotations:
+        checksum/settings: {{ .Values.settings | toJson | sha256sum }}
+    spec:
+      containers:
+        - name: api
+          image: {{ .Values.images.api }}:{{ required "images.tag is set by install.sh" .Values.images.tag }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: platform-settings
+          env:
+            - name: UVICORN_PORT
+              value: {{ .Values.ports.api | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mlp-credentials
+                  key: postgresPassword
+            - name: DATABASE_URL
+              value: postgresql+psycopg://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@postgres:{{ .Values.ports.postgres }}/{{ .Values.postgres.database }}
+          ports:
+            - containerPort: {{ .Values.ports.api }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.ports.api }}

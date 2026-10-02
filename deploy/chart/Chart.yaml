@@ -1,0 +1,4 @@
+apiVersion: v2
+name: mlp
+description: Our parts of the MLOps platform
+version: 0.1.0

@@ -1,0 +1,64 @@
+# The platform's own CA (kept until uninstall) signs the server certificate that Traefik serves by default.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: mlp-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mlp-ca
+  namespace: {{ .Values.namespaces.certManager }}
+spec:
+  isCA: true
+  commonName: mlp-ca
+  secretName: mlp-ca
+  duration: 87600h
+  # A renewal must keep the key, or every client would have to re-import ca.crt.
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Never
+  issuerRef:
+    kind: ClusterIssuer
+    name: mlp-selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: mlp-ca
+spec:
+  ca:
+    secretName: mlp-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mlp-tls
+spec:
+  secretName: mlp-tls
+  dnsNames:
+    - {{ required "domain is set in values-<env>.yaml" .Values.domain }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: ClusterIssuer
+    name: mlp-ca
+---
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+spec:
+  defaultCertificate:
+    secretName: mlp-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: TLSOption
+metadata:
+  name: default
+spec:
+  minVersion: VersionTLS13
