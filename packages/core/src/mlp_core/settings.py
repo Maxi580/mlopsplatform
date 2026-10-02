@@ -21,11 +21,12 @@ class Settings(BaseSettings):
     speculate_dataloader_workers: int
 
     @model_validator(mode="after")
-    def check_a_stage_fits_on_the_platform(self) -> "Settings":
-        if self.gpus_per_stage > self.gpu_count:
-            raise ValueError(
-                f"gpus_per_stage ({self.gpus_per_stage}) exceeds gpu_count ({self.gpu_count})"
-            )
+    def check_a_stage_and_an_endpoint_fit_on_the_platform(self) -> "Settings":
+        for name in ("gpus_per_stage", "gpus_per_endpoint"):
+            if getattr(self, name) > self.gpu_count:
+                raise ValueError(
+                    f"{name} ({getattr(self, name)}) exceeds gpu_count ({self.gpu_count})"
+                )
         return self
 
 

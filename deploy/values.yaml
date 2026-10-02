@@ -33,6 +33,8 @@ images:
   trainerHf: mlp-trainer-hf
   # Builds the Web UI with node and serves its static files with nginx.
   webui: mlp-webui
+  # Endpoints run the upstream vLLM image as is.
+  vllm: vllm/vllm-openai:v0.30.0
   # Set by install.sh to the short git SHA.
   tag: ""
 

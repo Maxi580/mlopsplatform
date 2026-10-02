@@ -1,4 +1,3 @@
-import json
 from datetime import UTC, datetime
 
 from sqlalchemy import (
@@ -123,24 +122,6 @@ def pipeline_summary(row) -> dict:
 
 def kubeflow_run_url(run_id: str) -> str:
     return config.KUBEFLOW_RUN_URL.format(run_id=run_id)
-
-
-def refuse_while_in_use(engine: Engine, reference: str, produced_by: str | None = None) -> None:
-    """ValueError naming every unfinished Pipeline whose request names the Reference or makes it."""
-    using = pipelines_using(engine, reference, produced_by)
-    if using:
-        raise ValueError(f"{reference} is used by Pipeline {', '.join(using)}")
-
-
-def pipelines_using(engine: Engine, reference: str, produced_by: str | None = None) -> list[str]:
-    with engine.connect() as connection:
-        rows = connection.execute(select(pipeline).where(unfinished)).all()
-    # A resolved request pins every Reference, so it holds the exact string as one JSON value.
-    return [
-        f"{row.name} (#{row.id})"
-        for row in rows
-        if str(row.id) == produced_by or json.dumps(reference) in json.dumps(row.request)
-    ]
 
 
 # Submission happens inside a request, so after a restart no unsubmitted Pipeline is in flight.

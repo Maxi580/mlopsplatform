@@ -13,6 +13,8 @@ from mlp_core.pipeline_request.references import base_model_reference, split_bas
 class HubModel:
     commit: str
     needs_remote_code: bool
+    # From its config.json; picks the tool-call parser an Endpoint serves it with.
+    model_type: str | None = None
 
 
 class HuggingFace:
@@ -31,7 +33,12 @@ class HuggingFace:
         except (HfHubHTTPError, httpx.HTTPError):
             return None
         self.sizes[(repo, info.sha)] = sum(file.size or 0 for file in info.siblings or [])
-        return HubModel(commit=info.sha, needs_remote_code="auto_map" in (info.config or {}))
+        model_config = info.config or {}
+        return HubModel(
+            commit=info.sha,
+            needs_remote_code="auto_map" in model_config,
+            model_type=model_config.get("model_type"),
+        )
 
     def model_size(self, repo: str, commit: str, token: str | None) -> int | None:
         """The bytes a download of every file at the commit takes, or None if Hugging Face fails."""
@@ -51,6 +58,13 @@ class HuggingFace:
 
 def pin_base_model(hugging_face: HuggingFace, reference: str, token: str | None) -> str:
     """The `hf:` Reference pinned to a commit; ValueError saying why it can't be."""
+    return find_base_model(hugging_face, reference, token)[0]
+
+
+def find_base_model(
+    hugging_face: HuggingFace, reference: str, token: str | None
+) -> tuple[str, HubModel]:
+    """The `hf:` Reference pinned to a commit, and the model; ValueError saying why it can't be."""
     repo, revision = split_base_model_reference(reference)
     model = hugging_face.find_model(repo, revision or config.DEFAULT_HF_REVISION, token)
     if model is None:
@@ -58,4 +72,4 @@ def pin_base_model(hugging_face: HuggingFace, reference: str, token: str | None)
         raise ValueError(f"{repo} on Hugging Face {reason}")
     if model.needs_remote_code:
         raise ValueError(f"{repo} needs remote code, which never runs here")
-    return base_model_reference(repo, model.commit)
+    return base_model_reference(repo, model.commit), model

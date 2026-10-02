@@ -51,6 +51,34 @@ TOOL_PARSERS = {
     "llama": "llama3_json",
     "mistral": "mistral",
 }
+# The tool-call parsers built into the pinned vLLM; no parser plugins are allowed (#16).
+VLLM_TOOL_PARSERS = (
+    "deepseek_v3",
+    "deepseek_v31",
+    "glm45",
+    "granite",
+    "granite-20b-fc",
+    "hermes",
+    "hunyuan_a13b",
+    "internlm",
+    "jamba",
+    "kimi_k2",
+    "llama3_json",
+    "llama4_json",
+    "llama4_pythonic",
+    "minimax",
+    "mistral",
+    "openai",
+    "phi4_mini_json",
+    "pythonic",
+    "qwen3_coder",
+    "qwen3_xml",
+    "seed_oss",
+    "step3",
+    "xlam",
+)
+# The `--max-lora-rank` values vLLM accepts; an Adapter is served with the smallest that fits.
+VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 # Always run in this order.
 STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
 # Secret slot -> the environment variable of the one step that receives it.
@@ -109,6 +137,32 @@ SECRET_MAX_AGE = timedelta(hours=48)
 # The KFP UI's run page, behind the platform's /pipeline/ route.
 KUBEFLOW_RUN_URL = "/pipeline/#/runs/details/{run_id}"
 
+# Endpoints
+# Names an Endpoint's Deployment, Service and route.
+ENDPOINT_OBJECT_NAME = "endpoint-{name}"
+# Labels an Endpoint's pods with its name.
+ENDPOINT_LABEL = "mlp-endpoint"
+# Where OpenAI clients reach an Endpoint, behind the login; Traefik strips the prefix before vLLM.
+ENDPOINT_PATH_PREFIX = "/endpoints/{name}/"
+ENDPOINT_URL = "/endpoints/{name}/v1"
+# The Traefik middlewares of the platform namespace on every Endpoint route.
+ENDPOINT_ROUTE_MIDDLEWARES = ("login", "endpoint-strip-prefix")
+# Traefik's IngressRoute resource: its API group, version and plural.
+TRAEFIK_ROUTES = ("traefik.io", "v1alpha1", "ingressroutes")
+VLLM_PORT = 8000
+# Where an Endpoint's init container puts the Model Version files vLLM loads.
+ENDPOINT_MODEL_DIRECTORY = "/models"
+ENDPOINT_WEIGHTS_DIRECTORY = f"{ENDPOINT_MODEL_DIRECTORY}/weights"
+ENDPOINT_ADAPTER_DIRECTORY = f"{ENDPOINT_MODEL_DIRECTORY}/adapter"
+# Prefixed with `endpoint-`, an Endpoint's name names Kubernetes objects, which allow 63 characters.
+ENDPOINT_NAME_MAX_LENGTH = 54
+# The object store keys in the platform namespace, which Endpoints download Model Versions with.
+PLATFORM_CREDENTIALS_SECRET = "mlp-credentials"
+PLATFORM_OBJECT_STORE_SECRET_ENV_VARS = {
+    "s3AccessKey": "AWS_ACCESS_KEY_ID",
+    "s3SecretKey": "AWS_SECRET_ACCESS_KEY",
+}
+
 # Datasets
 # TRL's standard Dataset row formats -> required field -> its value; the first match wins.
 ROW_FORMATS = {
@@ -160,6 +214,9 @@ SMOKE_TEST_UPLOADED_MODEL = "hf:trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 # The case that finetunes from it, with its Phase algorithm, method and backend.
 SMOKE_TEST_UPLOADED_MODEL_CASE = "uploaded-model"
 SMOKE_TEST_UPLOADED_MODEL_TRAINING = ("sft", "lora", "hf")
+# Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
+# uploaded tiny full-weight model, and the Adapter of the first finetune case.
+SMOKE_TEST_SERVING_CASES = ("serve-base-model", "serve-full-weights", "serve-adapter")
 # One tiny Dataset per Phase algorithm, named after it, uploaded the normal way by each Smoke Test.
 SMOKE_TEST_DATASETS_DIRECTORY = Path(__file__).parent / "smoke_test_datasets"
 # Every finetune case trains a few steps; only that it runs matters, not what it learns.

@@ -66,6 +66,15 @@ def test_a_custom_smoke_test_can_run_the_uploaded_model_case(started, fake_api):
     assert fake_api.received[0] == (api_paths.SMOKE_TEST_CUSTOM, {"uploaded_model": True})
 
 
+def test_a_custom_smoke_test_can_run_the_serving_cases(started, fake_api):
+    fake_api.answers[api_paths.PIPELINES] = (200, [smoke_test("succeeded", {"fetch": "passed"})])
+
+    result = mlp("smoke-test", "--serving")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received[0] == (api_paths.SMOKE_TEST_CUSTOM, {"serving": True})
+
+
 def test_a_smoke_test_already_running_is_reported(started, fake_api):
     fake_api.answers[api_paths.SMOKE_TEST_COMPLETE] = (409, {"detail": "still running"})
 

@@ -2,7 +2,7 @@ from typing import Annotated
 
 import typer
 
-from mlp_cli import cache, datasets, models, pipelines
+from mlp_cli import cache, datasets, endpoints, models, pipelines
 from mlp_cli.api import api_client, save_token
 from mlp_cli.smoke_test import smoke_test
 from mlp_core import api_paths
@@ -11,6 +11,7 @@ app = typer.Typer(no_args_is_help=True)
 app.add_typer(datasets.app, name="datasets")
 app.add_typer(models.app, name="models")
 app.add_typer(cache.app, name="cache")
+app.add_typer(endpoints.app, name="endpoints")
 for command in (pipelines.validate, pipelines.run, pipelines.rerun, pipelines.ls, pipelines.cancel):
     app.command()(command)
 app.command("smoke-test")(smoke_test)

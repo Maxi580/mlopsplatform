@@ -8,6 +8,7 @@ from kubernetes import client
 from kubernetes import config as kubernetes_config
 from kubernetes.client.exceptions import ApiException
 
+from mlp_api.endpoints.environment import EndpointEnvironment
 from mlp_api.pipelines.compiler import StepEnvironment
 from mlp_core import config
 
@@ -26,13 +27,18 @@ class Cluster:
     def __init__(self):
         self.namespace = os.environ["KUBEFLOW_NAMESPACE"]
         self.steps = StepEnvironment.from_environment()
+        self.endpoint_environment = EndpointEnvironment.from_environment()
         self.kubeflow = httpx.Client(base_url=f"{os.environ['KUBEFLOW_URL']}/apis/v2beta1")
 
     # Loaded on first use, so the API also starts outside a cluster.
     @cached_property
-    def kubernetes(self) -> client.CoreV1Api:
+    def kubernetes_client(self) -> client.ApiClient:
         kubernetes_config.load_incluster_config()
-        return client.CoreV1Api()
+        return client.ApiClient()
+
+    @property
+    def kubernetes(self) -> client.CoreV1Api:
+        return client.CoreV1Api(self.kubernetes_client)
 
     def create_secret(self, name: str, values: dict[str, str]) -> None:
         secret = client.V1Secret(
@@ -93,3 +99,59 @@ class Cluster:
             for pod in pods.items
             for condition in pod.status.conditions or []
         )
+
+    def create_endpoint(self, manifests: dict[str, dict]) -> None:
+        namespace = self.endpoint_environment.namespace
+        client.AppsV1Api(self.kubernetes_client).create_namespaced_deployment(
+            namespace, manifests["deployment"]
+        )
+        self.kubernetes.create_namespaced_service(namespace, manifests["service"])
+        client.CustomObjectsApi(self.kubernetes_client).create_namespaced_custom_object(
+            *config.TRAEFIK_ROUTES, namespace=namespace, body=manifests["route"]
+        )
+
+    def delete_endpoint(self, name: str) -> None:
+        """Deletes whichever of the Endpoint's Deployment, Service and route exist."""
+        namespace = self.endpoint_environment.namespace
+        object_name = config.ENDPOINT_OBJECT_NAME.format(name=name)
+        custom_objects = client.CustomObjectsApi(self.kubernetes_client)
+        deletes = (
+            lambda: client.AppsV1Api(self.kubernetes_client).delete_namespaced_deployment(
+                object_name, namespace
+            ),
+            lambda: self.kubernetes.delete_namespaced_service(object_name, namespace),
+            lambda: custom_objects.delete_namespaced_custom_object(
+                *config.TRAEFIK_ROUTES, namespace=namespace, name=object_name
+            ),
+        )
+        for delete in deletes:
+            try:
+                delete()
+            except ApiException as error:
+                if error.status != 404:
+                    raise
+
+    def endpoint_state(self, name: str) -> str | None:
+        """running, failed once a container restarted unready, else pending; None if deleted."""
+        namespace = self.endpoint_environment.namespace
+        try:
+            client.AppsV1Api(self.kubernetes_client).read_namespaced_deployment(
+                config.ENDPOINT_OBJECT_NAME.format(name=name), namespace
+            )
+        except ApiException as error:
+            if error.status == 404:
+                return None
+            raise
+        pods = self.kubernetes.list_namespaced_pod(
+            namespace, label_selector=f"{config.ENDPOINT_LABEL}={name}"
+        ).items
+        for pod in pods:
+            if any(c.type == "Ready" and c.status == "True" for c in pod.status.conditions or []):
+                return "running"
+            containers = (pod.status.init_container_statuses or []) + (
+                pod.status.container_statuses or []
+            )
+            # vLLM exits when the model doesn't fit or load, and Kubernetes restarts it.
+            if any(container.restart_count for container in containers):
+                return "failed"
+        return "pending"

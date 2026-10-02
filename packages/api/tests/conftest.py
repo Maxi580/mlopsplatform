@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from mlp_api.app import app
 from mlp_api.auth.account import set_password
+from mlp_api.endpoints.environment import EndpointEnvironment
 from mlp_api.models.mlflow import ModelVersion
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.compiler import StepEnvironment
@@ -30,6 +31,10 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("STAGES_IMAGE", "mlp-stages:real")
     monkeypatch.setenv("TRAINER_HF_IMAGE", "mlp-trainer-hf:real")
     monkeypatch.setenv("MODEL_CACHE_PVC", "model-cache")
+    monkeypatch.setenv("PLATFORM_NAMESPACE", "mlp")
+    monkeypatch.setenv("DOMAIN", "platform.test")
+    monkeypatch.setenv("VLLM_IMAGE", "vllm/vllm-openai:real")
+    monkeypatch.setenv("MODEL_CACHE_HOST_PATH", "/var/lib/mlp/model-cache")
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
     monkeypatch.setattr(config, "EVICTION_INTERVAL", timedelta(days=1))
@@ -184,7 +189,7 @@ def model_registry(api):
 
 
 class FakeCluster:
-    """Records Secrets and Kubeflow runs; tests set run states and pods waiting for GPUs."""
+    """Records Secrets, Kubeflow runs and Endpoints; tests set run, pod and Endpoint states."""
 
     steps = StepEnvironment(
         stages_image="mlp-stages:test",
@@ -193,6 +198,14 @@ class FakeCluster:
         object_store_url="http://seaweedfs.test:8333",
         object_store_bucket="platform",
     )
+    endpoint_environment = EndpointEnvironment(
+        namespace="mlp",
+        domain="platform.test",
+        vllm_image="vllm/vllm-openai:test",
+        stages_image="mlp-stages:test",
+        model_cache_host_path="/var/lib/mlp/model-cache",
+        object_store_url="http://seaweedfs.test:8333",
+    )
 
     def __init__(self):
         self.secrets = {}
@@ -200,6 +213,10 @@ class FakeCluster:
         self.runs = {}
         self.terminated = []
         self.waiting_for_gpu = set()
+        # Endpoint name -> its Kubernetes objects, and the state its pod is in.
+        self.endpoints = {}
+        self.endpoint_states = {}
+        self.deleted_endpoints = []
 
     def create_secret(self, name, values):
         self.secrets[name] = values
@@ -225,6 +242,17 @@ class FakeCluster:
 
     def is_waiting_for_gpu(self, run_id):
         return run_id in self.waiting_for_gpu
+
+    def create_endpoint(self, manifests):
+        name = manifests["deployment"]["metadata"]["labels"][config.ENDPOINT_LABEL]
+        self.endpoints[name] = manifests
+
+    def delete_endpoint(self, name):
+        self.endpoints.pop(name, None)
+        self.deleted_endpoints.append(name)
+
+    def endpoint_state(self, name):
+        return self.endpoint_states.get(name, "pending") if name in self.endpoints else None
 
 
 @pytest.fixture

@@ -2,6 +2,7 @@ from typing import Literal
 
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_core import config
+from mlp_core.pipeline_request.references import model_reference
 from mlp_core.pipeline_request.schema import METHODS, Strict
 
 
@@ -19,9 +20,13 @@ class SmokeTestSelection(Strict):
     finetune: FinetuneCases | None = None
     # Uploads a tiny model and trains an sft/lora/hf Phase from it.
     uploaded_model: bool = False
+    # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints.
+    serving: bool = False
 
 
-COMPLETE_SMOKE_TEST = SmokeTestSelection(finetune=FinetuneCases(), uploaded_model=True)
+COMPLETE_SMOKE_TEST = SmokeTestSelection(
+    finetune=FinetuneCases(), uploaded_model=True, serving=True
+)
 
 
 def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, str]]:
@@ -58,6 +63,30 @@ def finetune_case_request(
             ],
         },
     }
+
+
+def serving_cases(
+    selection: SmokeTestSelection,
+    trainings: dict,
+    smoke_test: str,
+    base_model: str,
+    uploaded_model: str | None,
+) -> dict[str, dict]:
+    """Serving case -> the model its Endpoint serves, and the finetune case making it, if any."""
+    if not selection.serving:
+        return {}
+    base, full_weights, adapter = config.SMOKE_TEST_SERVING_CASES
+    cases = {base: {"model": base_model}, full_weights: {"model": uploaded_model}}
+    finetunes = [case for case in trainings if case != config.SMOKE_TEST_UPLOADED_MODEL_CASE]
+    if finetunes:
+        made_by = finetunes[0]
+        model = model_reference(f"{smoke_test}-{made_by}", 1)
+        cases[adapter] = {"model": model, "made_by": made_by}
+    return cases
+
+
+def has_pending_serving_cases(cases: dict[str, str]) -> bool:
+    return any(cases.get(case) == "pending" for case in config.SMOKE_TEST_SERVING_CASES)
 
 
 def case_results(cases: dict[str, str], run: KubeflowRun | None, finished: bool) -> dict:

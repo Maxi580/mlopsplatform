@@ -1527,13 +1527,13 @@ name = "mlp-stages"
 version = "0.1.0"
 source = { editable = "packages/stages" }
 dependencies = [
+    { name = "boto3" },
     { name = "huggingface-hub" },
     { name = "mlp-core" },
 ]
 
 [package.optional-dependencies]
 hf = [
-    { name = "boto3" },
     { name = "mlflow-skinny" },
     { name = "peft" },
     { name = "torch" },
@@ -1542,7 +1542,7 @@ hf = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", marker = "extra == 'hf'" },
+    { name = "boto3" },
     { name = "huggingface-hub", specifier = ">=1.31,<2" },
     { name = "mlflow-skinny", marker = "extra == 'hf'" },
     { name = "mlp-core", editable = "packages/core" },

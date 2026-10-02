@@ -74,7 +74,45 @@ mlp cache                                      # every cached Base Model with si
 mlp cache free hf:Qwen/Qwen2.5-0.5B-Instruct@<commit>
 ```
 
-`fetch` downloads each Base Model once into the Model Cache, a host directory (`modelCacheHostPath`) that the steps and the API mount. Past `model_cache_high_water_mark` of `model_cache_size`, the API evicts the least recently used Base Models, never one an unfinished Pipeline uses; a submit also evicts to make room for its Base Model. `fetch` fails before downloading if the whole download still doesn't fit. Freeing a Base Model in use is refused with 409.
+`fetch` downloads each Base Model once into the Model Cache, a host directory (`modelCacheHostPath`) that the steps and the API mount. Past `model_cache_high_water_mark` of `model_cache_size`, the API evicts the least recently used Base Models, never one an unfinished Pipeline or an Endpoint uses; a submit or an Endpoint start also evicts to make room for its Base Model. `fetch` fails before downloading if the whole download still doesn't fit. Freeing a Base Model in use is refused with 409.
+
+## Endpoints
+
+```sh
+mlp endpoints                                              # every Endpoint with model, status and URL
+mlp endpoints start hf:Qwen/Qwen3-0.6B --name chat         # a Base Model
+mlp endpoints start model:qwen-sft@1 --name chat-sft -o max_model_len=8192 -o kv_cache_dtype=fp8
+mlp endpoints stop chat
+```
+
+An Endpoint is a vLLM Deployment (the upstream `images.vllm`, pinned) serving one model on `gpus_per_endpoint` GPUs from the platform settings: a Base Model from the Model Cache, a full-weight Model Version, or an Adapter on its base. Its pod first downloads what vLLM loads, with `fetch` for a Base Model (public ones only: Endpoints take no Hugging Face token, so gated models are rejected) and `mlp-stage download` for Model Version files, then runs vLLM offline. It shows `pending` while GPUs are busy, however long that takes, then `running` once vLLM is ready, or `failed` once vLLM crashed (its pod logs say why). It runs until `mlp endpoints stop` deletes it (`stopped`), or its Deployment disappears, e.g. in a platform upgrade. A name is free again once its Endpoint stopped. The Base Models and Model Versions an Endpoint serves from can't be deleted or evicted while it runs.
+
+The OpenAI-compatible URL is `https://<domain>/endpoints/<name>/v1`, behind the same login as everything else; clients call the model by the Endpoint's name and send the token `mlp login` stored:
+
+```python
+from pathlib import Path
+from openai import OpenAI  # run with SSL_CERT_FILE=ca.crt
+
+client = OpenAI(
+    base_url="https://<domain>/endpoints/chat/v1", api_key=(Path.home() / ".mlp/token").read_text()
+)
+client.chat.completions.create(model="chat", messages=[{"role": "user", "content": "Hi"}])
+```
+
+Serving options, all optional (`POST /endpoints` takes `name`, `model` and these; anything else, `tensor_parallel_size` included, is rejected):
+
+| Option | vLLM flag |
+|---|---|
+| `max_model_len` | `--max-model-len` |
+| `prefix_caching` (default `true`) | `--[no-]enable-prefix-caching` |
+| `dtype`: `auto`, `half`, `float16`, `bfloat16`, `float32` | `--dtype` |
+| `gpu_memory_utilization`, `max_num_seqs`, `max_num_batched_tokens` | the same names |
+| `async_scheduling` | `--[no-]async-scheduling` |
+| `kv_cache_dtype`: `auto`, `fp8`, `fp8_e4m3`, `fp8_e5m2` | `--kv-cache-dtype` |
+| `quantization`: `fp8` or `bitsandbytes`, on the fly | `--quantization` |
+| `tool_parser`: one of vLLM's built-in parsers | `--tool-call-parser` |
+
+Tool calling is on (`--enable-auto-tool-choice`) whenever a parser is known: `tool_parser`, else the model's `tool_parser` tag, else the one its Base Model's `model_type` maps to. `mlp_core.endpoint_spec.vllm_args` turns a spec into vLLM's arguments, so `evaluate` and in-cluster Teachers will use the same flags.
 
 ## Pipeline Requests
 
@@ -120,9 +158,10 @@ Next comes `finetune`, which trains the Phase on the backend's trainer image (`h
 mlp smoke-test                              # every case; prints each result, exits 1 if one failed
 mlp smoke-test --phases sft --backends hf   # a custom one: only the finetune cases named
 mlp smoke-test --uploaded-model             # a custom one: only the uploaded-model case
+mlp smoke-test --serving                    # a custom one: only serving the Base Model and tiny model
 ```
 
-The API routes are `POST /smoke-tests/complete` and `POST /smoke-tests/custom` (body e.g. `{"finetune": {"phases": ["sft"]}}`; an unnamed list means all of it). Both answer 202 with the Kubeflow run link, or 409 while a Smoke Test runs. It is one Kubeflow run, `smoketest-YYMMDD-HHMMSS`, on `Qwen/Qwen2.5-0.5B-Instruct`, with one node per case: `fetch`, then one per finetune Phase × method × backend the backend supports (e.g. `sft-lora-hf`), each training 3 steps on a bundled Dataset from `packages/core/src/mlp_core/smoke_test_datasets/`, and `uploaded-model` (custom body `{"uploaded_model": true}`): the API downloads `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5`, uploads it as `smoketest-…-uploaded` through the same checks as a user's upload, and the case trains an `sft` Phase `from` it. A case passes if it runs without errors; what it learns is ignored. Each node runs once the one before it ended, even if that failed, so one failure shows red and the rest still run. It also lists in `mlp ls`. Once the run finished, the API deletes every Dataset and Registered Model named `smoketest-YYMMDD-HHMMSS-…`; only the Kubeflow run, its logs and its MLflow Runs remain, and the Base Model stays in the Model Cache.
+The API routes are `POST /smoke-tests/complete` and `POST /smoke-tests/custom` (body e.g. `{"finetune": {"phases": ["sft"]}}`; an unnamed list means all of it). Both answer 202 with the Kubeflow run link, or 409 while a Smoke Test runs. It is one Kubeflow run, `smoketest-YYMMDD-HHMMSS`, on `Qwen/Qwen2.5-0.5B-Instruct`, with one node per case: `fetch`, then one per finetune Phase × method × backend the backend supports (e.g. `sft-lora-hf`), each training 3 steps on a bundled Dataset from `packages/core/src/mlp_core/smoke_test_datasets/`, and `uploaded-model` (custom body `{"uploaded_model": true}`): the API downloads `trl-internal-testing/tiny-Qwen2ForCausalLM-2.5`, uploads it as `smoketest-…-uploaded` through the same checks as a user's upload, and the case trains an `sft` Phase `from` it. A case passes if it runs without errors; what it learns is ignored. Each node runs once the one before it ended, even if that failed, so one failure shows red and the rest still run. The serving cases (custom body `{"serving": true}`) run outside the Kubeflow run: the API starts an Endpoint each for the Base Model (`serve-base-model`), the uploaded tiny model (`serve-full-weights`) and, once it is registered, the first finetune case's Adapter (`serve-adapter`); a case passes once vLLM is ready, and its Endpoint is then stopped. The Smoke Test finishes once the run and these cases did. It also lists in `mlp ls`. Once it finished, the API stops its Endpoints and deletes every Dataset and Registered Model named `smoketest-YYMMDD-HHMMSS-…`; only the Kubeflow run, its logs and its MLflow Runs remain, and the Base Model stays in the Model Cache.
 
 ## Phase algorithms
 

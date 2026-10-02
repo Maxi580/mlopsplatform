@@ -44,7 +44,7 @@ A built-in Pipeline, started by a user, that runs every Stage, every Phase algor
 _Avoid_: Health check, e2e test
 
 **Case**:
-One independent check inside a Smoke Test (e.g. `fetch` or `sft-lora-hf`), run as one Kubeflow node, that passes if it runs without errors.
+One independent check inside a Smoke Test (e.g. `fetch` or `sft-lora-hf`), run as one Kubeflow node, or for a serving case (e.g. `serve-adapter`) as an Endpoint, that passes if it runs without errors.
 _Avoid_: Check, test
 
 **Owner**:

@@ -1,7 +1,7 @@
 from sqlalchemy import Engine
 
+from mlp_api.in_use import refuse_while_in_use
 from mlp_api.models.mlflow import MLflow, ModelVersion
-from mlp_api.pipelines.lifecycle import refuse_while_in_use
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core.pipeline_request.references import model_reference, split_model_reference
 
@@ -31,16 +31,22 @@ def find_model_version(
 
 def pin_full_weights(model_registry: MLflow, reference: str) -> str:
     """The `model:` Reference pinned to a full-weight version; ValueError saying why it can't be."""
+    found = find_referenced_model_version(model_registry, reference)
+    pinned = model_reference(found.name, found.version)
+    if found.tags.get("weights") == "adapter":
+        raise ValueError(f"{pinned} is an Adapter; only full weights can be built on")
+    return pinned
+
+
+def find_referenced_model_version(model_registry: MLflow, reference: str) -> ModelVersion:
+    """The version a `model:` Reference names, else the latest; ValueError if there is none."""
     name, version = split_model_reference(reference)
     found = find_model_version(model_registry, name, version)
     if found is None and version is None:
         raise ValueError(f"no Registered Model `{name}`")
     if found is None:
         raise ValueError(f"`{name}` has no version {version}")
-    pinned = model_reference(found.name, found.version)
-    if found.tags.get("weights") == "adapter":
-        raise ValueError(f"{pinned} is an Adapter; only full weights can be built on")
-    return pinned
+    return found
 
 
 def model_version_files(

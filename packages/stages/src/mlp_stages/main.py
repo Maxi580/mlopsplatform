@@ -10,6 +10,8 @@ from mlp_stages.redaction import redact_output
 STEPS = {
     "fetch": "mlp_stages.operations.fetch:fetch",
     "cleanup": "mlp_stages.operations.cleanup:cleanup",
+    # An Endpoint's init container: the Model Version files vLLM loads.
+    "download": "mlp_stages.operations.download:download",
     "finetune": "mlp_stages.finetune.main:finetune",
 }
 

@@ -8,7 +8,7 @@ from huggingface_hub import scan_cache_dir
 from huggingface_hub.errors import CacheNotFound
 from sqlalchemy import Engine
 
-from mlp_api.pipelines.lifecycle import pipelines_using, refuse_while_in_use
+from mlp_api.in_use import refuse_while_in_use, users_of
 from mlp_core import config
 from mlp_core.pipeline_request.references import base_model_reference
 from mlp_core.settings import Settings, size_in_bytes
@@ -45,7 +45,7 @@ def evict_least_recently_used(
     for entry in sorted(cached, key=lambda entry: entry.last_used):
         if used <= high_water_mark:
             return
-        if not pipelines_using(engine, entry.reference):
+        if not users_of(engine, entry.reference):
             delete_revision(model_cache, entry.commit)
             logger.info("Evicted %s from the Model Cache", entry.reference)
             used -= entry.size_bytes

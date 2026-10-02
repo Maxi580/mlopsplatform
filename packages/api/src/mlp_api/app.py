@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from mlp_api import (
     auth_routes,
     datasets_routes,
+    endpoints_routes,
     health_routes,
     model_cache_routes,
     models_routes,
@@ -58,6 +59,7 @@ app = FastAPI(title="MLOps Platform", lifespan=lifespan)
 app.middleware("http")(require_login)
 app.include_router(auth_routes.router)
 app.include_router(datasets_routes.router)
+app.include_router(endpoints_routes.router)
 app.include_router(health_routes.router)
 app.include_router(model_cache_routes.router)
 app.include_router(models_routes.router)

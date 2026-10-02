@@ -4,16 +4,19 @@ import pytest
 
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.hugging_face import HubModel
-from mlp_api.pipelines.reconciler import reconcile_pipelines
-from mlp_api.smoke_tests.lifecycle import clean_up_smoke_tests
+from mlp_api.pipelines.reconciler import reconcile_once
 from mlp_core import api_paths
 
+from .test_endpoints import register_adapter
 from .test_model_uploads import FULL_WEIGHTS
 from .test_models import models, register
 
 QWEN = "Qwen/Qwen2.5-0.5B-Instruct"
 TINY_QWEN = "trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 COMMIT = "c0ffee"
+# The cases that run as Kubeflow nodes, without the serving cases' Endpoints.
+WITHOUT_SERVING = {"finetune": {}, "uploaded_model": True}
+SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter"]
 
 
 @pytest.fixture
@@ -147,13 +150,11 @@ def test_only_one_smoke_test_runs_at_a_time(logged_in_api, qwen_on_the_hub, clus
 
 
 def reconcile(api):
-    state = api.app.state
-    reconcile_pipelines(state.engine, state.cluster)
-    clean_up_smoke_tests(state.engine, state.object_store, state.model_registry)
+    reconcile_once(api.app.state)
 
 
 def test_each_case_reports_its_own_result(logged_in_api, qwen_on_the_hub, cluster):
-    start(logged_in_api)
+    start(logged_in_api, WITHOUT_SERVING)
     cluster.runs["run-1"] = KubeflowRun("RUNNING", None, {"fetch": "FAILED"})
 
     reconcile(logged_in_api)
@@ -166,7 +167,7 @@ def test_each_case_reports_its_own_result(logged_in_api, qwen_on_the_hub, cluste
 
 
 def test_a_failed_case_does_not_stop_the_others(logged_in_api, qwen_on_the_hub, cluster):
-    start(logged_in_api)
+    start(logged_in_api, WITHOUT_SERVING)
     cluster.runs["run-1"] = KubeflowRun(
         "FAILED", None, {"fetch": "FAILED", "sft-lora-hf": "SUCCEEDED"}
     )
@@ -183,7 +184,7 @@ def test_a_failed_case_does_not_stop_the_others(logged_in_api, qwen_on_the_hub, 
 
 
 def test_a_case_that_never_ran_in_a_finished_run_failed(logged_in_api, qwen_on_the_hub, cluster):
-    start(logged_in_api)
+    start(logged_in_api, WITHOUT_SERVING)
     cluster.runs["run-1"] = KubeflowRun("FAILED", None, {"fetch": "SUCCEEDED"})
 
     reconcile(logged_in_api)
@@ -198,7 +199,7 @@ def test_a_case_that_never_ran_in_a_finished_run_failed(logged_in_api, qwen_on_t
 def test_afterwards_only_its_kubeflow_run_remains(
     logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
 ):
-    name = start(logged_in_api).json()["name"]
+    name = start(logged_in_api, WITHOUT_SERVING).json()["name"]
     smoke_test_id = smoke_test(logged_in_api)["id"]
     register(model_registry, object_store, f"{name}-sft-lora-hf", 1, pipeline_id=smoke_test_id)
     register(model_registry, object_store, "qwen-sft", 1)
@@ -245,7 +246,7 @@ def test_smoke_tests_require_login(api, cluster):
 def test_cancelling_a_smoke_test_fails_its_unfinished_cases(
     logged_in_api, qwen_on_the_hub, cluster
 ):
-    smoke_test_id = start(logged_in_api).json()["id"]
+    smoke_test_id = start(logged_in_api, WITHOUT_SERVING).json()["id"]
     cluster.runs["run-1"] = KubeflowRun("RUNNING", None, {"fetch": "SUCCEEDED"})
     reconcile(logged_in_api)
 
@@ -256,3 +257,112 @@ def test_cancelling_a_smoke_test_fails_its_unfinished_cases(
         "sft-lora-hf": "failed",
         "uploaded-model": "failed",
     }
+
+
+def running_endpoints(api) -> dict[str, str]:
+    """Each Endpoint that isn't stopped, by name, with the model it serves."""
+    listed = api.get(api_paths.ENDPOINTS).json()
+    return {e["name"]: e["model"] for e in listed if e["status"] != "stopped"}
+
+
+def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_weights(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api).json()["name"]
+
+    reconcile(logged_in_api)
+
+    assert list(smoke_test(logged_in_api)["cases"]) == [
+        "fetch",
+        "sft-lora-hf",
+        "uploaded-model",
+        *SERVING_CASES,
+    ]
+    assert running_endpoints(logged_in_api) == {
+        f"{name}-serve-base-model": f"hf:{QWEN}@{COMMIT}",
+        f"{name}-serve-full-weights": f"model:{name}-uploaded@1",
+    }
+
+
+def test_a_custom_smoke_test_can_serve_without_finetuning(logged_in_api, qwen_on_the_hub, cluster):
+    name = start(logged_in_api, {"serving": True}).json()["name"]
+
+    reconcile(logged_in_api)
+
+    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", *SERVING_CASES[:2]]
+    assert list(running_endpoints(logged_in_api)) == [
+        f"{name}-serve-full-weights",
+        f"{name}-serve-base-model",
+    ]
+
+
+def test_the_adapter_is_served_once_its_finetune_case_registered_it(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
+):
+    name = start(logged_in_api).json()["name"]
+    register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
+    steps = {"fetch": "SUCCEEDED", "sft-lora-hf": "SUCCEEDED"}
+    cluster.runs["run-1"] = KubeflowRun("RUNNING", None, steps)
+
+    reconcile(logged_in_api)
+
+    adapter = running_endpoints(logged_in_api)[f"{name}-serve-adapter"]
+    assert adapter == f"model:{name}-sft-lora-hf@1"
+
+
+def test_the_adapter_case_fails_with_its_finetune_case(logged_in_api, qwen_on_the_hub, cluster):
+    name = start(logged_in_api).json()["name"]
+    cluster.runs["run-1"] = KubeflowRun("RUNNING", None, {"sft-lora-hf": "FAILED"})
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["serve-adapter"] == "failed"
+    assert f"{name}-serve-adapter" not in running_endpoints(logged_in_api)
+
+
+def test_a_serving_case_passes_once_vllm_is_ready_and_then_stops_its_endpoint(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api).json()["name"]
+    reconcile(logged_in_api)
+    cluster.endpoint_states[f"{name}-serve-base-model"] = "running"
+    cluster.endpoint_states[f"{name}-serve-full-weights"] = "failed"
+
+    reconcile(logged_in_api)
+
+    cases = smoke_test(logged_in_api)["cases"]
+    assert (cases["serve-base-model"], cases["serve-full-weights"]) == ("passed", "failed")
+    assert cluster.endpoints == {}
+
+
+def test_a_smoke_test_finishes_once_its_serving_cases_did(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
+):
+    name = start(logged_in_api).json()["name"]
+    register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
+    steps = dict.fromkeys(["fetch", "sft-lora-hf", "uploaded-model"], "SUCCEEDED")
+    cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)
+
+    reconcile(logged_in_api)
+    waiting = smoke_test(logged_in_api)["status"]
+    for case in SERVING_CASES:
+        cluster.endpoint_states[f"{name}-{case}"] = "running"
+    reconcile(logged_in_api)
+    reconcile(logged_in_api)
+
+    assert waiting == "running"
+    found = smoke_test(logged_in_api)
+    assert found["status"] == "succeeded"
+    assert set(found["cases"].values()) == {"passed"}
+    assert model_registry.versions == []
+
+
+def test_a_cancelled_smoke_test_stops_its_endpoints(logged_in_api, qwen_on_the_hub, cluster):
+    smoke_test_id = start(logged_in_api).json()["id"]
+    reconcile(logged_in_api)
+
+    logged_in_api.post(api_paths.CANCEL_PIPELINE.format(id=smoke_test_id))
+    reconcile(logged_in_api)
+
+    assert cluster.endpoints == {}
+    assert running_endpoints(logged_in_api) == {}
