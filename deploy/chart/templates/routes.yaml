@@ -14,6 +14,18 @@ spec:
         - name: api
           port: {{ .Values.ports.api }}
     - kind: Rule
+      match: {{ $host }} && (Path(`/`) || Path(`/ui`))
+      middlewares:
+        - name: webui-redirect
+      services:
+        - name: noop@internal
+          kind: TraefikService
+    - kind: Rule
+      match: {{ $host }} && PathPrefix(`/ui/`)
+      services:
+        - name: webui
+          port: {{ .Values.ports.webui }}
+    - kind: Rule
       match: {{ $host }} && PathPrefix(`/pipeline/`)
       middlewares:
         - name: login
@@ -72,3 +84,13 @@ spec:
     regex: ^(.*)/mlflow$
     replacement: ${1}/mlflow/
     permanent: true
+---
+# The platform's front page, and /ui without its slash, is the Web UI.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: webui-redirect
+spec:
+  redirectRegex:
+    regex: ^(https?://[^/]+)/(ui)?$
+    replacement: ${1}/ui/

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from mlp_api.app import app
 from mlp_core import api_paths
-from mlp_core.config import JWT_ALGORITHM
+from mlp_core.config import JWT_ALGORITHM, WEB_UI_LOGIN_URL
 
 from .conftest import JWT_SECRET, PASSWORD
 
@@ -110,3 +110,11 @@ def test_set_password_stores_no_plaintext(api, platform_database):
 def test_set_password_refuses_short_passwords(platform_database, run_set_password):
     with pytest.raises(SystemExit):
         run_set_password("short")
+
+
+def test_a_browser_without_login_is_sent_to_the_web_ui_login(api):
+    # Also what Traefik's forwardAuth answers for the KFP and MLflow UIs.
+    response = api.get(api_paths.VERIFY, headers={"accept": "text/html"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == WEB_UI_LOGIN_URL

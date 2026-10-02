@@ -105,11 +105,17 @@ build_images() {
   TAG=$(git -C "$ROOT" rev-parse --short HEAD)
   [[ -z $(git -C "$ROOT" status --porcelain) ]] || TAG+="-dirty-$(date +%Y%m%d%H%M%S)"
   log "Building images with tag $TAG"
-  for image in api stages; do
-    sudo nerdctl --address "$K3S_SOCKET" --namespace k8s.io build \
-      --build-arg PYTHON_IMAGE="$(value .images.python)" --build-arg UV_IMAGE="$(value .images.uv)" \
-      -t "$(value ".images.$image"):$TAG" -f "$ROOT/packages/$image/Dockerfile" "$ROOT"
-  done
+  # The Python images build from the whole uv workspace, the Web UI from its own directory.
+  build_image api "$ROOT" "$ROOT/packages/api/Dockerfile"
+  build_image stages "$ROOT" "$ROOT/packages/stages/Dockerfile"
+  build_image webui "$ROOT/packages/interface/webui" "$ROOT/packages/interface/webui/Dockerfile"
+}
+
+build_image() {
+  sudo nerdctl --address "$K3S_SOCKET" --namespace k8s.io build \
+    --build-arg PYTHON_IMAGE="$(value .images.python)" --build-arg UV_IMAGE="$(value .images.uv)" \
+    --build-arg NODE_IMAGE="$(value .images.node)" --build-arg NGINX_IMAGE="$(value .images.nginx)" \
+    -t "$(value ".images.$1"):$TAG" -f "$3" "$2"
 }
 
 # Generated once and reused; Kubeflow and MLflow get copies in their own namespaces.
@@ -147,7 +153,7 @@ install_cert_manager() {
 }
 
 install_platform_chart() {
-  log "Installing the platform chart (API, Postgres, TLS, routes)"
+  log "Installing the platform chart (API, Web UI, Postgres, TLS, routes)"
   helm upgrade --install mlp "$ROOT/deploy/chart" --namespace "$(value .namespaces.platform)" \
     -f "$VALUES" --set images.tag="$TAG" --wait --timeout 10m
 }
@@ -219,6 +225,7 @@ print_urls() {
   local domain
   domain=$(value .domain)
   log "Platform is up"
+  echo "Web UI:    https://$domain/"
   echo "API:       https://$domain/health"
   echo "KFP UI:    https://$domain/pipeline/"
   echo "MLflow UI: https://$domain/mlflow/"

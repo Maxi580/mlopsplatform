@@ -23,15 +23,20 @@ versions:
 images:
   python: python:3.12-slim
   uv: ghcr.io/astral-sh/uv:0.12.22
+  node: node:22-alpine
+  nginx: nginxinc/nginx-unprivileged:1.29-alpine
   postgres: postgres:17
   api: mlp-api
   # Runs every Pipeline step; built on the python image until a Stage needs vLLM.
   stages: mlp-stages
+  # Builds the Web UI with node and serves its static files with nginx.
+  webui: mlp-webui
   # Set by install.sh to the short git SHA.
   tag: ""
 
 ports:
   api: 8000
+  webui: 8080
   postgres: 5432
   kfpUi: 80
   kfpApi: 8888

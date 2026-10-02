@@ -4,7 +4,8 @@ version = "0.1.0"
 requires-python = ">=3.12"
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "packages/interface/cli"]
+exclude = ["packages/interface"]
 
 [dependency-groups]
 dev = ["pytest", "pyyaml", "httpx2", "ruff", "trustme"]
@@ -23,3 +24,4 @@ known-first-party = ["mlp_core", "mlp_api", "mlp_cli", "mlp_stages", "mlp_sandbo
 [tool.pytest.ini_options]
 testpaths = ["packages"]
 addopts = "--import-mode=importlib"
+norecursedirs = ["node_modules", ".*"]

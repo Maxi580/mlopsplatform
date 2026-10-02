@@ -84,7 +84,10 @@ Each Pipeline first runs `fetch`, which downloads the Base Model at its pinned c
 
 ## Web UI
 
-Open `https://<domain>/` and log in with the shared password; the cookie lasts 12 hours and also opens the KFP UI (`/pipeline/`) and the MLflow UI (`/mlflow/`), which send a logged-out browser to the same login page. The Pipelines page shows the platform's GPU count, a list of every Pipeline that updates every few seconds (with Cancel and links to its Kubeflow run and MLflow Run), and a form built from the published schema. The form makes the same Pipeline Request the CLI does: a comma in a list field (e.g. `target_modules`) makes a list, and each "More settings" box takes further `SFTConfig`/`LoraConfig` keys as YAML. Errors appear next to their field, and the Hugging Face token is sent as a Secret beside the request.
+The Web UI (`packages/interface/webui`, React) is a client of the API like the CLI (`packages/interface/cli`). Open `https://<domain>/` and log in with the shared password; the cookie lasts 12 hours and also opens the KFP UI (`/pipeline/`) and the MLflow UI (`/mlflow/`), which send a logged-out browser to the same login page.
+
+- **Pipelines**: every Pipeline with its Owner, status, Stages and links to its Kubeflow run and MLflow Run, updated live, with Cancel; the sidebar shows the platform's GPU count.
+- **New Pipeline**: a form built from `GET /schema` that makes the same Pipeline Request as `mlp run`. A comma in a list field (e.g. `target_modules`) makes a list, and "More settings" takes further `SFTConfig`/`LoraConfig` keys. Validate shows the resolved request, Submit starts the Pipeline, and every error appears next to its field. The Hugging Face token is sent as a Secret beside the request.
 
 ## Development
 
@@ -92,4 +95,9 @@ Open `https://<domain>/` and log in with the shared password; the cookie lasts 1
 uv sync --all-packages
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
+
+cd packages/interface/webui
+npm ci
+npm test && npm run typecheck
+MLP_API_URL=http://localhost:8000 npm run dev   # http://localhost:5173/ui/, API calls go to MLP_API_URL
 ```

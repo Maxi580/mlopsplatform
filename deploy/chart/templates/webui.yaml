@@ -1,0 +1,35 @@
+# Static files only; the browser talks to the API itself, which checks the login.
+apiVersion: v1
+kind: Service
+metadata:
+  name: webui
+spec:
+  selector:
+    app: webui
+  ports:
+    - port: {{ .Values.ports.webui }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webui
+  template:
+    metadata:
+      labels:
+        app: webui
+    spec:
+      containers:
+        - name: webui
+          image: {{ .Values.images.webui }}:{{ required "images.tag is set by install.sh" .Values.images.tag }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.ports.webui }}
+          readinessProbe:
+            httpGet:
+              path: /ui/
+              port: {{ .Values.ports.webui }}
