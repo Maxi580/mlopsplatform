@@ -7,8 +7,7 @@ import peft
 import trl
 from pydantic import TypeAdapter
 
-from mlp_core.config import TRAINER_CONFIGS_DIRECTORY
-from mlp_core.trainers import ALGORITHMS, LORA_CONFIG
+from mlp_core.config import ALGORITHMS, LORA_CONFIG, TRAINER_CONFIGS_DIRECTORY
 
 
 def inline_definitions(schema: dict) -> dict:

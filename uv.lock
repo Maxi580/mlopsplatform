@@ -504,7 +504,6 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx2" },
     { name = "huggingface-hub" },
-    { name = "jsonschema" },
     { name = "mlp-core" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyjwt" },
@@ -518,7 +517,6 @@ requires-dist = [
     { name = "fastapi" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "huggingface-hub", specifier = ">=2.1.1" },
-    { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "mlp-core", editable = "packages/core" },
     { name = "psycopg", extras = ["binary"] },
     { name = "pyjwt" },
@@ -550,11 +548,15 @@ name = "mlp-core"
 version = "0.1.0"
 source = { editable = "packages/core" }
 dependencies = [
+    { name = "jsonschema" },
     { name = "pydantic-settings" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic-settings" }]
+requires-dist = [
+    { name = "jsonschema", specifier = ">=4.26.0" },
+    { name = "pydantic-settings" },
+]
 
 [[package]]
 name = "mlp-sandbox"

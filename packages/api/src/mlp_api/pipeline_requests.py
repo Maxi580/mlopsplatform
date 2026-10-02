@@ -1,24 +1,16 @@
-import json
 from collections.abc import Iterator
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict
 
-from mlp_api.config import (
-    DEFAULT_HF_REVISION,
-    HF_TOKEN_PATTERN,
-    MIN_SECRET_LENGTH,
-)
+from mlp_api.config import DEFAULT_HF_REVISION, HF_TOKEN_PATTERN, MIN_SECRET_LENGTH
 from mlp_api.hugging_face import HuggingFace
 from mlp_core import api_paths
-from mlp_core.pipeline_request import PipelineRequest
+from mlp_core.pipeline_request.schema import PipelineRequest
+from mlp_core.pipeline_request.standard import STANDARD_PIPELINE_REQUEST
+from mlp_core.pipeline_request.validate import validate_pipeline_request
 from mlp_core.settings import Settings
-from mlp_core.trainers import (
-    ALGORITHMS,
-    LORA_CONFIG,
-    trainer_config_schema,
-)
 
 router = APIRouter()
 
@@ -26,7 +18,7 @@ router = APIRouter()
 class Submission(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    request: PipelineRequest
+    request: dict[str, Any]
     # Secret values by slot name (e.g. `hf_token`); never stored and never part of the request.
     secrets: dict[str, str] = {}
 
@@ -34,6 +26,11 @@ class Submission(BaseModel):
 @router.get(api_paths.SCHEMA)
 def schema() -> dict:
     return PipelineRequest.model_json_schema()
+
+
+@router.get(api_paths.STANDARD_PIPELINE)
+def standard() -> dict:
+    return STANDARD_PIPELINE_REQUEST.model_dump(mode="json")
 
 
 @router.post(api_paths.VALIDATE_PIPELINE)
@@ -48,15 +45,15 @@ def resolve_pipeline_request(
     submission: Submission, settings: Settings, hugging_face: HuggingFace
 ) -> PipelineRequest:
     """The request with every reference pinned, or a 422 listing every error with its path."""
-    request = submission.request
-    errors = [
-        *remote_code_errors(request),
-        *secret_value_errors(request, submission.secrets),
-        *phase_errors(request),
+    request, errors = validate_pipeline_request(submission.request)
+    errors += [
+        *remote_code_errors(submission.request),
+        *secret_value_errors(submission.request, submission.secrets),
         *gpu_errors(settings),
     ]
-    base_model, base_model_errors = pin_base_model(request, submission.secrets, hugging_face)
-    errors += base_model_errors
+    if request:
+        base_model, base_model_errors = pin_base_model(request, submission.secrets, hugging_face)
+        errors += base_model_errors
     if errors:
         raise HTTPException(
             422, [{**error, "loc": ["body", "request", *error["loc"]]} for error in errors]
@@ -79,40 +76,19 @@ def nodes(node, loc: list) -> Iterator[tuple[list, object]]:
             yield from nodes(value, [*loc, index])
 
 
-def remote_code_errors(request: PipelineRequest) -> Iterator[dict]:
-    for loc, _ in nodes(request.model_dump(), []):
+def remote_code_errors(request: dict) -> Iterator[dict]:
+    for loc, _ in nodes(request, []):
         if loc and loc[-1] == "trust_remote_code":
             yield error(loc, "`trust_remote_code` is never allowed: repository code doesn't run")
 
 
-def secret_value_errors(request: PipelineRequest, secrets: dict[str, str]) -> Iterator[dict]:
+def secret_value_errors(request: dict, secrets: dict[str, str]) -> Iterator[dict]:
     values = [value for value in secrets.values() if len(value) >= MIN_SECRET_LENGTH]
-    for loc, node in nodes(request.model_dump(), []):
+    for loc, node in nodes(request, []):
         if isinstance(node, str) and (
             HF_TOKEN_PATTERN.search(node) or any(value in node for value in values)
         ):
             yield error(loc, "contains a Secret value; name the Secret instead")
-
-
-def phase_errors(request: PipelineRequest) -> Iterator[dict]:
-    for index, phase in enumerate(request.finetune.phases):
-        loc = ["finetune", "phases", index]
-        config = ALGORITHMS[phase.algorithm]
-        yield from config_errors([*loc, "settings"], phase.settings, config)
-        yield from config_errors([*loc, "lora"], phase.lora, LORA_CONFIG)
-
-
-def config_errors(loc: list, values: dict, config: str) -> Iterator[dict]:
-    schema = trainer_config_schema(config)
-    if schema is None:
-        return
-    fields = schema["properties"]
-    for name, value in values.items():
-        if name not in fields:
-            yield error([*loc, name], f"`{name}` is not a {config} setting")
-        elif not Draft202012Validator(fields[name]).is_valid(value):
-            expected = json.dumps({k: v for k, v in fields[name].items() if k != "default"})
-            yield error([*loc, name], f"`{name}` must match {expected}")
 
 
 def gpu_errors(settings: Settings) -> Iterator[dict]:

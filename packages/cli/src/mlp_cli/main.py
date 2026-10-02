@@ -57,3 +57,14 @@ def validate(
         raise typer.Exit(1)
     typer.echo(yaml.safe_dump(response.json()["request"], sort_keys=False))
     typer.echo("Valid")
+
+
+@app.command()
+def standard() -> None:
+    """Print a good standard Pipeline Request to copy into the CLI Profile."""
+    with api_client() as client:
+        response = client.get(api_paths.STANDARD_PIPELINE)
+    if response.is_error:
+        typer.echo(f"Request failed ({response.status_code}): {response.text}", err=True)
+        raise typer.Exit(1)
+    typer.echo(yaml.safe_dump(response.json(), sort_keys=False))

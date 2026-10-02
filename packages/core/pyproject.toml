@@ -2,7 +2,10 @@
 name = "mlp-core"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["pydantic-settings"]
+dependencies = [
+    "jsonschema>=4.26.0",
+    "pydantic-settings",
+]
 
 [build-system]
 requires = ["hatchling"]
