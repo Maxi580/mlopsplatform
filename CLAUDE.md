@@ -7,7 +7,7 @@ A Kubernetes-native MLOps platform to distill, finetune, quantize, evaluate and 
 - **Stage entrypoints**: one container per Stage, run by Kubeflow; do the heavy lifting with TRL/PEFT, lm-eval and vLLM, log to MLflow, register outputs via the API.
 - **Sandbox**: the only place untrusted Python runs (RL rewards, generated benchmark code).
 - **Endpoints**: vLLM servers for a model, alive until stopped.
-- **Installed, not ours**: Kubeflow Pipelines, Kueue (GPU queue), MLflow, Postgres, SeaweedFS (one object store), Traefik (login + HTTPS).
+- **Installed, not ours**: Kubeflow Pipelines, MLflow, Postgres, SeaweedFS (one object store), Traefik (login + HTTPS).
 
 Details: spec #24, architecture #25 (★ = undecided), decisions #2–#23 (`gh issue view <n>`). Vocabulary: `CONTEXT.md`.
 

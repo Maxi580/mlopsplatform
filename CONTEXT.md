@@ -19,15 +19,24 @@ One submitted Pipeline Request as it executes; the thing users list, watch and c
 _Avoid_: Workflow, experiment, job
 
 **Stage**:
-One enabled step inside a Pipeline: `distill`, `finetune`, `evaluate` or `serve`.
+One enabled step inside a Pipeline: `distill`, `sweep`, `finetune`, `quantize`, `speculate`, `evaluate` or `serve`, always run in that order.
 _Avoid_: Workflow type, step, task
 
 **Phase**:
 One training algorithm run inside the `finetune` Stage (e.g. SFT, then DPO, then GRPO). Phases run in order, each starting from the previous Phase's output, and every Phase output becomes a Model Version.
 _Avoid_: Step, sub-stage
 
+**Checkpoint**:
+A snapshot taken during a Phase that the Phase can be resumed from.
+
+**Sweep**:
+The `sweep` Stage: a hyperparameter search over one Phase configuration. Its output is the best parameters found, not a model; a later Phase can train with them.
+
+**Trial**:
+One training run within a Sweep. Its weights are thrown away.
+
 **Endpoint**:
-A running, OpenAI-compatible server for one model (a Model Version or a Base Model), created by the `serve` Stage. It outlives its Pipeline and runs until its Owner stops it.
+A running, OpenAI-compatible server for one model (a Model Version or a Base Model), created by the `serve` Stage or directly by a user. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it.
 _Avoid_: Deployment, served model, inference service
 
 **Smoke Test**:
@@ -90,3 +99,10 @@ One immutable output of a Registered Model, numbered 1, 2, 3… by the platform.
 **Adapter**:
 A Model Version that holds only parameter-efficient weights (e.g. LoRA). It is usable only together with the model it was trained on: a Base Model at the exact revision, or a full-weight Model Version.
 _Avoid_: LoRA (when meaning any adapter), delta
+
+**Uploaded Model**:
+A Model Version that came from a user's upload rather than from a Pipeline.
+
+**Speculator**:
+A small draft model trained for exactly one verifier (a Model Version or Base Model), used for speculative decoding.
+_Avoid_: Draft model (when meaning one the platform trained)
