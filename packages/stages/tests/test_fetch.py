@@ -3,8 +3,8 @@ import sys
 
 import pytest
 
-from mlp_stages import fetch
 from mlp_stages.main import main
+from mlp_stages.operations import fetch
 
 HF_TOKEN = "hf_" + "s3cr3tT0ken" * 4
 BASE_MODEL = "hf:Qwen/Qwen2.5-0.5B-Instruct@7ae557604adf67be50417f59c2c2f167def9a775"

@@ -3,8 +3,8 @@ import os
 import sys
 
 from mlp_core import config
-from mlp_stages.cleanup import cleanup
-from mlp_stages.fetch import fetch
+from mlp_stages.operations.cleanup import cleanup
+from mlp_stages.operations.fetch import fetch
 from mlp_stages.redaction import redact_output
 
 STEPS = {"fetch": fetch, "cleanup": cleanup}
