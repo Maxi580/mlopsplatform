@@ -10,7 +10,7 @@ from mlp_stages.redaction import redact_output
 STEPS = {
     "fetch": "mlp_stages.operations.fetch:fetch",
     "cleanup": "mlp_stages.operations.cleanup:cleanup",
-    "finetune": "mlp_stages.finetune.phase:finetune",
+    "finetune": "mlp_stages.finetune.main:finetune",
 }
 
 

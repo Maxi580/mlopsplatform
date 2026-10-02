@@ -111,7 +111,7 @@ The Web UI (`packages/interface/webui`, React) is a client of the API like the C
 ## Development
 
 ```sh
-uv sync --all-packages
+uv sync --all-packages   # add --extra hf for the trainer libraries; their tests skip without them
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 
