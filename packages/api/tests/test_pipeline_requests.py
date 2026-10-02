@@ -1,6 +1,6 @@
 import pytest
 
-from mlp_api.cluster import HubModel
+from mlp_api.hugging_face import HubModel
 from mlp_core import api_paths, config
 from mlp_core.trainers import trainer_config_schema
 
@@ -21,8 +21,8 @@ def pipeline_request(phase=None, **finetune):
 
 
 @pytest.fixture
-def validate(logged_in_api, cluster):
-    cluster.hub_models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
+def validate(logged_in_api, hugging_face):
+    hugging_face.models[BASE_MODEL] = HubModel(commit=COMMIT, needs_remote_code=False)
 
     def run(request, secrets=None):
         body = {"request": request, "secrets": secrets or {}}
@@ -59,10 +59,10 @@ def test_a_valid_request_comes_back_resolved(validate):
     assert finetune["phases"][0]["method"] == "lora"
 
 
-def test_the_hf_token_secret_is_used_to_look_up_the_base_model(validate, cluster):
+def test_the_hf_token_secret_is_used_to_look_up_the_base_model(validate, hugging_face):
     validate(pipeline_request(), secrets={"hf_token": HF_TOKEN})
 
-    assert cluster.hub_lookups == [(BASE_MODEL, "main", HF_TOKEN)]
+    assert hugging_face.lookups == [(BASE_MODEL, "main", HF_TOKEN)]
 
 
 @pytest.mark.parametrize(
@@ -104,8 +104,8 @@ def test_a_base_model_unreachable_on_hugging_face_is_rejected(validate):
     assert "nobody/missing-model" in rejection(response)
 
 
-def test_a_base_model_that_needs_remote_code_is_rejected(validate, cluster):
-    cluster.hub_models["org/custom"] = HubModel(commit=COMMIT, needs_remote_code=True)
+def test_a_base_model_that_needs_remote_code_is_rejected(validate, hugging_face):
+    hugging_face.models["org/custom"] = HubModel(commit=COMMIT, needs_remote_code=True)
 
     assert "remote code" in rejection(validate(pipeline_request(base_model="hf:org/custom")))
 
@@ -140,7 +140,7 @@ def test_every_error_is_reported_with_its_path(validate):
     assert [error["loc"][-1] for error in detail] == ["lerning_rate", "rank"]
 
 
-def test_validation_requires_login(api, cluster):
+def test_validation_requires_login(api, hugging_face):
     response = api.post(api_paths.VALIDATE_PIPELINE, json={"request": pipeline_request()})
 
     assert response.status_code == 401

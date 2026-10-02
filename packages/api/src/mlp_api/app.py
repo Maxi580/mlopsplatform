@@ -6,8 +6,8 @@ from fastapi import FastAPI, Request
 from sqlalchemy import create_engine, text
 
 from mlp_api import auth, pipeline_requests
-from mlp_api.cluster import Cluster
 from mlp_api.database import create_tables
+from mlp_api.hugging_face import HuggingFace
 from mlp_core import api_paths
 from mlp_core.settings import Settings
 
@@ -15,7 +15,7 @@ from mlp_core.settings import Settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.settings = Settings()
-    app.state.cluster = Cluster()
+    app.state.hugging_face = HuggingFace()
     app.state.jwt_secret = os.environ["JWT_SECRET"]
     # In memory per client IP, which works because the API runs as one replica.
     app.state.failed_logins = defaultdict(list)

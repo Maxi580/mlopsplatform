@@ -11,10 +11,10 @@ class HubModel:
     needs_remote_code: bool
 
 
-class Cluster:
-    """The one place the API talks to systems a test can't run; tests swap in a fake."""
+class HuggingFace:
+    """Read-only Hugging Face Hub lookups; tests swap in a fake."""
 
-    def find_hub_model(self, repo: str, revision: str, token: str | None) -> HubModel | None:
+    def find_model(self, repo: str, revision: str, token: str | None) -> HubModel | None:
         hub = HfApi(token=token or False)
         try:
             info = hub.model_info(repo, revision=revision)

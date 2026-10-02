@@ -36,25 +36,25 @@ def api(run_set_password):
         yield client
 
 
-class FakeCluster:
-    """Records what the API asks of the outside world and answers from the test's setup."""
+class FakeHuggingFace:
+    """Records lookups and answers them from the test's setup."""
 
     def __init__(self):
-        self.hub_models = {}
-        self.hub_lookups = []
+        self.models = {}
+        self.lookups = []
 
-    def find_hub_model(self, repo, revision, token):
-        self.hub_lookups.append((repo, revision, token))
-        return self.hub_models.get(repo)
-
-
-@pytest.fixture
-def cluster(api):
-    api.app.state.cluster = FakeCluster()
-    return api.app.state.cluster
+    def find_model(self, repo, revision, token):
+        self.lookups.append((repo, revision, token))
+        return self.models.get(repo)
 
 
 @pytest.fixture
-def logged_in_api(api, cluster):
+def hugging_face(api):
+    api.app.state.hugging_face = FakeHuggingFace()
+    return api.app.state.hugging_face
+
+
+@pytest.fixture
+def logged_in_api(api, hugging_face):
     api.post(api_paths.LOGIN, json={"password": PASSWORD})
     return api

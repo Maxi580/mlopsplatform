@@ -5,12 +5,12 @@ from fastapi import APIRouter, HTTPException, Request
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict
 
-from mlp_api.cluster import Cluster
 from mlp_api.config import (
     DEFAULT_HF_REVISION,
     HF_TOKEN_PATTERN,
     MIN_SECRET_LENGTH,
 )
+from mlp_api.hugging_face import HuggingFace
 from mlp_core import api_paths
 from mlp_core.pipeline_request import PipelineRequest
 from mlp_core.settings import Settings
@@ -39,13 +39,13 @@ def schema() -> dict:
 @router.post(api_paths.VALIDATE_PIPELINE)
 def validate(submission: Submission, request: Request) -> dict:
     resolved = resolve_pipeline_request(
-        submission, request.app.state.settings, request.app.state.cluster
+        submission, request.app.state.settings, request.app.state.hugging_face
     )
     return {"request": resolved.model_dump(mode="json")}
 
 
 def resolve_pipeline_request(
-    submission: Submission, settings: Settings, cluster: Cluster
+    submission: Submission, settings: Settings, hugging_face: HuggingFace
 ) -> PipelineRequest:
     """The request with every reference pinned, or a 422 listing every error with its path."""
     request = submission.request
@@ -55,7 +55,7 @@ def resolve_pipeline_request(
         *phase_errors(request),
         *gpu_errors(settings),
     ]
-    base_model, base_model_errors = pin_base_model(request, submission.secrets, cluster)
+    base_model, base_model_errors = pin_base_model(request, submission.secrets, hugging_face)
     errors += base_model_errors
     if errors:
         raise HTTPException(
@@ -124,11 +124,11 @@ def gpu_errors(settings: Settings) -> Iterator[dict]:
 
 
 def pin_base_model(
-    request: PipelineRequest, secrets: dict[str, str], cluster: Cluster
+    request: PipelineRequest, secrets: dict[str, str], hugging_face: HuggingFace
 ) -> tuple[str, list[dict]]:
     reference = request.finetune.base_model
     repo, _, revision = reference.removeprefix("hf:").partition("@")
-    model = cluster.find_hub_model(repo, revision or DEFAULT_HF_REVISION, secrets.get("hf_token"))
+    model = hugging_face.find_model(repo, revision or DEFAULT_HF_REVISION, secrets.get("hf_token"))
     loc = ["finetune", "base_model"]
     if model is None:
         reason = "is missing, gated for this token, or has no such revision"
