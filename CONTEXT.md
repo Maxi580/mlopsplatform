@@ -89,6 +89,10 @@ _Avoid_: Data, corpus, file (when meaning the platform concept)
 **Dataset Version**:
 One immutable snapshot of a Dataset, numbered 1, 2, 3… by the platform. Every upload or Pipeline output creates a new one.
 
+**Reference**:
+How a Pipeline Request names a Base Model (`hf:org/name@revision`) or a Dataset (`dataset:name@version`). The API pins every Reference to an exact commit or version when it resolves the request.
+_Avoid_: Path, URI
+
 **Registered Model**:
 A named model that a Pipeline produced. Every `finetune` output becomes a new Model Version of one. Base Models are not Registered Models.
 _Avoid_: Finetuned model, checkpoint (when meaning the platform concept)

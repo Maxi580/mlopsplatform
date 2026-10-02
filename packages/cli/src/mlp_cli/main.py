@@ -48,8 +48,7 @@ def validate(
         response = client.post(api_paths.VALIDATE_PIPELINE, json=submission)
     if response.status_code == 422:
         for error in response.json()["detail"]:
-            loc = error["loc"][1:]
-            path = ".".join(str(part) for part in (loc[1:] if loc[0] == "request" else loc))
+            path = ".".join(str(part) for part in error["loc"])
             typer.echo(f"{path}: {error['msg']}", err=True)
         raise typer.Exit(1)
     if response.is_error:

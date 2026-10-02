@@ -12,6 +12,7 @@ dependencies = [
     "argon2-cffi",
     "huggingface-hub>=2.1.1",
     "httpx2>=2.13.1",
+    "jsonschema>=4.26.0",
 ]
 
 [project.scripts]

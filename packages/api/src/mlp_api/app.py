@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from sqlalchemy import create_engine, text
 
-from mlp_api import auth, pipeline_requests
+from mlp_api import auth, pipelines
 from mlp_api.database import create_tables
 from mlp_api.hugging_face import HuggingFace
 from mlp_core import api_paths
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MLOps Platform", lifespan=lifespan)
 app.middleware("http")(auth.require_login)
 app.include_router(auth.router)
-app.include_router(pipeline_requests.router)
+app.include_router(pipelines.router)
 
 
 @app.get(api_paths.HEALTH)

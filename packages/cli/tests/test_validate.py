@@ -85,7 +85,7 @@ def test_validate_prints_the_resolved_request(profile):
 
 
 def test_validate_prints_each_rejection_with_its_path(profile, fake_api):
-    detail = [{"loc": ["body", "request", "finetune", "base_model"], "msg": "is missing"}]
+    detail = [{"loc": ["finetune", "base_model"], "msg": "is missing"}]
     fake_api.answers[api_paths.VALIDATE_PIPELINE] = (422, {"detail": detail})
 
     result = mlp_validate("--finetune", "sft")
