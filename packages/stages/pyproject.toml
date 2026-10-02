@@ -2,7 +2,11 @@
 name = "mlp-stages"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["mlp-core", "huggingface-hub>=2.1.1"]
+dependencies = ["mlp-core", "huggingface-hub>=1.31,<2"]
+
+[project.optional-dependencies]
+# The trainer-hf image: finetune with TRL + PEFT, logging to MLflow.
+hf = ["trl>=1.14", "peft", "torch", "mlflow-skinny", "boto3"]
 
 [project.scripts]
 mlp-stage = "mlp_stages.main:main"

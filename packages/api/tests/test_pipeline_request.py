@@ -235,3 +235,36 @@ def test_settings_go_unchecked_without_a_usable_trainer_config_schema(
     _, errors = validate(pipeline_request(settings={"anything": "goes"}, lora={"new_option": 1}))
 
     assert errors == []
+
+
+@pytest.mark.parametrize(
+    ("block", "setting", "value"),
+    [
+        ("settings", "output_dir", "/tmp/out"),
+        ("settings", "save_steps", 100),
+        ("settings", "report_to", "wandb"),
+        ("settings", "push_to_hub", True),
+        ("settings", "model_init_kwargs", {"trust_remote_code": True}),
+        ("lora", "use_dora", True),
+        ("lora", "modules_to_save", ["lm_head"]),
+        ("lora", "bias", "all"),
+    ],
+)
+def test_blocked_settings_are_rejected(validate, block, setting, value):
+    message = rejection(validate(pipeline_request(**{block: {setting: value}})))
+
+    assert f"'{block}', '{setting}']: `{setting}` is blocked" in message
+
+
+def test_an_adapter_rank_vllm_cannot_serve_is_rejected(validate):
+    assert "'r']" in rejection(validate(pipeline_request(lora={"r": 1024})))
+
+
+def test_a_dataset_the_algorithm_cannot_train_on_is_rejected(validate, engine, tmp_path):
+    path = tmp_path / "preferences.jsonl"
+    path.write_text('{"chosen": "yes", "rejected": "no"}\n')
+    upload_dataset_version(engine, FakeObjectStore(), "preferences", path)
+
+    message = rejection(validate(pipeline_request(phase={"dataset": "dataset:preferences"})))
+
+    assert "`preferences@1` has preference rows; sft trains on" in message

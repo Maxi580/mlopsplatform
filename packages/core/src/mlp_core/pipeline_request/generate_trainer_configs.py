@@ -8,8 +8,7 @@ import peft
 import trl
 from pydantic import TypeAdapter
 
-from mlp_core.config import TRAINER_CONFIGS_DIRECTORY
-from mlp_core.pipeline_request.schema import TrainerSettings
+from mlp_core.config import ALGORITHMS, LORA_CONFIG, TRAINER_CONFIGS_DIRECTORY
 
 
 def inline_definitions(schema: dict) -> dict:
@@ -65,8 +64,7 @@ def config_schema(config: type) -> dict:
 
 
 def main() -> None:
-    for settings_class in TrainerSettings.__subclasses__():
-        name = settings_class.trainer_config
+    for name in {*(algorithm["config"] for algorithm in ALGORITHMS.values()), LORA_CONFIG}:
         config = getattr(trl, name, None) or getattr(peft, name, None)
         if config is None:
             print(f"{name} is in neither trl nor peft; its settings stay unchecked")

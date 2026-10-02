@@ -7,14 +7,13 @@ from fastapi import Path as PathParameter
 from starlette.concurrency import run_in_threadpool
 
 from mlp_api.datasets.registry import (
-    dataset_key,
     delete_dataset_version,
     find_dataset_version,
     list_datasets,
     upload_dataset_version,
 )
 from mlp_core import api_paths
-from mlp_core.pipeline_request.references import DATASET_NAME_PATTERN
+from mlp_core.pipeline_request.references import DATASET_NAME_PATTERN, dataset_key
 
 router = APIRouter()
 

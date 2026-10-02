@@ -1,0 +1,18 @@
+# The API server reads install.sh's config.json, which turns on the MLflow plugin.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-pipeline
+spec:
+  template:
+    spec:
+      containers:
+        - name: ml-pipeline-api-server
+          volumeMounts:
+            - name: config
+              mountPath: /config/config.json
+              subPath: config.json
+      volumes:
+        - name: config
+          configMap:
+            name: ml-pipeline-config

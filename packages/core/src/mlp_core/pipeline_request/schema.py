@@ -1,8 +1,8 @@
-from typing import ClassVar, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mlp_core.config import BACKENDS
+from mlp_core.config import ALGORITHMS, BACKENDS, MAX_LORA_RANK
 from mlp_core.pipeline_request.references import BaseModelReference, DatasetReference
 
 METHODS = tuple(sorted({method for methods in BACKENDS.values() for method in methods}))
@@ -16,12 +16,10 @@ class TrainerSettings(BaseModel):
     """Requires the basic values and allows every other field of its TRL/PEFT config class."""
 
     model_config = ConfigDict(extra="allow")
-    trainer_config: ClassVar[str]
 
 
-class SftSettings(TrainerSettings):
-    trainer_config: ClassVar[str] = "SFTConfig"
-
+# Checked against the TRL config of the Phase's algorithm.
+class PhaseSettings(TrainerSettings):
     learning_rate: float
     num_train_epochs: float
     per_device_train_batch_size: int
@@ -29,27 +27,26 @@ class SftSettings(TrainerSettings):
     max_length: int
 
 
+# Checked against PEFT's LoraConfig.
 class LoraSettings(TrainerSettings):
-    trainer_config: ClassVar[str] = "LoraConfig"
-
-    r: int
+    r: int = Field(gt=0, le=MAX_LORA_RANK)
     lora_alpha: int
     lora_dropout: float
     target_modules: str | list[str]
 
 
-class SftPhase(Strict):
-    algorithm: Literal["sft"]
+class Phase(Strict):
+    algorithm: Literal[tuple(ALGORITHMS)]
     dataset: DatasetReference
     method: Literal[METHODS]
-    settings: SftSettings
+    settings: PhaseSettings
     lora: LoraSettings
 
 
 class Finetune(Strict):
     base_model: BaseModelReference
     backend: Literal[tuple(BACKENDS)]
-    phases: list[SftPhase] = Field(min_length=1, max_length=1)
+    phases: list[Phase] = Field(min_length=1, max_length=1)
 
 
 class PipelineRequest(Strict):

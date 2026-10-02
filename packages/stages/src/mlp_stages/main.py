@@ -1,13 +1,17 @@
+import importlib
 import logging
 import os
 import sys
 
 from mlp_core import config
-from mlp_stages.operations.cleanup import cleanup
-from mlp_stages.operations.fetch import fetch
 from mlp_stages.redaction import redact_output
 
-STEPS = {"fetch": fetch, "cleanup": cleanup}
+# Step -> its function, imported on use: the trainer libraries exist only in the trainer images.
+STEPS = {
+    "fetch": "mlp_stages.operations.fetch:fetch",
+    "cleanup": "mlp_stages.operations.cleanup:cleanup",
+    "finetune": "mlp_stages.finetune.phase:finetune",
+}
 
 
 def main() -> None:
@@ -19,4 +23,5 @@ def main() -> None:
 
     # 2. The step.
     step, *args = sys.argv[1:]
-    STEPS[step](*args)
+    module, function = STEPS[step].split(":")
+    getattr(importlib.import_module(module), function)(*args)

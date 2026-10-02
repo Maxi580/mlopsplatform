@@ -1,0 +1,68 @@
+from pathlib import Path
+
+import mlflow
+from mlflow.exceptions import MlflowException
+
+from mlp_core import config
+from mlp_core.pipeline_request.schema import PipelineRequest
+
+
+def register_model_version(
+    model_directory: Path,
+    run_id: str,
+    request: PipelineRequest,
+    pipeline_id: str,
+    phase_index: int,
+    tokenizer,
+    model_type: str,
+) -> None:
+    """Logs the Adapter into the step's MLflow Run and registers it under the Pipeline's name."""
+    # 1. The resolved request travels with the weights.
+    (model_directory / "pipeline_request.json").write_text(request.model_dump_json(indent=1))
+
+    # 2. Into the step's Run, where the trainer logged its params and metrics.
+    client = mlflow.MlflowClient()
+    client.log_artifacts(run_id, str(model_directory), "model")
+
+    # 3. The next Model Version, with its lineage; another Pipeline may create the name first.
+    try:
+        client.create_registered_model(request.name)
+    except MlflowException as error:
+        if error.error_code != "RESOURCE_ALREADY_EXISTS":
+            raise
+    finetune = request.finetune
+    client.create_model_version(
+        request.name,
+        source=f"{client.get_run(run_id).info.artifact_uri}/model",
+        run_id=run_id,
+        tags={
+            "weights": "adapter",
+            "base_model": finetune.base_model,
+            "pipeline": pipeline_id,
+            "phase": str(phase_index + 1),
+            "algorithm": finetune.phases[phase_index].algorithm,
+            "backend": finetune.backend,
+            "tool_parser": config.TOOL_PARSERS.get(model_type, "none"),
+            "tools_rendered": str(renders_tools(tokenizer)).lower(),
+        },
+    )
+
+
+# A template that drops the tools a client sends can't teach or serve tool calls (#16).
+def renders_tools(tokenizer) -> bool:
+    if tokenizer.chat_template is None:
+        return False
+    tool = {
+        "type": "function",
+        "function": {
+            "name": "probe_tool",
+            "description": "Shows whether the template renders tools.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    conversation = [{"role": "user", "content": "Hi"}]
+    try:
+        text = tokenizer.apply_chat_template(conversation, tools=[tool], tokenize=False)
+    except Exception:
+        return False
+    return "probe_tool" in text

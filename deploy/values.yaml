@@ -27,8 +27,10 @@ images:
   nginx: nginxinc/nginx-unprivileged:1.29-alpine
   postgres: postgres:17
   api: mlp-api
-  # Runs every Pipeline step; built on the python image until a Stage needs vLLM.
+  # Runs every Pipeline step but training; built on the python image until a Stage needs vLLM.
   stages: mlp-stages
+  # Runs finetune on the hf backend: the stages image plus TRL, PEFT and CUDA-enabled torch.
+  trainerHf: mlp-trainer-hf
   # Builds the Web UI with node and serves its static files with nginx.
   webui: mlp-webui
   # Set by install.sh to the short git SHA.

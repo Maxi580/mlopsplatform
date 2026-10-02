@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-import httpx2 as httpx
+import httpx
 from huggingface_hub import HfApi
 from huggingface_hub.errors import HfHubHTTPError
 

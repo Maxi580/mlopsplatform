@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from mlp_api.app import app
 from mlp_api.auth.account import set_password
 from mlp_api.pipelines.cluster import KubeflowRun
+from mlp_api.pipelines.compiler import StepEnvironment
 from mlp_core import api_paths, config
 
 PASSWORD = "correct horse battery staple"
@@ -24,6 +25,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("KUBEFLOW_URL", "http://ml-pipeline.test:8888")
     monkeypatch.setenv("KUBEFLOW_NAMESPACE", "kubeflow")
     monkeypatch.setenv("STAGES_IMAGE", "mlp-stages:real")
+    monkeypatch.setenv("TRAINER_HF_IMAGE", "mlp-trainer-hf:real")
     monkeypatch.setenv("MODEL_CACHE_PVC", "model-cache")
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
@@ -90,8 +92,13 @@ def object_store(api):
 class FakeCluster:
     """Records Secrets and Kubeflow runs; tests set run states and pods waiting for GPUs."""
 
-    stages_image = "mlp-stages:test"
-    model_cache_pvc = "model-cache"
+    steps = StepEnvironment(
+        stages_image="mlp-stages:test",
+        trainer_images={"hf": "mlp-trainer-hf:test"},
+        model_cache_pvc="model-cache",
+        object_store_url="http://seaweedfs.test:8333",
+        object_store_bucket="platform",
+    )
 
     def __init__(self):
         self.secrets = {}

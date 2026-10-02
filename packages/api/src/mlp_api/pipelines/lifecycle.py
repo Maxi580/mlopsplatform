@@ -18,6 +18,7 @@ from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.compiler import compile_pipeline
 from mlp_core import config
 from mlp_core.pipeline_request.schema import PipelineRequest
+from mlp_core.settings import Settings
 
 pipeline = Table(
     "pipeline",
@@ -36,7 +37,11 @@ unfinished = pipeline.c.status.not_in(config.FINISHED_STATUSES)
 
 
 def submit_pipeline(
-    engine: Engine, cluster: Cluster, request: PipelineRequest, secrets: dict[str, str]
+    engine: Engine,
+    cluster: Cluster,
+    settings: Settings,
+    request: PipelineRequest,
+    secrets: dict[str, str],
 ) -> int:
     """The new Pipeline's ID, once its Kubeflow run is submitted; RuntimeError if that failed."""
     # 1. The Pipeline, whose ID names its Secret.
@@ -54,7 +59,7 @@ def submit_pipeline(
     # 2. The Secret and the run; a failure leaves the Secret to the reconciler.
     try:
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
-        spec = compile_pipeline(pipeline_id, request, cluster.stages_image, cluster.model_cache_pvc)
+        spec = compile_pipeline(pipeline_id, request, cluster.steps, settings.gpus_per_stage)
         run_id = cluster.submit_run(f"{request.name}-{pipeline_id}", spec)
     except Exception as error:
         set_pipeline(engine, pipeline_id, status="failed")

@@ -110,6 +110,7 @@ build_images() {
   # The Python images build from the whole uv workspace, the Web UI from its own directory.
   build_image api "$ROOT" "$ROOT/packages/api/Dockerfile"
   build_image stages "$ROOT" "$ROOT/packages/stages/Dockerfile"
+  build_image trainerHf "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=hf
   build_image webui "$ROOT/packages/interface/webui" "$ROOT/packages/interface/webui/Dockerfile"
 }
 
@@ -117,7 +118,7 @@ build_image() {
   sudo nerdctl --address "$K3S_SOCKET" --namespace k8s.io build \
     --build-arg PYTHON_IMAGE="$(value .images.python)" --build-arg UV_IMAGE="$(value .images.uv)" \
     --build-arg NODE_IMAGE="$(value .images.node)" --build-arg NGINX_IMAGE="$(value .images.nginx)" \
-    -t "$(value ".images.$1"):$TAG" -f "$3" "$2"
+    "${@:4}" -t "$(value ".images.$1"):$TAG" -f "$3" "$2"
 }
 
 # Generated once and reused; Kubeflow and MLflow get copies in their own namespaces.
@@ -185,11 +186,16 @@ install_kubeflow_pipelines() {
   kubectl apply -k "$(kfp_manifests cluster-scoped-resources)"
   kubectl wait --for condition=established --timeout=60s crd/applications.app.k8s.io
   mkdir -p "$WORK/kfp"
+  write_kfp_api_server_config "$WORK/kfp/config.json"
   cat > "$WORK/kfp/kustomization.yaml" <<EOF
 resources:
   - $(kfp_manifests env/platform-agnostic)
 components:
   - $(realpath --relative-to="$WORK/kfp" "$ROOT/deploy/kfp")
+configMapGenerator:
+  - name: ml-pipeline-config
+    namespace: $kubeflow
+    files: [config.json]
 patches:
   - target:
       kind: PersistentVolumeClaim
@@ -203,6 +209,22 @@ EOF
       "echo s3.bucket.list | weed shell | grep -qw $bucket || echo 's3.bucket.create --name $bucket' | weed shell"
   done
   kubectl -n "$kubeflow" wait --for=condition=Available deploy --all --timeout=15m
+}
+
+# Upstream's API server config plus the MLflow plugin, which hands every step its own MLflow Run.
+write_kfp_api_server_config() {
+  curl -fsSL "$(kfp_api_server_config)" > "$WORK/upstream-config.json"
+  MLFLOW_URL="http://mlflow.$(value .namespaces.mlflow).svc.cluster.local:$(value .ports.mlflow)" \
+    PLATFORM_URL="https://$(value .domain)" yq -p json -o json '.plugins.mlflow = {
+      "endpoint": strenv(MLFLOW_URL),
+      "settings": {
+        "authType": "none",
+        "injectUserEnvVars": true,
+        "mlflowBaseURL": strenv(PLATFORM_URL) + "/mlflow",
+        "kfpBaseURL": strenv(PLATFORM_URL) + "/pipeline",
+        "kfpRunURLPathTemplate": "/#/runs/details/{run_id}"
+      }
+    }' "$WORK/upstream-config.json" > "$1"
 }
 
 install_mlflow() {

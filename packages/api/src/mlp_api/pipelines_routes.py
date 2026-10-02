@@ -34,7 +34,9 @@ def submit(submission: Submission, request: Request) -> dict:
     resolved = resolve(submission, request)
     state = request.app.state
     try:
-        pipeline_id = submit_pipeline(state.engine, state.cluster, resolved, submission.secrets)
+        pipeline_id = submit_pipeline(
+            state.engine, state.cluster, state.settings, resolved, submission.secrets
+        )
     except RuntimeError as error:
         raise HTTPException(502, str(error)) from None
     return {"id": pipeline_id}

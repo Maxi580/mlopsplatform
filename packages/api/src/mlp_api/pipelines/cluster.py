@@ -8,6 +8,7 @@ from kubernetes import client
 from kubernetes import config as kubernetes_config
 from kubernetes.client.exceptions import ApiException
 
+from mlp_api.pipelines.compiler import StepEnvironment
 from mlp_core import config
 
 
@@ -22,8 +23,7 @@ class Cluster:
 
     def __init__(self):
         self.namespace = os.environ["KUBEFLOW_NAMESPACE"]
-        self.stages_image = os.environ["STAGES_IMAGE"]
-        self.model_cache_pvc = os.environ["MODEL_CACHE_PVC"]
+        self.steps = StepEnvironment.from_environment()
         self.kubeflow = httpx.Client(base_url=f"{os.environ['KUBEFLOW_URL']}/apis/v2beta1")
 
     # Loaded on first use, so the API also starts outside a cluster.
@@ -82,7 +82,7 @@ class Cluster:
             field_selector="status.phase=Pending",
         )
         return any(
-            condition.reason == "Unschedulable" and "nvidia.com/gpu" in (condition.message or "")
+            condition.reason == "Unschedulable" and config.GPU_RESOURCE in (condition.message or "")
             for pod in pods.items
             for condition in pod.status.conditions or []
         )

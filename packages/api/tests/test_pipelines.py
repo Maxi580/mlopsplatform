@@ -22,7 +22,7 @@ def test_schema_publishes_the_pipeline_request_and_its_basic_values(logged_in_ap
     assert response.status_code == 200
     schema = response.json()
     assert set(schema["properties"]) >= {"name", "finetune"}
-    assert "learning_rate" in schema["$defs"]["SftSettings"]["required"]
+    assert "learning_rate" in schema["$defs"]["PhaseSettings"]["required"]
 
 
 def test_validate_returns_the_resolved_request(logged_in_api, hugging_face):
@@ -103,7 +103,8 @@ def test_the_pipeline_fetches_the_pinned_base_model_and_always_cleans_up(
     assert cleanup["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED"
     executors = pipeline["deploymentSpec"]["executors"]
     assert executors["exec-fetch"]["container"]["command"] == ["mlp-stage", "fetch"]
-    assert {e["container"]["image"] for e in executors.values()} == {"mlp-stages:test"}
+    assert executors["exec-fetch"]["container"]["image"] == "mlp-stages:test"
+    assert executors["exec-cleanup"]["container"]["image"] == "mlp-stages:test"
 
 
 def test_fetch_writes_into_the_model_cache(logged_in_api, submittable, cluster):
@@ -124,9 +125,13 @@ def test_only_fetch_gets_the_hf_token_from_the_pipelines_secret(
     assert cluster.secrets == {f"pipeline-{pipeline_id}": {"hf_token": HF_TOKEN}}
     _, kubernetes = submitted_pipeline(cluster)
     executors = kubernetes["deploymentSpec"]["executors"]
-    assert [name for name, e in executors.items() if "secretAsEnv" in e] == ["exec-fetch"]
+    pipeline_secret = f"pipeline-{pipeline_id}"
+    assert [
+        name
+        for name, e in executors.items()
+        if any(s["secretName"] == pipeline_secret for s in e.get("secretAsEnv", []))
+    ] == ["exec-fetch"]
     [secret] = executors["exec-fetch"]["secretAsEnv"]
-    assert secret["secretName"] == f"pipeline-{pipeline_id}"
     assert secret["keyToEnv"] == [{"secretKey": "hf_token", "envVar": "HF_TOKEN"}]
 
 
@@ -294,3 +299,47 @@ def test_a_cancel_during_a_reconcile_stays_cancelled(logged_in_api, submittable,
     reconcile(logged_in_api)
 
     assert pipelines(logged_in_api)[0]["status"] == "cancelled"
+
+
+def test_finetune_trains_after_fetch_on_the_backends_trainer_image_with_the_platforms_gpus(
+    logged_in_api, submittable, cluster
+):
+    pipeline_id = submit(logged_in_api).json()["id"]
+
+    pipeline, _ = submitted_pipeline(cluster)
+    finetune = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"]["finetune"]
+    assert finetune["dependentTasks"] == ["fetch"]
+    container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
+    assert container["image"] == "mlp-trainer-hf:test"
+    assert container["command"] == ["mlp-stage", "finetune"]
+    assert container["resources"]["accelerator"]["resourceType"] == "nvidia.com/gpu"
+    assert container["resources"]["accelerator"]["resourceCount"] == "1"
+    parameters = finetune["inputs"]["parameters"]
+    inputs = {name: p["runtimeValue"]["constant"] for name, p in parameters.items()}
+    assert inputs["pipeline_id"] == str(pipeline_id)
+    assert inputs["phase_index"] == "0"
+    request = json.loads(inputs["request"])
+    assert request["finetune"]["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
+    assert request["finetune"]["phases"][0]["dataset"] == "dataset:chat@1"
+
+
+def test_finetune_runs_offline_from_the_model_cache_and_reads_datasets_from_the_object_store(
+    logged_in_api, submittable, cluster
+):
+    submit(logged_in_api, secrets={"hf_token": HF_TOKEN})
+
+    pipeline, kubernetes = submitted_pipeline(cluster)
+    env = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]["env"]
+    assert {"name": "HF_HUB_OFFLINE", "value": "1"} in env
+    assert {"name": "HF_HOME", "value": "/model-cache"} in env
+    assert {"name": "S3_ENDPOINT_URL", "value": "http://seaweedfs.test:8333"} in env
+    assert {"name": "S3_BUCKET", "value": "platform"} in env
+    executor = kubernetes["deploymentSpec"]["executors"]["exec-finetune"]
+    [mount] = executor["pvcMount"]
+    assert (mount["constant"], mount["mountPath"]) == ("model-cache", "/model-cache")
+    [object_store_keys] = executor["secretAsEnv"]
+    assert object_store_keys["secretName"] == "mlpipeline-minio-artifact"
+    assert {k["envVar"] for k in object_store_keys["keyToEnv"]} == {
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+    }

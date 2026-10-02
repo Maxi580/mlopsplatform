@@ -26,3 +26,8 @@ def split_dataset_reference(reference: str) -> tuple[str, int | None]:
 
 def dataset_reference(name: str, version: int) -> str:
     return f"dataset:{name}@{version}"
+
+
+def dataset_key(name: str, version: int) -> str:
+    """Where a Dataset Version's JSONL file lives in the platform bucket."""
+    return f"datasets/{name}/{version}/data.jsonl"

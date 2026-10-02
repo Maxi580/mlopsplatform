@@ -2,7 +2,7 @@
 name = "mlp-cli"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["mlp-core", "typer", "httpx2", "pyyaml", "huggingface-hub>=2.1.1"]
+dependencies = ["mlp-core", "typer", "httpx2", "pyyaml", "huggingface-hub>=1.31,<2"]
 
 [project.scripts]
 mlp = "mlp_cli.main:app"

@@ -9,12 +9,62 @@ from mlp_core import api_paths
 TRAINER_CONFIGS_DIRECTORY = Path(__file__).parent / "pipeline_request" / "trainer_configs"
 # Training backend -> the weight methods it supports.
 BACKENDS = {"hf": ("lora",)}
+# Phase algorithm -> its TRL trainer, Dataset row formats, blocked settings and defaults.
+ALGORITHMS = {
+    "sft": {
+        "trainer": "SFTTrainer",
+        "config": "SFTConfig",
+        "row_formats": ("messages", "prompt_completion", "text"),
+        "blocked_settings": (
+            # Where outputs go, where they are logged and how they are checkpointed.
+            "output_dir",
+            "report_to",
+            "logging_dir",
+            "save_strategy",
+            "save_steps",
+            "save_total_limit",
+            "resume_from_checkpoint",
+            "push_to_hub",
+            "hub_model_id",
+            "hub_strategy",
+            "hub_token",
+            "hub_private_repo",
+            # Could ask for remote code or swap the Base Model's chat template (#16).
+            "model_init_kwargs",
+            "chat_template_path",
+        ),
+        "defaults": {"report_to": ["mlflow"], "save_strategy": "no", "disable_tqdm": True},
+    },
+}
+# LoraConfig settings vLLM can't serve, or that the platform sets.
+LORA_CONFIG = "LoraConfig"
+BLOCKED_LORA_SETTINGS = ("use_dora", "modules_to_save", "bias", "task_type")
+LORA_DEFAULTS = {"task_type": "CAUSAL_LM"}
+# The largest Adapter rank vLLM serves.
+MAX_LORA_RANK = 512
+# Base Model `model_type` -> vLLM's tool-call parser for it (#16); other models serve without tools.
+TOOL_PARSERS = {
+    "qwen2": "hermes",
+    "qwen2_moe": "hermes",
+    "qwen3": "hermes",
+    "qwen3_moe": "hermes",
+    "llama": "llama3_json",
+    "mistral": "mistral",
+}
 # Always run in this order.
 STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
 # Secret slot -> the environment variable of the one step that receives it.
 SECRET_ENV_VARS = {"hf_token": "HF_TOKEN"}
 # Where steps mount the Model Cache; the Hugging Face cache lives inside it.
 MODEL_CACHE_PATH = "/model-cache"
+# The Kubernetes resource the NVIDIA device plugin offers GPUs as.
+GPU_RESOURCE = "nvidia.com/gpu"
+# KFP's own object store keys in its namespace, which install.sh fills with the platform's keys.
+OBJECT_STORE_SECRET = "mlpipeline-minio-artifact"
+OBJECT_STORE_SECRET_ENV_VARS = {
+    "accesskey": "AWS_ACCESS_KEY_ID",
+    "secretkey": "AWS_SECRET_ACCESS_KEY",
+}
 
 # API
 MIN_PASSWORD_LENGTH = 12

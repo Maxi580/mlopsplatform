@@ -26,6 +26,10 @@ install_yq() {
 
 kfp_manifests() { echo "github.com/kubeflow/pipelines/manifests/kustomize/$1?ref=$(value .versions.kfp)"; }
 
+kfp_api_server_config() {
+  echo "https://raw.githubusercontent.com/kubeflow/pipelines/$(value .versions.kfp)/backend/src/apiserver/config/config.json"
+}
+
 device_plugin_manifest() {
   echo "https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/$(value .versions.nvidiaDevicePlugin)/deployments/static/nvidia-device-plugin.yml"
 }

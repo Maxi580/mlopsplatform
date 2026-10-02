@@ -74,6 +74,8 @@ spec:
               value: {{ .Values.namespaces.kubeflow }}
             - name: STAGES_IMAGE
               value: {{ .Values.images.stages }}:{{ .Values.images.tag }}
+            - name: TRAINER_HF_IMAGE
+              value: {{ .Values.images.trainerHf }}:{{ .Values.images.tag }}
             - name: MODEL_CACHE_PVC
               value: {{ .Values.modelCachePvc }}
           ports:

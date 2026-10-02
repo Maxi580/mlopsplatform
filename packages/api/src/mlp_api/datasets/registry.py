@@ -6,6 +6,7 @@ from sqlalchemy import (
     Column,
     Engine,
     Integer,
+    Row,
     String,
     Table,
     func,
@@ -18,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from mlp_api.database import metadata
 from mlp_api.datasets.object_store import ObjectStore
 from mlp_api.datasets.rows import row_format_of_file
+from mlp_core.pipeline_request.references import dataset_key
 
 dataset_version = Table(
     "dataset_version",
@@ -72,15 +74,18 @@ def list_datasets(engine: Engine) -> list[dict]:
     return [{"name": name, "versions": versions} for name, versions in datasets.items()]
 
 
-def find_dataset_version(engine: Engine, name: str, version: int | None = None) -> int | None:
-    """The version if it exists, the latest one when none is named, else None."""
-    query = select(func.max(dataset_version.c.version)).where(
-        dataset_version.c.name == name, ~dataset_version.c.deleted
+def find_dataset_version(engine: Engine, name: str, version: int | None = None) -> Row | None:
+    """The version's row if it exists, the latest one when none is named, else None."""
+    query = (
+        select(dataset_version)
+        .where(dataset_version.c.name == name, ~dataset_version.c.deleted)
+        .order_by(dataset_version.c.version.desc())
+        .limit(1)
     )
     if version is not None:
         query = query.where(dataset_version.c.version == version)
     with engine.connect() as connection:
-        return connection.execute(query).scalar()
+        return connection.execute(query).first()
 
 
 def delete_dataset_version(
@@ -101,7 +106,3 @@ def delete_dataset_version(
             return False
         object_store.delete(dataset_key(name, version))
     return True
-
-
-def dataset_key(name: str, version: int) -> str:
-    return f"datasets/{name}/{version}/data.jsonl"

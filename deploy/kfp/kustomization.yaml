@@ -24,3 +24,4 @@ patches:
           ports:
             - port: 8333
   - path: workflow-controller-configmap.yaml
+  - path: ml-pipeline-config.yaml

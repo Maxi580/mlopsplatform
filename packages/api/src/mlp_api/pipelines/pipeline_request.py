@@ -41,17 +41,22 @@ def validate_pipeline_request(
     elif model.needs_remote_code:
         errors.append(error(base_model_loc, f"{repo} needs remote code, which never runs here"))
 
-    # 4. The Datasets in the Dataset registry, pinned to a version.
+    # 4. The Datasets in the Dataset registry, pinned to a version the algorithm trains on.
     for index, phase in enumerate(request.finetune.phases):
+        loc = ["finetune", "phases", index, "dataset"]
         name, version = split_dataset_reference(phase.dataset)
         pinned = find_dataset_version(engine, name, version)
-        if pinned is not None:
-            phase.dataset = dataset_reference(name, pinned)
-        elif version is None:
-            errors.append(error(["finetune", "phases", index, "dataset"], f"no Dataset `{name}`"))
+        row_formats = config.ALGORITHMS[phase.algorithm]["row_formats"]
+        if pinned is None and version is None:
+            errors.append(error(loc, f"no Dataset `{name}`"))
+        elif pinned is None:
+            errors.append(error(loc, f"`{name}` has no version {version}"))
+        elif pinned.row_format not in row_formats:
+            has = f"`{name}@{pinned.version}` has {pinned.row_format} rows"
+            trains_on = f"{phase.algorithm} trains on {', '.join(row_formats)} rows"
+            errors.append(error(loc, f"{has}; {trains_on}"))
         else:
-            missing = f"`{name}` has no version {version}"
-            errors.append(error(["finetune", "phases", index, "dataset"], missing))
+            phase.dataset = dataset_reference(name, pinned.version)
 
     if errors:
         return None, errors
@@ -66,15 +71,21 @@ def error(loc, msg: str) -> dict:
 def trainer_config_errors(request: PipelineRequest) -> list[dict]:
     errors = []
     for index, phase in enumerate(request.finetune.phases):
-        for block in ("settings", "lora"):
+        algorithm = config.ALGORITHMS[phase.algorithm]
+        checks = {
+            "settings": (algorithm["config"], algorithm["blocked_settings"]),
+            "lora": (config.LORA_CONFIG, config.BLOCKED_LORA_SETTINGS),
+        }
+        for block, (config_class, blocked) in checks.items():
             settings = getattr(phase, block)
-            config_class = settings.trainer_config
-            fields = trainer_config_fields(config_class)
-            if fields is None:
-                continue
+            fields = trainer_config_fields(config_class) or {}
             for name, value in settings.model_dump().items():
                 loc = ["finetune", "phases", index, block, name]
-                if name not in fields:
+                if name in blocked:
+                    errors.append(error(loc, f"`{name}` is blocked; see the README for why"))
+                elif not fields:
+                    continue
+                elif name not in fields:
                     errors.append(error(loc, f"`{name}` is not a {config_class} setting"))
                 elif not value_matches(fields[name], value):
                     expected = {k: v for k, v in fields[name].items() if k != "default"}

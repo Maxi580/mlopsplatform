@@ -82,6 +82,25 @@ mlp cancel 7             # stops the run and deletes its Secrets
 
 Each Pipeline first runs `fetch`, which downloads the Base Model at its pinned commit into the Model Cache, and ends with a `cleanup` step that runs even after a failure. The Hugging Face token comes from the Profile's `secrets`, else `HF_TOKEN` or `hf auth login`, else a hidden prompt (Enter skips it; public models download anonymously). It lives in a per-Pipeline Kubernetes Secret that only `fetch` sees, is redacted from step logs, and is deleted once the Pipeline finishes or is cancelled (any left over are swept after 48 hours). A step whose GPUs are busy waits and shows as `waiting for GPU`. Pipelines are never retried automatically.
 
+Next comes `finetune`, which trains the Phase on the backend's trainer image (`hf`: TRL + PEFT) with `gpus_per_stage` GPUs from the platform settings. It runs offline from the Model Cache and logs its params and metrics into its own MLflow Run (KFP's MLflow plugin creates one per step, under the Pipeline's Run). Its output is registered in the MLflow Model Registry as the next Model Version of the Registered Model named after the Pipeline (`qwen-sft` version 1, 2, …). Each version holds the Adapter, the Base Model's tokenizer and chat template, and `pipeline_request.json` with the resolved request. Its tags are `weights: adapter`, `base_model`, `pipeline`, `phase`, `algorithm`, `backend`, `tool_parser` (the vLLM tool parser for the Base Model's `model_type`, or `none`) and `tools_rendered` (`false` when the chat template drops the tools a client sends, so tool calling won't work). There are no size limits: a Phase that runs out of GPU memory fails with a plain message naming the settings to lower.
+
+## Phase algorithms
+
+Each algorithm is one row of `ALGORITHMS` in `packages/core/src/mlp_core/config.py`: its TRL trainer and config, the Dataset row formats it trains on, its blocked settings and the platform's defaults, which the Phase's `settings` override. Every algorithm uses LoRA (`method: lora`): `lora` goes to PEFT's `LoraConfig` with `task_type: CAUSAL_LM`. Adapters must be servable by vLLM, so `r` is at most 512 and `use_dora`, `modules_to_save`, `bias` and `task_type` are blocked.
+
+### `sft`: supervised finetuning
+
+Trains the model to produce the Dataset's text, with TRL's `SFTTrainer`. Use it to teach a format, a style, a domain or a task from examples of the answers you want; it is the usual first Phase.
+
+- **Rows**: `messages` (conversations, rendered with the Base Model's own chat template; a Base Model without one is refused when the Phase starts), prompt-completion (loss on the completion only), or `text` (plain language modelling):
+  ```jsonl
+  {"messages": [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello!"}]}
+  {"prompt": "Translate to French: cat", "completion": "chat"}
+  {"text": "Any text the model should learn to continue."}
+  ```
+- **Defaults**: TRL's `SFTConfig` defaults, plus `report_to: mlflow`, `save_strategy: no` and `disable_tqdm: true`.
+- **Blocked settings**: `output_dir`, `report_to`, `logging_dir` (the platform stores and logs the output), `save_strategy`, `save_steps`, `save_total_limit`, `resume_from_checkpoint` (the platform owns Checkpoints), `push_to_hub` and `hub_*` (outputs go to the Model Registry), `model_init_kwargs` (could ask for remote code) and `chat_template_path` (the Base Model's chat template is always kept).
+
 ## Web UI
 
 The Web UI (`packages/interface/webui`, React) is a client of the API like the CLI (`packages/interface/cli`). Open `https://<domain>/` and log in with the shared password; the cookie lasts 12 hours and also opens the KFP UI (`/pipeline/`) and the MLflow UI (`/mlflow/`), which send a logged-out browser to the same login page.
