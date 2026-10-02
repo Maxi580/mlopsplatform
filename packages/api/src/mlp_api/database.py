@@ -1,13 +1,9 @@
-from pathlib import Path
+from sqlalchemy import Engine, MetaData
 
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import Engine
+# Every domain module adds its tables here.
+metadata = MetaData()
 
 
-def upgrade_database(engine: Engine) -> None:
-    config = Config()
-    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-    with engine.begin() as connection:
-        config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+# Creates missing tables only; a schema change in v1 means recreating the database.
+def create_tables(engine: Engine) -> None:
+    metadata.create_all(engine)

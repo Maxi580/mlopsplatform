@@ -19,6 +19,13 @@ The first run asks for the shared account's password (or reads `MLP_PASSWORD`). 
 kubectl -n mlp exec -it deploy/api -- set-password
 ```
 
+There are no database migrations: the API only creates missing tables. After a change to existing tables, empty the `platform` database (Pipelines, Datasets and the password are lost; MLflow, SeaweedFS and the Model Cache are kept), then reinstall:
+
+```sh
+kubectl -n mlp exec statefulset/postgres -- psql -U mlp -d platform -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public'
+./install.sh dev
+```
+
 `./uninstall.sh` deletes everything the platform created, including all data, but keeps k3s, nerdctl/BuildKit and the driver.
 
 ## CLI login

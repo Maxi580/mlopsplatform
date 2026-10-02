@@ -3,7 +3,7 @@ name = "mlp-api"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "mlp-core", "fastapi", "uvicorn", "sqlalchemy", "alembic", "psycopg[binary]", "pyjwt", "argon2-cffi",
+    "mlp-core", "fastapi", "uvicorn", "sqlalchemy", "psycopg[binary]", "pyjwt", "argon2-cffi",
 ]
 
 [project.scripts]

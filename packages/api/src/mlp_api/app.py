@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from sqlalchemy import create_engine, text
 
 from mlp_api import auth
-from mlp_api.database import upgrade_database
+from mlp_api.database import create_tables
 from mlp_core import api_paths
 from mlp_core.settings import Settings
 
@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     # In memory per client IP, which works because the API runs as one replica.
     app.state.failed_logins = defaultdict(list)
     app.state.engine = create_engine(os.environ["DATABASE_URL"])
-    upgrade_database(app.state.engine)
+    create_tables(app.state.engine)
     yield
     app.state.engine.dispose()
 

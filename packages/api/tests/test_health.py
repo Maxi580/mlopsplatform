@@ -1,7 +1,7 @@
 from mlp_core import api_paths
 
 
-def test_health_answers_without_login_once_the_database_is_migrated(api):
+def test_health_answers_without_login_once_the_tables_exist(api):
     response = api.get(api_paths.HEALTH)
 
     assert response.status_code == 200
