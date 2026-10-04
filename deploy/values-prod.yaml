@@ -1,2 +1,9 @@
-# Domain, GPU count and disk sizes are filled in with the prod ticket (#41).
+# The Azure VM's free DNS name: <label>.<region>.cloudapp.azure.com.
 domain: ""
+
+settings:
+  gpu_count: 1
+  model_cache_size: 400Gi
+  object_store_size: 400Gi
+
+buildCacheGb: 100

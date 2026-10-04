@@ -66,10 +66,28 @@ install_helm() {
     | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
 }
 
+# Asked before anything changes, so answering no leaves the platform as it was.
+confirm_upgrade() {
+  local platform work answer
+  platform=$(value .namespaces.platform)
+  # A first install has no API yet, and maybe no kubectl.
+  kubectl -n "$platform" get deploy/api >/dev/null 2>&1 || return 0
+  [[ ${MLP_YES:-} == 1 ]] && return
+  work=$(kubectl -n "$platform" exec deploy/api -- running-work) \
+    || die "could not list running Pipelines and Endpoints; MLP_YES=1 upgrades without asking"
+  [[ -n $work ]] || return 0
+  printf 'The upgrade cancels these Pipelines and stops these Endpoints; all data is kept:\n%s\n' "$work"
+  read -rp "Continue? [y/N] " answer
+  [[ $answer == [yY] ]] || die "aborted; nothing changed"
+}
+
 prepare_host() {
   log "Preparing the host (only what is missing)"
-  nvidia-smi >/dev/null || die "nvidia-smi failed: install the NVIDIA driver first"
-  local restart_k3s=false
+  local driver minimum restart_k3s=false
+  driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1) \
+    || die "nvidia-smi failed: install the NVIDIA driver first"
+  minimum=$(value .versions.minNvidiaDriver)
+  (( ${driver%%.*} >= minimum )) || die "NVIDIA driver $driver is too old: install $minimum or newer"
   if ! command -v nvidia-container-runtime >/dev/null; then install_nvidia_container_toolkit; restart_k3s=true; fi
   if ! command -v runsc >/dev/null; then install_gvisor; restart_k3s=true; fi
 
@@ -114,11 +132,16 @@ build_images() {
   build_image webui "$ROOT/packages/interface/webui" "$ROOT/packages/interface/webui/Dockerfile"
 }
 
+# Each built image is current; remove_outdated_images keeps it.
+BUILT_IMAGES=()
 build_image() {
+  local image
+  image="$(value ".images.$1"):$TAG"
   sudo nerdctl --address "$K3S_SOCKET" --namespace k8s.io build \
     --build-arg PYTHON_IMAGE="$(value .images.python)" --build-arg UV_IMAGE="$(value .images.uv)" \
     --build-arg NODE_IMAGE="$(value .images.node)" --build-arg NGINX_IMAGE="$(value .images.nginx)" \
-    "${@:4}" -t "$(value ".images.$1"):$TAG" -f "$3" "$2"
+    "${@:4}" -t "$image" -f "$3" "$2"
+  BUILT_IMAGES+=("$image")
 }
 
 # Generated once and reused; Kubeflow and MLflow get copies in their own namespaces.
@@ -159,6 +182,12 @@ install_platform_chart() {
   log "Installing the platform chart (API, Web UI, Postgres, TLS, routes)"
   helm upgrade --install mlp "$ROOT/deploy/chart" --namespace "$(value .namespaces.platform)" \
     -f "$VALUES" --set images.tag="$TAG" --wait --timeout 10m
+}
+
+# On the new API: Endpoint Deployments and Kubeflow runs outlive the chart upgrade.
+stop_running_work() {
+  log "Cancelling running Pipelines and stopping Endpoints"
+  kubectl -n "$(value .namespaces.platform)" exec deploy/api -- stop-running-work
 }
 
 # Asked on the first run only; the API stores just its hash, which survives re-installs.
@@ -245,6 +274,45 @@ write_ca_certificate() {
   kubectl -n "$cert_manager" get secret mlp-ca -o 'jsonpath={.data.ca\.crt}' | base64 -d > "$ROOT/ca.crt"
 }
 
+# Outdated: nothing runs it, none of its tags is current, and a current image shares its repository.
+remove_outdated_images() {
+  log "Removing outdated images"
+  local current used outdated
+  # 1. Current: the images just built, and the upstream ones values.yaml names.
+  current=$( { printf '%s\n' "${BUILT_IMAGES[@]}"; value '.images[] | select(contains(":"))'; } \
+    | while read -r image; do full_image_name "$image"; done)
+  # 2. In use: whatever a container, running or exited, was started from.
+  used=$(sudo k3s crictl ps -a -o json | yq -p json -oy '.containers[] | (.imageRef, .imageId)')
+  # 3. Outdated, by the rule above; untagged images count as outdated once nothing uses them.
+  # shellcheck disable=SC2016
+  outdated=$(sudo k3s crictl images -o json | CURRENT=$current USED=$used yq -p json -oy '
+    (.images[] | (.repoTags, .repoDigests)) |= (. // [])
+    | (strenv(USED) | split("\n")) as $used
+    | [.images[] | select([.id] + .repoTags + .repoDigests | any_c(. as $ref | $used | any_c(. == $ref))) | .id] as $in_use
+    | ((strenv(CURRENT) | split("\n")) + [.images[] | select(.id as $id | $in_use | any_c(. == $id)) | .repoTags[]]) as $current
+    | ($current | map(sub(":[^:/]+$"; ""))) as $repositories
+    | .images[]
+    | select(.id as $id | $in_use | any_c(. == $id) | not)
+    | select(.repoTags | any_c(. as $tag | $current | any_c(. == $tag)) | not)
+    | select((.repoTags | length) == 0 or (.repoTags | any_c(sub(":[^:/]+$"; "") as $repository | $repositories | any_c(. == $repository))))
+    | .id')
+  [[ -z $outdated ]] || echo "$outdated" | xargs sudo k3s crictl rmi
+}
+
+prune_build_cache() {
+  log "Pruning the BuildKit cache"
+  sudo buildctl prune --keep-storage "$(( $(value .buildCacheGb) * 1024 ))"
+}
+
+# The name containerd lists an image under, e.g. python:3.12-slim -> docker.io/library/python:3.12-slim.
+full_image_name() {
+  case $1 in
+    *.*/* | *:*/* | localhost/*) echo "$1" ;;
+    */*) echo "docker.io/$1" ;;
+    *) echo "docker.io/library/$1" ;;
+  esac
+}
+
 print_urls() {
   local domain
   domain=$(value .domain)
@@ -258,14 +326,19 @@ print_urls() {
 
 install_yq
 load_values "$ROOT/deploy/values-$ENVIRONMENT.yaml"
+[[ -n $(value .domain) ]] || die "set domain in deploy/values-$ENVIRONMENT.yaml"
+confirm_upgrade
 prepare_host
 build_images
 create_credentials
 kubectl apply -f "$(device_plugin_manifest)"
 install_cert_manager
 install_platform_chart
+stop_running_work
 set_shared_password
 install_kubeflow_pipelines
 install_mlflow
 write_ca_certificate
+remove_outdated_images
+prune_build_cache
 print_urls
