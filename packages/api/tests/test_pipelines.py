@@ -97,7 +97,7 @@ def test_the_pipeline_fetches_the_pinned_base_model_and_always_cleans_up(
     pipeline, _ = submitted_pipeline(cluster)
     fetch = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"]["fetch"]
     parameters = fetch["inputs"]["parameters"]
-    assert parameters["base_model"]["runtimeValue"]["constant"] == f"hf:{BASE_MODEL}@{COMMIT}"
+    assert parameters["references"]["runtimeValue"]["constant"] == f"hf:{BASE_MODEL}@{COMMIT}"
     # model_cache_size from the settings ConfigMap, so fetch can check that the download fits.
     assert parameters["model_cache_size"]["runtimeValue"]["constant"] == "200Gi"
     cleanup = pipeline["root"]["dag"]["tasks"]["cleanup"]

@@ -25,6 +25,9 @@ def smoke_test(
         bool,
         typer.Option(help="Serve models on Endpoints and run the serve Stage; runs a custom one"),
     ] = False,
+    evaluate: Annotated[
+        bool, typer.Option(help="Evaluate the Base Model and an Adapter; runs a custom one")
+    ] = False,
 ) -> None:
     """Run the Smoke Test, every case or only the named ones, and print each result."""
     # 1. The complete Smoke Test, or a custom one when cases are named.
@@ -37,6 +40,8 @@ def smoke_test(
         selection["uploaded_model"] = True
     if serving:
         selection["serving"] = True
+    if evaluate:
+        selection["evaluate"] = True
     with api_client() as client:
         if selection:
             response = client.post(api_paths.SMOKE_TEST_CUSTOM, json=selection)

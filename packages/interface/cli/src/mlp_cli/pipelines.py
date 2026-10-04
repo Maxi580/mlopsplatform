@@ -12,13 +12,18 @@ FinetunePhases = Annotated[str, typer.Option(help="Phases from the CLI Profile, 
 PipelineName = Annotated[str | None, typer.Option(help="Pipeline name; default: the Profile's")]
 DryRun = Annotated[bool, typer.Option(help="Only list what the Pipeline would download")]
 Serve = Annotated[bool, typer.Option(help="End with an Endpoint for the last Model Version")]
+Evaluate = Annotated[bool, typer.Option(help="Run the Profile's benchmarks on its model")]
 
 
 def validate(
-    finetune: FinetunePhases = "", name: PipelineName = None, serve: Serve = False
+    finetune: FinetunePhases = "",
+    name: PipelineName = None,
+    evaluate: Evaluate = False,
+    serve: Serve = False,
 ) -> None:
     """Check the Pipeline Request built from the CLI Profile, without running anything."""
-    resolved = send_pipeline_request(api_paths.VALIDATE_PIPELINE, finetune, name, serve)
+    chosen = (finetune, name, evaluate, serve)
+    resolved = send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen)
     typer.echo(yaml.safe_dump(resolved["request"], sort_keys=False))
     typer.echo("Valid")
 
@@ -26,14 +31,16 @@ def validate(
 def run(
     finetune: FinetunePhases = "",
     name: PipelineName = None,
+    evaluate: Evaluate = False,
     serve: Serve = False,
     dry_run: DryRun = False,
 ) -> None:
     """Submit the Pipeline Request built from the CLI Profile; returns once it is queued."""
+    chosen = (finetune, name, evaluate, serve)
     if dry_run:
-        print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, finetune, name, serve))
+        print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen))
         return
-    pipeline = send_pipeline_request(api_paths.PIPELINES, finetune, name, serve)
+    pipeline = send_pipeline_request(api_paths.PIPELINES, *chosen)
     typer.echo(f"Submitted Pipeline {pipeline['id']}; follow it with `mlp ls`")
 
 
@@ -75,13 +82,15 @@ def cancel(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")])
     typer.echo(f"Pipeline {pipeline_id} cancelled")
 
 
-def send_pipeline_request(path: str, finetune: str, name: str | None, serve: bool) -> dict:
+def send_pipeline_request(
+    path: str, finetune: str, name: str | None, evaluate: bool, serve: bool
+) -> dict:
     """The API's answer to the Profile's Pipeline Request and Secrets; exits on a rejection."""
     # 1. The request, with only the named Stages and Phases.
     profile = load_profile()
     try:
         phases = [p for p in finetune.split(",") if p]
-        request = build_pipeline_request(profile, name, phases, serve)
+        request = build_pipeline_request(profile, name, phases, serve, evaluate)
     except ValueError as error:
         typer.echo(error, err=True)
         raise typer.Exit(1) from None

@@ -201,6 +201,7 @@ class FakeCluster:
         object_store_bucket="platform",
         api_url="http://api.mlp.test:8000",
         sandbox_url="http://sandbox.mlp.test:8090",
+        platform_namespace="mlp",
     )
     endpoint_environment = EndpointEnvironment(
         namespace="mlp",
@@ -267,8 +268,8 @@ def cluster(api):
 
 @pytest.fixture
 def model_cache(api, tmp_path):
-    """The Hugging Face cache inside the Model Cache, empty until a test writes into it."""
-    api.app.state.model_cache = tmp_path / "model-cache" / "hub"
+    """The Model Cache, empty until a test writes into it."""
+    api.app.state.model_cache = tmp_path / "model-cache"
     return api.app.state.model_cache
 
 

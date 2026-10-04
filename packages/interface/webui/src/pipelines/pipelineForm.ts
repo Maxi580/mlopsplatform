@@ -1,6 +1,6 @@
 import { MORE_SETTINGS, SWITCHED_ON } from "../config";
 
-export type FieldKind = "fixed" | "choice" | "text" | "list" | "integer" | "number";
+export type FieldKind = "fixed" | "choice" | "choices" | "text" | "list" | "integer" | "number";
 
 export type FormSection = {
   kind: "section";
@@ -115,6 +115,9 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
     );
     return { kind: "section", name, title, children, moreSettings: false, optional };
   }
+  // A list of values from a fixed set, such as benchmarks from the catalog.
+  const items = node.type === "array" ? resolveRef(node.items, defs) : undefined;
+  if (items?.enum) return { kind: "choices", name, title, choices: items.enum };
   if (types.has("boolean")) return { kind: "choice", name, title, choices: [true, false] };
   if (types.has("array")) return { kind: "list", name, title };
   if (types.has("integer")) return { kind: "integer", name, title };
@@ -160,6 +163,7 @@ function readValue(field: FormField, text: string): unknown {
   }
   if (field.kind === "choice")
     return field.choices?.find((choice) => String(choice) === text) ?? text;
+  if (field.kind === "choices") return text.split(",");
   if (field.kind === "list" && text.includes(","))
     return text.split(",").map((part) => part.trim());
   return text;

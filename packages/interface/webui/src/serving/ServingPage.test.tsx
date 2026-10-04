@@ -29,7 +29,7 @@ const routes: Parameters<typeof fakeApi>[0] = {
   "GET /schema": [200, schema],
   "GET /endpoints": [200, [chat, { ...chat, name: "old", status: "stopped" }]],
   "GET /models": [200, [{ name: "qwen-sft", versions: [{ version: 2 }] }]],
-  "GET /cache/base-models": [200, { base_models: [{ reference: "hf:Qwen/Qwen3@abc" }] }],
+  "GET /cache": [200, { entries: [{ kind: "base_model", reference: "hf:Qwen/Qwen3@abc" }] }],
   "GET /settings": [200, { gpu_count: 1 }],
 };
 

@@ -1,5 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { REFERENCE_PLACEHOLDERS } from "../config";
+import { formatBytes } from "../formatBytes";
+import type { Benchmark } from "./pipeline";
 import { type FormField, type FormSection, type FormValues, moreName } from "./pipelineForm";
 
 type Props = {
@@ -7,6 +9,8 @@ type Props = {
   values: FormValues;
   errors: Record<string, string[]>;
   datasetReferences: string[];
+  // The catalog the benchmark picker describes its choices from.
+  benchmarks?: Benchmark[];
   onChange: (values: FormValues) => void;
 };
 
@@ -16,6 +20,7 @@ export default function FormSectionView({
   values,
   errors,
   datasetReferences,
+  benchmarks = [],
   onChange,
 }: Props) {
   const fields = section.children.filter((node): node is FormField => node.kind !== "section");
@@ -48,6 +53,7 @@ export default function FormSectionView({
               value={values.fields[field.name] ?? ""}
               errors={errors[field.name]}
               datasetReferences={datasetReferences}
+              benchmarks={benchmarks}
               onChange={(value) => setField(field.name, value)}
             />
           ))}
@@ -64,6 +70,7 @@ export default function FormSectionView({
             values={values}
             errors={errors}
             datasetReferences={datasetReferences}
+            benchmarks={benchmarks}
             onChange={onChange}
           />
         </fieldset>
@@ -77,14 +84,18 @@ function FieldInput({
   value,
   errors,
   datasetReferences,
+  benchmarks,
   onChange,
 }: {
   field: FormField;
   value: string;
   errors?: string[];
   datasetReferences: string[];
+  benchmarks: Benchmark[];
   onChange: (value: string) => void;
 }) {
+  if (field.kind === "choices")
+    return <ChoicesInput {...{ field, value, errors, benchmarks, onChange }} />;
   const prefix = Object.keys(REFERENCE_PLACEHOLDERS).find((start) =>
     field.pattern?.startsWith(start),
   );
@@ -135,8 +146,75 @@ function FieldInput({
   );
 }
 
+// A checkbox per choice, grouped by category, with what the catalog says about each benchmark.
+function ChoicesInput({
+  field,
+  value,
+  errors,
+  benchmarks,
+  onChange,
+}: {
+  field: FormField;
+  value: string;
+  errors?: string[];
+  benchmarks: Benchmark[];
+  onChange: (value: string) => void;
+}) {
+  const choices = (field.choices ?? []).map(String);
+  const chosen = value ? value.split(",") : [];
+  const about = Object.fromEntries(benchmarks.map((benchmark) => [benchmark.name, benchmark]));
+  const categories = new Map<string, string[]>();
+  for (const choice of choices) {
+    const category = about[choice]?.category ?? "";
+    categories.set(category, [...(categories.get(category) ?? []), choice]);
+  }
+  // Kept in the order of the choices, whichever is clicked first.
+  const toggle = (choice: string) =>
+    onChange(
+      choices.filter((c) => (c === choice ? !chosen.includes(c) : chosen.includes(c))).join(","),
+    );
+
+  return (
+    <fieldset className="field wide choices" aria-describedby={errors && `${field.name}-error`}>
+      <legend className="field-label">
+        {field.title} <code>{lastPart(field.name)}</code>
+      </legend>
+      {[...categories].map(([category, inCategory]) => (
+        <div key={category} className="choice-group">
+          {category && <span className="chip">{category}</span>}
+          {inCategory.map((choice) => (
+            <label key={choice} className="choice">
+              <input
+                type="checkbox"
+                checked={chosen.includes(choice)}
+                aria-describedby={about[choice] && `${field.name}-${choice}-about`}
+                onChange={() => toggle(choice)}
+              />
+              <code>{choice}</code>
+              {about[choice] && (
+                <>
+                  <span className="muted" id={`${field.name}-${choice}-about`}>
+                    {about[choice].description}
+                  </span>
+                  <span className="muted">{formatBytes(about[choice].size_bytes)}</span>
+                </>
+              )}
+            </label>
+          ))}
+        </div>
+      ))}
+      <FieldErrors id={`${field.name}-error`} messages={errors} />
+    </fieldset>
+  );
+}
+
 // Settings the schema allows beyond its fields; values read as JSON when they can (0.1, true, [..]).
-function MoreSettings({ section, values, errors, onChange }: Omit<Props, "datasetReferences">) {
+function MoreSettings({
+  section,
+  values,
+  errors,
+  onChange,
+}: Omit<Props, "datasetReferences" | "benchmarks">) {
   const rows = values.more[section.name] ?? [];
   const setRows = (next: typeof rows) =>
     onChange({ ...values, more: { ...values.more, [section.name]: next } });

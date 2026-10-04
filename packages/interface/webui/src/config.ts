@@ -22,6 +22,8 @@ export const BUCKET_CONTENTS: Record<string, string> = {
   mlflow: "Model Versions and Run artifacts",
   mlpipeline: "Kubeflow run outputs and logs",
 };
+// What a Model Cache entry holds, by its kind.
+export const CACHE_ENTRY_KINDS = { base_model: "Base Model", benchmark: "Benchmark" };
 // Object store usage, in percent, from which the meter shows a warning.
 export const STORAGE_WARNING_PERCENT = 90;
 // How long the New Pipeline form waits after a change before asking what the request downloads.

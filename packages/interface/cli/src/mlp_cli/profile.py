@@ -13,7 +13,11 @@ def load_profile() -> dict:
 
 
 def build_pipeline_request(
-    profile: dict, name: str | None, finetune_phases: list[str], serve: bool = False
+    profile: dict,
+    name: str | None,
+    finetune_phases: list[str],
+    serve: bool = False,
+    evaluate: bool = False,
 ) -> dict:
     """A Pipeline Request holding only the named Stages and Phases, in the order named."""
     request = {"name": name or profile.get("name")}
@@ -26,6 +30,8 @@ def build_pipeline_request(
         # A variant's algorithm defaults to its name, so `sft:` needs no `algorithm: sft`.
         finetune["phases"] = [{"algorithm": phase, **variants[phase]} for phase in finetune_phases]
         request["finetune"] = finetune
+    if evaluate:
+        request["evaluate"] = profile.get("evaluate") or {}
     if serve:
         request["serve"] = profile.get("serve") or {}
     return request

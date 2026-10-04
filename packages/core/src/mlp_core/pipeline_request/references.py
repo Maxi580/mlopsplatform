@@ -1,6 +1,9 @@
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
+
+from mlp_core.config import BENCHMARKS_DIRECTORY
 
 # Starts alphanumeric, so names like `..` never become storage paths.
 DATASET_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
@@ -44,3 +47,23 @@ def model_reference(name: str, version: int) -> str:
 def dataset_key(name: str, version: int) -> str:
     """Where a Dataset Version's JSONL file lives in the platform bucket."""
     return f"datasets/{name}/{version}/data.jsonl"
+
+
+def split_benchmark_reference(benchmark: str) -> tuple[str, str]:
+    """The harness and task of a `harness:task` benchmark."""
+    harness, task = benchmark.split(":")
+    return harness, task
+
+
+def benchmark_reference(harness: str, task: str) -> str:
+    return f"{harness}:{task}"
+
+
+def split_endpoint_reference(reference: str) -> str:
+    """The Endpoint name an `endpoint:` Reference names."""
+    return reference.removeprefix("endpoint:")
+
+
+def benchmark_directory(model_cache: Path, benchmark: str) -> Path:
+    """Where the Model Cache holds a `harness:task` benchmark's datasets."""
+    return model_cache / BENCHMARKS_DIRECTORY / Path(*split_benchmark_reference(benchmark))

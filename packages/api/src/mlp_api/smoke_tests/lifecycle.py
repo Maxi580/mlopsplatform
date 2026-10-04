@@ -24,12 +24,16 @@ from mlp_api.pipelines.lifecycle import (
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.smoke_tests.cases import (
     SmokeTestSelection,
+    evaluate_case_request,
+    evaluate_cases,
     finetune_case_request,
     finetune_cases,
+    run_order,
     serving_cases,
 )
 from mlp_core import config
 from mlp_core.pipeline_request.references import model_reference, split_base_model_reference
+from mlp_core.pipeline_request.schema import PipelineRequest
 
 is_smoke_test = pipeline.c.cases.is_not(None)
 
@@ -46,14 +50,15 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     # 2. Its Pipeline, whose name prefixes all it creates; the reconciler cleans up after it.
     name = datetime.now(UTC).strftime(config.SMOKE_TEST_NAME)
     trainings = finetune_cases(selection)
-    sandbox = [config.SMOKE_TEST_SANDBOX_CASE] if selection.sandbox else []
-    cases = dict.fromkeys(["fetch", *sandbox, *trainings], "pending")
+    evaluations = evaluate_cases(selection, trainings)
+    cases = dict.fromkeys(run_order(selection.sandbox, trainings, evaluations), "pending")
     pipeline_id = create_pipeline(engine, name, {}, cases)
 
     try:
-        # 3. The Base Model, pinned to a commit, with room for it in the Model Cache.
+        # 3. The Base Model, pinned to a commit, and the benchmark, with room in the Model Cache.
         base_model = pin_base_model(state.hugging_face, config.SMOKE_TEST_BASE_MODEL, None)
-        make_room_for_downloads(state, preview_downloads(state, base_model, None)["download_bytes"])
+        fetched = [base_model, *([config.SMOKE_TEST_BENCHMARK] if evaluations else [])]
+        make_room_for_downloads(state, preview_downloads(state, fetched, None)["download_bytes"])
 
         # 4. The bundled Datasets and the tiny model, uploaded the normal way.
         for phase in {phase for phase, _, _ in trainings.values()}:
@@ -74,6 +79,12 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")
+        # An Adapter to evaluate is registered by its finetune case only once the run started.
+        for case, made_by in evaluations.items():
+            model = model_reference(f"{name}-{made_by}", 1) if made_by else base_model
+            data = evaluate_case_request(case, name, model)
+            requests[case] = PipelineRequest.model_validate(data)
+        requests = {case: requests[case] for case in cases if case in requests}
         resolved = {case: request.model_dump(mode="json") for case, request in requests.items()}
 
         # 6. The serving cases, which the reconciler runs once their model exists.
@@ -92,7 +103,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         spec = compile_smoke_test(
             pipeline_id,
             name,
-            base_model,
+            fetched,
             selection.sandbox,
             requests,
             state.cluster.steps,

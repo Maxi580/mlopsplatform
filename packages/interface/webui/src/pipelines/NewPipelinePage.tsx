@@ -12,10 +12,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
-import { DATASETS, PIPELINES, SCHEMA, VALIDATE_PIPELINE } from "../apiPaths";
+import { BENCHMARKS, DATASETS, PIPELINES, SCHEMA, VALIDATE_PIPELINE } from "../apiPaths";
 import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS, SWITCHED_ON } from "../config";
 import { formatBytes } from "../formatBytes";
 import FormSectionView from "./FormSectionView";
+import type { Benchmark } from "./pipeline";
 import {
   type FieldError,
   type FormSection,
@@ -36,10 +37,15 @@ const NO_ERRORS: PlacedErrors = { byName: {}, unplaced: [] };
 export default function NewPipelinePage() {
   const schema = useApi<Record<string, unknown>>(SCHEMA).data;
   const datasets = useApi<Dataset[]>(DATASETS).data;
+  const benchmarks = useApi<Benchmark[]>(BENCHMARKS).data;
   const form = useMemo(() => schema && pipelineForm(schema), [schema]);
 
   return form ? (
-    <PipelineBuilder form={form} datasetReferences={datasetReferences(datasets ?? [])} />
+    <PipelineBuilder
+      form={form}
+      datasetReferences={datasetReferences(datasets ?? [])}
+      benchmarks={benchmarks ?? []}
+    />
   ) : (
     <p className="muted loading">
       <LoaderCircle className="spin" size={16} /> Loading the Pipeline Request schema…
@@ -50,9 +56,11 @@ export default function NewPipelinePage() {
 function PipelineBuilder({
   form,
   datasetReferences,
+  benchmarks,
 }: {
   form: FormSection;
   datasetReferences: string[];
+  benchmarks: Benchmark[];
 }) {
   const navigate = useNavigate();
   const [values, setValues] = useState<FormValues>(loadDraft);
@@ -105,7 +113,13 @@ function PipelineBuilder({
   };
   const stages = form.children.filter((node): node is FormSection => node.kind === "section");
   const errorCount = Object.values(errors.byName).flat().length + errors.unplaced.length;
-  const sectionProps = { values, errors: errors.byName, datasetReferences, onChange: setValues };
+  const sectionProps = {
+    values,
+    errors: errors.byName,
+    datasetReferences,
+    benchmarks,
+    onChange: setValues,
+  };
 
   return (
     <>

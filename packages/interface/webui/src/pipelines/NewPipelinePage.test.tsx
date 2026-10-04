@@ -143,3 +143,64 @@ test("an optional Stage joins the request only once it is switched on", async ()
   const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
   expect(submitted.request.serve).toEqual({ max_model_len: 4096 });
 });
+
+test("the benchmark picker shows each benchmark's category, description and size", async () => {
+  const withEvaluate = {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      evaluate: { anyOf: [{ $ref: "#/$defs/Evaluate" }, { type: "null" }], default: null },
+    },
+    $defs: {
+      Evaluate: {
+        type: "object",
+        properties: {
+          benchmarks: {
+            type: "array",
+            title: "Benchmarks",
+            minItems: 1,
+            items: { enum: ["lm_eval:gsm8k", "lm_eval:mmlu"], type: "string" },
+          },
+        },
+      },
+    },
+  };
+  const catalog = [
+    {
+      name: "lm_eval:gsm8k",
+      category: "maths",
+      description: "Grade-school maths word problems.",
+      licence: "MIT",
+      size_bytes: 2.6 * 2 ** 20,
+    },
+    {
+      name: "lm_eval:mmlu",
+      category: "knowledge",
+      description: "Questions on 57 subjects.",
+      licence: "MIT",
+      size_bytes: 49.1 * 2 ** 20,
+    },
+  ];
+  const calls = fakeApi({
+    "GET /schema": [200, withEvaluate],
+    "GET /benchmarks": [200, catalog],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 6 }],
+  });
+  renderApp("/pipelines/new");
+
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run evaluate/i }));
+  const gsm8k = screen.getByRole("checkbox", { name: /lm_eval:gsm8k/ });
+  expect(gsm8k).toHaveAccessibleDescription(/Grade-school maths word problems\./);
+  expect(screen.getByText("maths")).toBeInTheDocument();
+  expect(screen.getByText("knowledge")).toBeInTheDocument();
+  expect(screen.getByText("49.1 MB")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("checkbox", { name: /lm_eval:mmlu/ }));
+  await userEvent.click(gsm8k);
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+  await screen.findByText(/Submitted Pipeline 6/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.evaluate).toEqual({ benchmarks: ["lm_eval:gsm8k", "lm_eval:mmlu"] });
+});

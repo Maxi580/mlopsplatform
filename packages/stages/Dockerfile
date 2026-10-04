@@ -4,7 +4,7 @@ ARG PYTHON_IMAGE
 FROM ${UV_IMAGE} AS uv
 
 FROM ${PYTHON_IMAGE}
-# Set to a mlp-stages extra (e.g. hf) to build a trainer image.
+# Set to a mlp-stages extra: hf for a trainer image, evaluate for the stages image.
 ARG STAGES_EXTRA=""
 COPY --from=uv /uv /bin/uv
 WORKDIR /app

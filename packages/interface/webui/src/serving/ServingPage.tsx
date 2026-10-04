@@ -1,7 +1,7 @@
 import { CircleAlert, LoaderCircle, Play, Square } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
-import { CACHED_BASE_MODELS, ENDPOINTS, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
+import { ENDPOINTS, MODEL_CACHE, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import FormSectionView from "../pipelines/FormSectionView";
 import {
@@ -13,7 +13,7 @@ import {
   placeErrors,
 } from "../pipelines/pipelineForm";
 import StatusBadge from "../pipelines/StatusBadge";
-import type { CachedBaseModels, RegisteredModel } from "../storage/storage";
+import type { ModelCache, RegisteredModel } from "../storage/storage";
 import type { Endpoint } from "./endpoint";
 
 type Notice = { text: string; failed: boolean };
@@ -132,7 +132,7 @@ function EndpointRow({ endpoint, onStop }: { endpoint: Endpoint; onStop: (name: 
 function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   const schema = useApi<PublishedSchema>(SCHEMA).data;
   const models = useApi<RegisteredModel[]>(MODELS).data;
-  const cache = useApi<CachedBaseModels>(CACHED_BASE_MODELS).data;
+  const cache = useApi<ModelCache>(MODEL_CACHE).data;
   const form = useMemo(() => schema && servingOptionsForm(schema), [schema]);
   const [model, setModel] = useState("");
   const [values, setValues] = useState<FormValues>({ fields: {}, more: {} });
@@ -140,7 +140,9 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   const [busy, setBusy] = useState(false);
   const suggestions = [
     ...(models ?? []).flatMap((m) => m.versions.map((v) => `model:${m.name}@${v.version}`)),
-    ...(cache?.base_models ?? []).map((entry) => entry.reference),
+    ...(cache?.entries ?? [])
+      .filter((entry) => entry.kind === "base_model")
+      .map((entry) => entry.reference),
   ];
 
   if (!form) return <LoaderCircle className="spin" size={16} />;

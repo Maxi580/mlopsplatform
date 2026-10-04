@@ -7,11 +7,16 @@ from sqlalchemy import Engine
 from mlp_api.datasets.registry import find_dataset_version
 from mlp_api.endpoints.lifecycle import find_endpoint
 from mlp_api.models.mlflow import MLflow
-from mlp_api.models.registry import pin_full_weights
+from mlp_api.models.registry import find_referenced_model_version, pin_full_weights
 from mlp_api.pipelines.hugging_face import HuggingFace, pin_base_model
 from mlp_core import config
 from mlp_core.endpoint_spec import EndpointName
-from mlp_core.pipeline_request.references import dataset_reference, split_dataset_reference
+from mlp_core.pipeline_request.references import (
+    dataset_reference,
+    model_reference,
+    split_dataset_reference,
+    split_endpoint_reference,
+)
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 
@@ -35,11 +40,11 @@ def validate_pipeline_request(
     # 3. The starting model: the Base Model on Hugging Face, or a full-weight Model Version.
     finetune = request.finetune
     try:
-        if finetune.base_model:
+        if finetune and finetune.base_model:
             finetune.base_model = pin_base_model(
                 hugging_face, finetune.base_model, secrets.get("hf_token")
             )
-        else:
+        elif finetune:
             finetune.from_ = pin_full_weights(model_registry, finetune.from_)
     except ValueError as reason:
         errors.append(
@@ -47,7 +52,7 @@ def validate_pipeline_request(
         )
 
     # 4. The Datasets in the Dataset registry, pinned to a version the algorithm trains on.
-    for index, phase in enumerate(request.finetune.phases):
+    for index, phase in enumerate(finetune.phases if finetune else []):
         loc = ["finetune", "phases", index, "dataset"]
         name, version = split_dataset_reference(phase.dataset)
         pinned = find_dataset_version(engine, name, version)
@@ -63,7 +68,16 @@ def validate_pipeline_request(
         else:
             phase.dataset = dataset_reference(name, pinned.version)
 
-    # 5. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
+    # 5. The model `evaluate` runs on, pinned; `finetune`'s output unless named.
+    if request.evaluate:
+        try:
+            request.evaluate.model = pin_evaluated_model(
+                request, secrets.get("hf_token"), hugging_face, engine, model_registry
+            )
+        except ValueError as reason:
+            errors.append(error(["evaluate", "model"], str(reason)))
+
+    # 6. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
     if request.serve:
         name = request.serve.name = request.serve.name or request.name
         if not is_endpoint_name(name):
@@ -83,7 +97,7 @@ def error(loc, msg: str) -> dict:
 
 def trainer_config_errors(request: PipelineRequest) -> list[dict]:
     errors = []
-    for index, phase in enumerate(request.finetune.phases):
+    for index, phase in enumerate(request.finetune.phases if request.finetune else []):
         algorithm = config.ALGORITHMS[phase.algorithm]
         checks = {
             "settings": (algorithm["config"], algorithm["blocked_settings"]),
@@ -120,6 +134,33 @@ def value_matches(field_schema: dict, value) -> bool:
         return Draft202012Validator(field_schema).is_valid(value)
     except Exception:
         return True
+
+
+def pin_evaluated_model(
+    request: PipelineRequest,
+    token: str | None,
+    hugging_face: HuggingFace,
+    engine: Engine,
+    model_registry: MLflow,
+) -> str:
+    """`@finetune`, a pinned Base Model or Model Version, or a running Endpoint; else ValueError."""
+    model = request.evaluate.model
+    if model in (None, config.FINETUNE_OUTPUT):
+        if request.finetune is None:
+            raise ValueError("`finetune` isn't enabled, so name the model to evaluate")
+        return config.FINETUNE_OUTPUT
+    if model.startswith("hf:"):
+        return pin_base_model(hugging_face, model, token)
+    if model.startswith("endpoint:"):
+        name = split_endpoint_reference(model)
+        found = find_endpoint(engine, name)
+        if found is None or found.status != "running":
+            raise ValueError(f"no Endpoint {name} is running")
+        if request.evaluate.serving:
+            raise ValueError(f"Endpoint {name} serves with its own options; leave out `serving`")
+        return model
+    found = find_referenced_model_version(model_registry, model)
+    return model_reference(found.name, found.version)
 
 
 def secret_value_errors(request: PipelineRequest, secrets: dict[str, str]) -> list[dict]:

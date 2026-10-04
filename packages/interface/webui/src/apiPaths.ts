@@ -1,6 +1,7 @@
 // Route paths of the platform API; mirrors packages/core/src/mlp_core/api_paths.py.
 export const LOGIN = "/auth/login";
 export const SCHEMA = "/schema";
+export const BENCHMARKS = "/benchmarks";
 export const SETTINGS = "/settings";
 export const VALIDATE_PIPELINE = "/pipelines/validate";
 export const DATASETS = "/datasets";
@@ -18,8 +19,8 @@ export const modelVersionFiles = (name: string, version: number) =>
 export const MODEL_UPLOADS = "/models/uploads";
 export const modelUploadComplete = (id: string) => `/models/uploads/${id}/complete`;
 export const STORAGE = "/storage";
-export const CACHED_BASE_MODELS = "/cache/base-models";
+export const MODEL_CACHE = "/cache";
 export const ENDPOINTS = "/endpoints";
 export const stopEndpoint = (name: string) => `/endpoints/${name}/stop`;
-export const cachedBaseModel = (reference: string) =>
-  `${CACHED_BASE_MODELS}?reference=${encodeURIComponent(reference)}`;
+export const modelCacheEntry = (reference: string) =>
+  `${MODEL_CACHE}?reference=${encodeURIComponent(reference)}`;

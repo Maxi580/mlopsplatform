@@ -25,10 +25,12 @@ class SmokeTestSelection(Strict):
     # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints;
     # with a finetune case, also runs the `serve` Stage.
     serving: bool = False
+    # Evaluates the Base Model and, with a finetune case, its Adapter on one benchmark.
+    evaluate: bool = False
 
 
 COMPLETE_SMOKE_TEST = SmokeTestSelection(
-    finetune=FinetuneCases(), sandbox=True, uploaded_model=True, serving=True
+    finetune=FinetuneCases(), sandbox=True, uploaded_model=True, serving=True, evaluate=True
 )
 
 
@@ -45,7 +47,6 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, s
     first_training = next(iter(cases.values()), None)
     if selection.uploaded_model:
         cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_UPLOADED_MODEL_TRAINING
-    # Last, as its serve step only runs once its training passed.
     if selection.serving and first_training:
         cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = first_training
     return cases
@@ -72,6 +73,36 @@ def finetune_case_request(
             ],
         },
     }
+
+
+def evaluate_cases(selection: SmokeTestSelection, trainings: dict) -> dict[str, str | None]:
+    """Evaluate case -> the finetune case whose Adapter it evaluates; None for the Base Model."""
+    if not selection.evaluate:
+        return {}
+    base_model, adapter = config.SMOKE_TEST_EVALUATE_CASES
+    finetunes = [c for c in trainings if c not in config.SMOKE_TEST_SPECIAL_FINETUNE_CASES]
+    return {base_model: None, **({adapter: finetunes[0]} if finetunes else {})}
+
+
+def evaluate_case_request(case: str, smoke_test: str, model: str) -> dict:
+    """The Pipeline Request of one evaluate case: a few samples of the Smoke Test's benchmark."""
+    return {
+        "name": f"{smoke_test}-{case}",
+        "evaluate": {
+            "model": model,
+            "benchmarks": [config.SMOKE_TEST_BENCHMARK],
+            "limit": config.SMOKE_TEST_EVALUATE_LIMIT,
+        },
+    }
+
+
+def run_order(sandbox: bool, trainings: dict, evaluations: dict) -> list[str]:
+    """The cases run as Kubeflow nodes, in the order they run."""
+    # The `serve` Stage case comes last, as its serve step runs only once its training passed.
+    serve_stage = [case for case in trainings if case == config.SMOKE_TEST_SERVE_STAGE_CASE]
+    finetunes = [case for case in trainings if case not in serve_stage]
+    sandbox_case = [config.SMOKE_TEST_SANDBOX_CASE] if sandbox else []
+    return ["fetch", *sandbox_case, *finetunes, *evaluations, *serve_stage]
 
 
 def serving_cases(

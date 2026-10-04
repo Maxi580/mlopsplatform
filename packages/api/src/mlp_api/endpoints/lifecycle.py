@@ -34,7 +34,7 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
         )
         spec = spec.model_copy(update={"model": model.references[0]})
         if model.base_model:
-            downloads = preview_downloads(state, model.base_model, None)
+            downloads = preview_downloads(state, [model.base_model], None)
             make_room_for_downloads(state, downloads["download_bytes"])
 
         # 3. Its row first, so in-use checks and the reconciler know every Deployment.

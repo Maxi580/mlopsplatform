@@ -79,7 +79,7 @@ def test_an_endpoint_for_a_base_model_fetches_it_and_serves_it_offline_from_the_
     started = response.json()
     assert (started["name"], started["status"]) == ("chat", "pending")
     assert (started["model"], started["url"]) == (PINNED_QWEN, "/endpoints/chat/v1")
-    assert init_commands(cluster) == [["mlp-stage", "fetch", PINNED_QWEN, "200Gi"]]
+    assert init_commands(cluster) == [["mlp-stage", "fetch", "200Gi", PINNED_QWEN]]
     expected = [QWEN, "--served-model-name", "chat", "--tensor-parallel-size", "1"]
     assert vllm_args(cluster)[:5] == expected
     assert contains(vllm_args(cluster), ["--revision", COMMIT])
@@ -107,6 +107,12 @@ def test_an_endpoint_for_full_weights_downloads_the_model_version(
     assert contains(vllm_args(cluster), ["--tool-call-parser", "mistral"])
 
 
+def test_an_endpoint_offers_its_tokenizer_so_it_can_be_evaluated(logged_in_api, qwen_on_the_hub):
+    start(logged_in_api)
+
+    assert "--enable-tokenizer-info-endpoint" in vllm_args(logged_in_api.app.state.cluster)
+
+
 def test_an_adapter_is_served_on_its_base_model_under_the_endpoint_name(
     logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
 ):
@@ -116,7 +122,7 @@ def test_an_adapter_is_served_on_its_base_model_under_the_endpoint_name(
 
     assert response.status_code == 201, response.text
     assert init_commands(cluster) == [
-        ["mlp-stage", "fetch", PINNED_QWEN, "200Gi"],
+        ["mlp-stage", "fetch", "200Gi", PINNED_QWEN],
         ["mlp-stage", "download", f"s3://mlflow/{prefix}=/models/adapter"],
     ]
     args = vllm_args(cluster)

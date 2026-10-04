@@ -9,3 +9,12 @@ export type Pipeline = {
   kubeflow_run_url: string | null;
   mlflow_run_url: string | null;
 };
+
+// A benchmark of the catalog, as `GET /benchmarks` lists it.
+export type Benchmark = {
+  name: string;
+  category: string;
+  description: string;
+  licence: string;
+  size_bytes: number;
+};

@@ -21,7 +21,7 @@ PROFILE = {
             },
         },
     },
-    "evaluate": {"targets": ["@finetune"]},
+    "evaluate": {"benchmarks": ["lm_eval:gsm8k"]},
 }
 
 
@@ -109,6 +109,16 @@ def test_serve_adds_the_profiles_serve_block(home, fake_api, platform_ca):
     mlp_validate("--finetune", "sft", "--serve")
 
     assert sent_submission(fake_api)["request"]["serve"] == {"max_model_len": 4096}
+
+
+def test_evaluate_adds_the_profiles_evaluate_block(home, fake_api, platform_ca):
+    evaluate = {"model": "hf:Qwen/Qwen3-0.6B", "benchmarks": ["lm_eval:gsm8k"]}
+    write_profile(home, fake_api.url, platform_ca, **{**PROFILE, "evaluate": evaluate})
+    fake_api.answers[api_paths.VALIDATE_PIPELINE] = (200, {"request": {}})
+
+    mlp_validate("--evaluate")
+
+    assert sent_submission(fake_api)["request"] == {"name": PROFILE["name"], "evaluate": evaluate}
 
 
 def test_serve_works_without_a_serve_block_in_the_profile(profile, fake_api):

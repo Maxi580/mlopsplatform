@@ -1,9 +1,9 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from mlp_core.config import ALGORITHMS, BACKENDS, MAX_LORA_RANK
-from mlp_core.endpoint_spec import EndpointName, ServingOptions
+from mlp_core.config import ALGORITHMS, BACKENDS, BENCHMARKS, FINETUNE_OUTPUT, MAX_LORA_RANK
+from mlp_core.endpoint_spec import ENDPOINT_NAME_PATTERN, EndpointName, ServingOptions
 from mlp_core.pipeline_request.references import (
     MODEL_NAME_PATTERN,
     BaseModelReference,
@@ -12,6 +12,7 @@ from mlp_core.pipeline_request.references import (
 )
 
 METHODS = tuple(sorted({method for methods in BACKENDS.values() for method in methods}))
+EndpointReference = Annotated[str, Field(pattern=f"^endpoint:{ENDPOINT_NAME_PATTERN}$")]
 
 
 class Strict(BaseModel):
@@ -70,6 +71,20 @@ class Finetune(Strict):
         return self.base_model or self.from_
 
 
+class Evaluate(Strict):
+    """Benchmarks from the catalog, run against a model or a running Endpoint."""
+
+    # Validation names `@finetune`, the Pipeline's last Model Version, when none is given.
+    model: (
+        BaseModelReference | ModelReference | EndpointReference | Literal[FINETUNE_OUTPUT] | None
+    ) = None
+    benchmarks: list[Literal[tuple(BENCHMARKS)]] = Field(min_length=1)
+    # Samples per task, for a quick look; scores on fewer samples don't compare with full runs.
+    limit: int | None = Field(None, gt=0)
+    # For the vLLM `evaluate` starts; an Endpoint serves with its own.
+    serving: ServingOptions | None = None
+
+
 class Serve(ServingOptions):
     """An Endpoint for the Pipeline's last Model Version, started once the Pipeline made it."""
 
@@ -80,5 +95,14 @@ class Serve(ServingOptions):
 class PipelineRequest(Strict):
     schema_version: Literal[1] = 1
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
-    finetune: Finetune
+    finetune: Finetune | None = None
+    evaluate: Evaluate | None = None
     serve: Serve | None = None
+
+    @model_validator(mode="after")
+    def check_stages(self) -> "PipelineRequest":
+        if not (self.finetune or self.evaluate):
+            raise ValueError("enable at least one of `finetune` and `evaluate`")
+        if self.serve and not self.finetune:
+            raise ValueError("`serve` serves the output of `finetune`, which isn't enabled")
+        return self

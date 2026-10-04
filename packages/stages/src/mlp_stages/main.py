@@ -13,6 +13,7 @@ STEPS = {
     # An Endpoint's init container: the Model Version files vLLM loads.
     "download": "mlp_stages.operations.download:download",
     "finetune": "mlp_stages.finetune.main:finetune",
+    "evaluate": "mlp_stages.evaluate.main:evaluate",
     "serve": "mlp_stages.operations.serve:serve",
     # The Smoke Test's sandbox case.
     "check-sandbox": "mlp_stages.operations.check_sandbox:check_sandbox",

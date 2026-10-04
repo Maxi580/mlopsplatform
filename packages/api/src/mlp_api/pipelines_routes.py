@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from mlp_api.model_cache.downloads import preview_downloads
+from mlp_api.model_cache.downloads import fetched_references, preview_downloads
 from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.pipelines.lifecycle import (
     cancel_pipeline,
@@ -12,7 +12,7 @@ from mlp_api.pipelines.lifecycle import (
     submit_pipeline,
 )
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
-from mlp_core import api_paths
+from mlp_core import api_paths, config
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 router = APIRouter()
@@ -31,12 +31,18 @@ def schema() -> dict:
     return PipelineRequest.model_json_schema()
 
 
+# The catalog `evaluate` picks from, with what the Web UI shows beside each benchmark.
+@router.get(api_paths.BENCHMARKS)
+def benchmarks() -> list[dict]:
+    return [{"name": name, **entry} for name, entry in config.BENCHMARKS.items()]
+
+
 @router.post(api_paths.VALIDATE_PIPELINE)
 def validate(submission: Submission, request: Request) -> dict:
     resolved = resolve(submission, request)
-    downloads = preview_downloads(
-        request.app.state, resolved.finetune.base_model, submission.secrets.get("hf_token")
-    )
+    state = request.app.state
+    fetched = fetched_references(state, resolved)
+    downloads = preview_downloads(state, fetched, submission.secrets.get("hf_token"))
     return {"request": resolved.model_dump(mode="json"), **downloads}
 
 
@@ -44,12 +50,11 @@ def validate(submission: Submission, request: Request) -> dict:
 def submit(submission: Submission, request: Request) -> dict:
     resolved = resolve(submission, request)
     state = request.app.state
-    downloads = preview_downloads(
-        state, resolved.finetune.base_model, submission.secrets.get("hf_token")
-    )
+    fetched = fetched_references(state, resolved)
+    downloads = preview_downloads(state, fetched, submission.secrets.get("hf_token"))
     make_room_for_downloads(state, downloads["download_bytes"])
     try:
-        pipeline_id = submit_pipeline(state, resolved, submission.secrets)
+        pipeline_id = submit_pipeline(state, resolved, submission.secrets, fetched)
     except RuntimeError as error:
         raise HTTPException(502, str(error)) from None
     return {"id": pipeline_id, **downloads}

@@ -1,10 +1,31 @@
-from mlp_api.model_cache.janitor import find_cached_base_model
+from mlp_api.endpoints.endpoint_model import find_endpoint_model
+from mlp_api.model_cache.janitor import find_cache_entry
+from mlp_core import config
 from mlp_core.pipeline_request.references import split_base_model_reference
+from mlp_core.pipeline_request.schema import PipelineRequest
 
 
-def preview_downloads(state, base_model: str | None, token: str | None) -> dict:
+def fetched_references(state, request: PipelineRequest) -> list[str]:
+    """Every Base Model and benchmark the Pipeline's fetch step pulls into the Model Cache."""
+    base_models = []
+    if request.finetune and request.finetune.base_model:
+        base_models.append(request.finetune.base_model)
+    # The Base Model the evaluated model loads: itself, or the one under a Model Version.
+    evaluate = request.evaluate
+    if evaluate and evaluate.model.startswith("hf:"):
+        base_models.append(evaluate.model)
+    elif evaluate and evaluate.model.startswith("model:"):
+        model = find_endpoint_model(
+            evaluate.model, state.hugging_face, state.model_registry, state.object_store
+        )
+        base_models.append(model.base_model)
+    benchmarks = evaluate.benchmarks if evaluate else []
+    return list(dict.fromkeys(reference for reference in base_models + benchmarks if reference))
+
+
+def preview_downloads(state, references: list[str], token: str | None) -> dict:
     """What fetch pulls into the Model Cache, with the bytes to download and already cached."""
-    downloads = [base_model_download(state, base_model, token)] if base_model else []
+    downloads = [download(state, reference, token) for reference in references]
     return {
         "downloads": downloads,
         "download_bytes": sum(d["bytes"] or 0 for d in downloads if not d["cached"]),
@@ -12,12 +33,16 @@ def preview_downloads(state, base_model: str | None, token: str | None) -> dict:
     }
 
 
-# Bytes are None when Hugging Face can't say.
-def base_model_download(state, reference: str, token: str | None) -> dict:
-    cached = find_cached_base_model(state.model_cache, reference)
-    size = (
-        cached.size_bytes
-        if cached
-        else state.hugging_face.model_size(*split_base_model_reference(reference), token)
-    )
-    return {"kind": "base_model", "ref": reference, "bytes": size, "cached": cached is not None}
+# Bytes are None when Hugging Face can't say; a benchmark's come from the catalog.
+def download(state, reference: str, token: str | None) -> dict:
+    is_base_model = reference.startswith("hf:")
+    found = find_cache_entry(state.model_cache, reference)
+    cached = found is not None and found.complete
+    if cached:
+        size = found.size_bytes
+    elif is_base_model:
+        size = state.hugging_face.model_size(*split_base_model_reference(reference), token)
+    else:
+        size = config.BENCHMARKS[reference]["size_bytes"]
+    kind = "base_model" if is_base_model else "benchmark"
+    return {"kind": kind, "ref": reference, "bytes": size, "cached": cached}

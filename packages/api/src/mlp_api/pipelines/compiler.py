@@ -5,6 +5,7 @@ from google.protobuf import json_format
 from kfp import dsl, kubernetes
 
 from mlp_core import config
+from mlp_core.pipeline_request.references import split_endpoint_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 from mlp_core.settings import Settings
 
@@ -22,6 +23,8 @@ class StepEnvironment:
     # How the `serve` step reaches the API inside the cluster.
     api_url: str
     sandbox_url: str
+    # Where `evaluate` reaches an Endpoint's Service.
+    platform_namespace: str
 
     @classmethod
     def from_environment(cls) -> "StepEnvironment":
@@ -33,11 +36,16 @@ class StepEnvironment:
             object_store_bucket=os.environ["S3_BUCKET"],
             api_url=os.environ["API_URL"],
             sandbox_url=os.environ["SANDBOX_URL"],
+            platform_namespace=os.environ["PLATFORM_NAMESPACE"],
         )
 
 
 def compile_pipeline(
-    pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, settings: Settings
+    pipeline_id: int,
+    request: PipelineRequest,
+    fetched: list[str],
+    steps: StepEnvironment,
+    settings: Settings,
 ) -> dict:
     """The Kubeflow pipeline spec for a resolved request, in the form KFP's run API takes."""
 
@@ -49,20 +57,30 @@ def compile_pipeline(
     def pipeline():
         cleanup_task = cleanup().set_caching_options(False)
         with dsl.ExitHandler(cleanup_task):
-            finetune_task = finetune_step(pipeline_id, request, steps, settings.gpus_per_stage)
-            # A Model Version to start from lies in the object store; only a Base Model is fetched.
-            if request.finetune.base_model:
-                fetch_task = fetch_step(request.finetune.base_model, steps, settings)
+            # 1. fetch fills the Model Cache with the Base Models and benchmarks the Stages need.
+            previous = None
+            if fetched:
+                previous = fetch_step(fetched, steps, settings)
                 # Only fetch gets the token, from the Secret; a pipeline parameter would be logged.
                 kubernetes.use_secret_as_env(
-                    fetch_task,
+                    previous,
                     config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
                     {"hf_token": config.SECRET_ENV_VARS["hf_token"]},
                     optional=True,
                 )
-                finetune_task.after(fetch_task)
+
+            # 2. The Stages, one after another in their fixed order.
+            stages = []
+            if request.finetune:
+                stages.append(finetune_step(pipeline_id, request, steps, settings.gpus_per_stage))
+            if request.evaluate:
+                stages.append(evaluate_step(pipeline_id, request, steps, settings.gpus_per_stage))
             if request.serve:
-                serve_step(pipeline_id, steps).after(finetune_task)
+                stages.append(serve_step(pipeline_id, steps))
+            for stage in stages:
+                if previous:
+                    stage.after(previous)
+                previous = stage
 
     return pipeline_run_spec(pipeline)
 
@@ -70,9 +88,9 @@ def compile_pipeline(
 def compile_smoke_test(
     pipeline_id: int,
     name: str,
-    base_model: str,
+    fetched: list[str],
     sandbox: bool,
-    finetune_cases: dict[str, PipelineRequest],
+    cases: dict[str, PipelineRequest],
     steps: StepEnvironment,
     settings: Settings,
 ) -> dict:
@@ -80,7 +98,7 @@ def compile_smoke_test(
 
     @dsl.pipeline(name=name)
     def pipeline():
-        previous = fetch_step(base_model, steps, settings).set_display_name("fetch")
+        previous = fetch_step(fetched, steps, settings).set_display_name("fetch")
         # Each later case runs once the one before it ended, even if that failed; no data passes
         # between them.
         if sandbox:
@@ -90,9 +108,11 @@ def compile_smoke_test(
                 .after(previous)
                 .ignore_upstream_failure()
             )
-        for case, request in finetune_cases.items():
+        gpus = settings.gpus_per_stage
+        for case, request in cases.items():
+            stage = finetune_step if request.finetune else evaluate_step
             previous = (
-                finetune_step(pipeline_id, request, steps, settings.gpus_per_stage)
+                stage(pipeline_id, request, steps, gpus)
                 .set_display_name(case)
                 .after(previous)
                 .ignore_upstream_failure()
@@ -106,16 +126,16 @@ def compile_smoke_test(
     return pipeline_run_spec(pipeline)
 
 
-def fetch_step(base_model: str, steps: StepEnvironment, settings: Settings):
+def fetch_step(references: list[str], steps: StepEnvironment, settings: Settings):
     @dsl.container_component
-    def fetch(base_model: str, model_cache_size: str):
+    def fetch(model_cache_size: str, references: str):
         return dsl.ContainerSpec(
             image=steps.stages_image,
             command=["mlp-stage", "fetch"],
-            args=[base_model, model_cache_size],
+            args=[model_cache_size, references],
         )
 
-    task = fetch(base_model=base_model, model_cache_size=settings.model_cache_size)
+    task = fetch(model_cache_size=settings.model_cache_size, references=",".join(references))
     use_model_cache(task, steps)
     return task
 
@@ -141,6 +161,46 @@ def finetune_step(
     task.set_env_variable("HF_HUB_OFFLINE", "1")
     task.set_accelerator_type(config.GPU_RESOURCE)
     task.set_accelerator_limit(gpus_per_stage)
+    use_object_store(task, steps)
+    return task
+
+
+def evaluate_step(
+    pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, gpus_per_stage: int
+):
+    """The step that runs the request's benchmarks, offline, against its model."""
+
+    @dsl.container_component
+    def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str):
+        return dsl.ContainerSpec(
+            image=steps.stages_image,
+            command=["mlp-stage", "evaluate"],
+            args=[pipeline_id, request, endpoint_url, gpus],
+        )
+
+    # 1. An Endpoint already serves its model; any other gets a vLLM of its own, on GPUs.
+    model = request.evaluate.model
+    endpoint_url = ""
+    if model.startswith("endpoint:"):
+        object_name = config.ENDPOINT_OBJECT_NAME.format(name=split_endpoint_reference(model))
+        endpoint_url = config.ENDPOINT_SERVICE_URL.format(
+            object_name=object_name, namespace=steps.platform_namespace, port=config.VLLM_PORT
+        )
+    gpus = 0 if endpoint_url else gpus_per_stage
+
+    # 2. The step, reading the Model Cache offline and Model Versions from the object store.
+    task = evaluate(
+        pipeline_id=str(pipeline_id),
+        request=request.model_dump_json(),
+        endpoint_url=endpoint_url,
+        gpus=str(gpus),
+    )
+    use_model_cache(task, steps)
+    task.set_env_variable("HF_HUB_OFFLINE", "1")
+    task.set_env_variable("HF_DATASETS_OFFLINE", "1")
+    if gpus:
+        task.set_accelerator_type(config.GPU_RESOURCE)
+        task.set_accelerator_limit(gpus)
     use_object_store(task, steps)
     return task
 

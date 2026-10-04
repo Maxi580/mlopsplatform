@@ -81,6 +81,8 @@ VLLM_TOOL_PARSERS = (
 VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 # Always run in this order.
 STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
+# Names the Pipeline's last Model Version, before `finetune` registered it.
+FINETUNE_OUTPUT = "@finetune"
 # Secret slot -> the environment variable of the one step that receives it. The API adds
 # `serve_token` itself, for the `serve` step to call the API with.
 SECRET_ENV_VARS = {"hf_token": "HF_TOKEN", "serve_token": "MLP_SERVE_TOKEN"}
@@ -193,6 +195,10 @@ ROW_FORMATS = {
 QUANTITY_SUFFIXES = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "Pi": 2**50}
 
 # Model Cache
+# Where the Model Cache holds Base Models: the Hugging Face cache, HF_HOME/hub.
+HUB_DIRECTORY = "hub"
+# What a Model Cache entry holds, by its kind.
+CACHE_ENTRY_KINDS = {"base_model": "Base Model", "benchmark": "Benchmark"}
 # How often the janitor evicts Base Models past the high-water mark; submits also make room.
 EVICTION_INTERVAL = timedelta(minutes=10)
 
@@ -227,6 +233,14 @@ SMOKE_TEST_SERVING_CASES = ("serve-base-model", "serve-full-weights", "serve-ada
 # Trains like the first finetune case, then its `serve` step starts an Endpoint; that Endpoint is
 # stopped once the case has a result, so it never holds a GPU the other cases wait for.
 SMOKE_TEST_SERVE_STAGE_CASE = "finetune-serve"
+# Finetune cases that train from the tiny model, or end with an Endpoint; the others train only
+# an Adapter on the Base Model.
+SMOKE_TEST_SPECIAL_FINETUNE_CASES = (SMOKE_TEST_UPLOADED_MODEL_CASE, SMOKE_TEST_SERVE_STAGE_CASE)
+# Evaluate the Base Model, and the Adapter of the first finetune case, on a few samples of one
+# small benchmark that scores log-likelihoods, the harder path through vLLM.
+SMOKE_TEST_EVALUATE_CASES = ("evaluate-base-model", "evaluate-adapter")
+SMOKE_TEST_BENCHMARK = "lm_eval:truthfulqa_mc2"
+SMOKE_TEST_EVALUATE_LIMIT = 5
 # One tiny Dataset per Phase algorithm, named after it, uploaded the normal way by each Smoke Test.
 SMOKE_TEST_DATASETS_DIRECTORY = Path(__file__).parent / "smoke_test_datasets"
 # Every finetune case trains a few steps; only that it runs matters, not what it learns.
@@ -251,6 +265,74 @@ SMOKE_TEST_CASE_RESULTS = {
 }
 # How often `mlp smoke-test` asks for new case results.
 SMOKE_TEST_POLL_INTERVAL = timedelta(seconds=30)
+
+# Evaluate
+# `harness:task` -> its category, one-line description, dataset licence and download size. Only
+# benchmarks whose datasets passed the licence gate (no non-commercial or share-alike licence)
+# are listed. A size is what fetch leaves in the Model Cache for the benchmark (its downloaded
+# files, their Arrow cache and any task data), measured with `download_benchmark` when added.
+BENCHMARKS = {
+    "lm_eval:gsm8k": {
+        "category": "maths",
+        "description": "Grade-school maths word problems, solved step by step.",
+        "licence": "MIT",
+        "size_bytes": 7_414_523,
+    },
+    "lm_eval:hellaswag": {
+        "category": "reasoning",
+        "description": "Commonsense inference: picks the likeliest ending of an everyday scene.",
+        "licence": "MIT",
+        "size_bytes": 195_531_832,
+    },
+    "lm_eval:commonsense_qa": {
+        "category": "reasoning",
+        "description": "Multiple-choice questions that need everyday commonsense knowledge.",
+        "licence": "MIT",
+        "size_bytes": 4_319_132,
+    },
+    "lm_eval:bbh": {
+        "category": "reasoning",
+        "description": "BIG-Bench Hard: 27 hard multi-step reasoning tasks, with chain-of-thought.",
+        "licence": "MIT",
+        "size_bytes": 3_209_014,
+    },
+    "lm_eval:mmlu": {
+        "category": "knowledge",
+        "description": "Multiple-choice questions on 57 subjects, from law to physics.",
+        "licence": "MIT",
+        "size_bytes": 12_909_397,
+    },
+    "lm_eval:mmlu_pro": {
+        "category": "knowledge",
+        "description": "A harder, ten-option MMLU across 14 subjects, with chain-of-thought.",
+        "licence": "MIT",
+        "size_bytes": 13_098_759,
+    },
+    "lm_eval:truthfulqa_mc2": {
+        "category": "knowledge",
+        "description": "Whether the model avoids common misconceptions and falsehoods.",
+        "licence": "Apache-2.0",
+        "size_bytes": 892_555,
+    },
+    "lm_eval:ifeval": {
+        "category": "instruction following",
+        "description": "Verifiable instructions such as word counts, formats and keywords.",
+        "licence": "Apache-2.0",
+        "size_bytes": 15_707_103,
+    },
+}
+# Where the Model Cache holds benchmark datasets, under `<harness>/<task>/`.
+BENCHMARKS_DIRECTORY = "benchmarks"
+# Written into a benchmark's directory once fetch downloaded all its datasets.
+BENCHMARK_FETCHED_MARKER = "fetched"
+# Requests lm-eval sends to vLLM at once.
+EVALUATE_CONCURRENT_REQUESTS = 16
+# How often `evaluate` checks whether its vLLM is ready.
+VLLM_READY_POLL_INTERVAL = timedelta(seconds=5)
+# Where Pipeline steps reach an Endpoint inside the cluster.
+ENDPOINT_SERVICE_URL = "http://{object_name}.{namespace}.svc:{port}"
+# Where `evaluate` reaches the vLLM it starts for a model that no Endpoint serves.
+LOCAL_VLLM_URL = f"http://localhost:{VLLM_PORT}"
 
 # Sandbox
 # Where the Sandbox takes a batch of snippets and answers each one's result, in order.

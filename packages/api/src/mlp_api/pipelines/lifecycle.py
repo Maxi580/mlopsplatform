@@ -42,7 +42,9 @@ pipeline = Table(
 unfinished = pipeline.c.status.not_in(config.FINISHED_STATUSES)
 
 
-def submit_pipeline(state, request: PipelineRequest, secrets: dict[str, str]) -> int:
+def submit_pipeline(
+    state, request: PipelineRequest, secrets: dict[str, str], fetched: list[str]
+) -> int:
     """The new Pipeline's ID, once its Kubeflow run is submitted; RuntimeError if that failed."""
     # 1. The Pipeline, whose ID names its Secret and its serve token.
     engine, cluster = state.engine, state.cluster
@@ -53,7 +55,7 @@ def submit_pipeline(state, request: PipelineRequest, secrets: dict[str, str]) ->
         if request.serve:
             secrets = {**secrets, "serve_token": issue_serve_token(state.jwt_secret, pipeline_id)}
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
-        spec = compile_pipeline(pipeline_id, request, cluster.steps, state.settings)
+        spec = compile_pipeline(pipeline_id, request, fetched, cluster.steps, state.settings)
         run_id = cluster.submit_run(f"{request.name}-{pipeline_id}", spec)
     except Exception as error:
         set_pipeline(engine, pipeline_id, status="failed")

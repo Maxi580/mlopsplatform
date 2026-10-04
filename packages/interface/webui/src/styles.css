@@ -841,3 +841,47 @@ select[aria-invalid="true"] {
 .serve-actions {
   margin-top: 16px;
 }
+
+/* Benchmark picker */
+
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+.choices {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.choice-group .chip {
+  align-self: flex-start;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.choice .muted {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .choice {
+    grid-template-columns: auto 1fr;
+  }
+
+  .choice .muted {
+    grid-column: 2;
+  }
+}

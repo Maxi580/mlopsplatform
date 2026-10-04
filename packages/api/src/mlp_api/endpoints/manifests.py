@@ -26,7 +26,7 @@ def endpoint_manifests(
             {
                 "name": "fetch",
                 "image": environment.stages_image,
-                "command": ["mlp-stage", "fetch", model.base_model, model_cache_size],
+                "command": ["mlp-stage", "fetch", model_cache_size, model.base_model],
                 "env": [{"name": "HF_HOME", "value": config.MODEL_CACHE_PATH}],
                 "volumeMounts": [model_cache],
             }

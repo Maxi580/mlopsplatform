@@ -42,8 +42,8 @@ async def lifespan(app: FastAPI):
     # In memory per client IP, which works because the API runs as one replica.
     app.state.failed_logins = defaultdict(list)
     app.state.cluster = Cluster()
-    # The Hugging Face cache, where steps put it with HF_HOME set to the Model Cache.
-    app.state.model_cache = Path(config.MODEL_CACHE_PATH) / "hub"
+    # Where steps put Base Models (HF_HOME) and benchmarks, mounted at the same path.
+    app.state.model_cache = Path(config.MODEL_CACHE_PATH)
     app.state.engine = create_engine(os.environ["DATABASE_URL"])
     create_tables(app.state.engine)
     fail_unsubmitted_pipelines(app.state.engine)

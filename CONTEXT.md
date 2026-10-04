@@ -115,6 +115,10 @@ _Avoid_: LoRA (when meaning any adapter), delta
 **Uploaded Model**:
 A Model Version that came from a user's upload rather than from a Pipeline.
 
+**Benchmark**:
+One evaluation from the platform's catalog, named `harness:task` (e.g. `lm_eval:gsm8k`), that the `evaluate` Stage runs against a model and scores. Its datasets are kept in the Model Cache.
+_Avoid_: Eval, test (when meaning the platform concept)
+
 **Speculator**:
 A small draft model trained for exactly one verifier (a Model Version or Base Model), used for speculative decoding.
 _Avoid_: Draft model (when meaning one the platform trained)

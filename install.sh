@@ -128,7 +128,7 @@ build_images() {
   # The Python images build from the whole uv workspace, the Web UI from its own directory.
   build_image api "$ROOT" "$ROOT/packages/api/Dockerfile"
   build_image sandbox "$ROOT" "$ROOT/packages/sandbox/Dockerfile"
-  build_image stages "$ROOT" "$ROOT/packages/stages/Dockerfile"
+  build_image stages "$ROOT" "$ROOT/packages/stages/Dockerfile"     --build-arg PYTHON_IMAGE="$(value .images.vllm)" --build-arg STAGES_EXTRA=evaluate
   build_image trainerHf "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=hf
   build_image webui "$ROOT/packages/interface/webui" "$ROOT/packages/interface/webui/Dockerfile"
 }

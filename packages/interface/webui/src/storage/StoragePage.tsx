@@ -2,32 +2,26 @@ import { CircleAlert, Download, HardDrive } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { callApi, errorMessage, useApi } from "../api";
 import {
-  CACHED_BASE_MODELS,
-  cachedBaseModel,
   DATASETS,
   datasetDownload,
   datasetVersion,
+  MODEL_CACHE,
   MODELS,
+  modelCacheEntry,
   modelVersion,
   modelVersionFiles,
   STORAGE,
 } from "../apiPaths";
-import { BUCKET_CONTENTS, STORAGE_WARNING_PERCENT } from "../config";
+import { BUCKET_CONTENTS, CACHE_ENTRY_KINDS, STORAGE_WARNING_PERCENT } from "../config";
 import { formatBytes } from "../formatBytes";
 import ModelUploadForm from "./ModelUploadForm";
-import type {
-  CachedBaseModels,
-  Dataset,
-  ModelVersionFile,
-  RegisteredModel,
-  Storage,
-} from "./storage";
+import type { Dataset, ModelCache, ModelVersionFile, RegisteredModel, Storage } from "./storage";
 
 export default function StoragePage() {
   const datasets = useApi<Dataset[]>(DATASETS);
   const models = useApi<RegisteredModel[]>(MODELS);
   const storage = useApi<Storage>(STORAGE);
-  const cache = useApi<CachedBaseModels>(CACHED_BASE_MODELS);
+  const cache = useApi<ModelCache>(MODEL_CACHE);
   const [notice, setNotice] = useState<{ text: string; failed: boolean }>();
   const [modelFiles, setModelFiles] = useState<{ label: string; files: ModelVersionFile[] }>();
   const error = datasets.error ?? models.error ?? storage.error ?? cache.error;
@@ -143,13 +137,17 @@ export default function StoragePage() {
       <VersionTable
         title="Model Cache"
         note={cache.data && cacheUsage(cache.data)}
-        columns={["Base Model", "Last used (UTC)", "Size"]}
-        empty="No cached Base Models; fetch downloads each one once."
+        columns={["Reference", "Kind", "Last used (UTC)", "Size"]}
+        empty="Nothing cached; fetch downloads each Base Model and benchmark once."
         onDelete={remove}
-        rows={cache.data?.base_models.map((entry) => ({
+        rows={cache.data?.entries.map((entry) => ({
           label: entry.reference,
-          cells: [entry.last_used.slice(0, 16).replace("T", " "), formatBytes(entry.size_bytes)],
-          path: cachedBaseModel(entry.reference),
+          cells: [
+            CACHE_ENTRY_KINDS[entry.kind],
+            entry.last_used.slice(0, 16).replace("T", " "),
+            formatBytes(entry.size_bytes),
+          ],
+          path: modelCacheEntry(entry.reference),
         }))}
       />
 
@@ -219,9 +217,9 @@ function UsageCard({ storage }: { storage: Storage }) {
   );
 }
 
-// Unused Base Models are also evicted least recently used first, past the high-water mark.
-function cacheUsage(cache: CachedBaseModels): string {
-  const used = cache.base_models.reduce((total, entry) => total + entry.size_bytes, 0);
+// Unused entries are also evicted least recently used first, past the high-water mark.
+function cacheUsage(cache: ModelCache): string {
+  const used = cache.entries.reduce((total, entry) => total + entry.size_bytes, 0);
   return `${formatBytes(used)} of ${formatBytes(cache.capacity_bytes)} used`;
 }
 
