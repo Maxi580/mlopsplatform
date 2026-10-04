@@ -1,4 +1,4 @@
-# One domain, split by path: the free Azure DNS name has no subdomains.
+# One domain, split by path, so a single DNS name without subdomains is enough.
 {{- $host := printf "Host(`%s`)" .Values.domain }}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute

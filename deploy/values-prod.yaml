@@ -1,4 +1,4 @@
-# The Azure VM's free DNS name: <label>.<region>.cloudapp.azure.com.
+# The DNS name clients reach this host under, e.g. a cloud VM's free DNS name.
 domain: ""
 
 settings:

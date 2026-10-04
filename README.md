@@ -13,7 +13,7 @@ git clone https://github.com/Maxi580/mlopsplatform && cd mlopsplatform
 
 It installs only missing host prerequisites (k3s, nerdctl + BuildKit, NVIDIA container toolkit, gVisor, helm, yq), builds our images, deploys the platform and prints its URLs and the path to `ca.crt`. Import `ca.crt` into your OS trust store once. The NVIDIA driver must be 580 or newer (`versions.minNvidiaDriver`).
 
-For prod on the Azure VM, set `domain` in `deploy/values-prod.yaml` to the VM's free Azure DNS name (`<label>.<region>.cloudapp.azure.com`), open port 443 to it, and run `./install.sh prod`. `values-prod.yaml` holds only the domain, the GPU count and disk sizes; everything else comes from `deploy/values.yaml`.
+On any other Ubuntu host (a cloud VM, a bare-metal server), set `domain` in `deploy/values-prod.yaml` to a DNS name that points at the host, open port 443 to it, and run `./install.sh prod`. One name is enough, since everything is routed by path; a cloud VM's free DNS name works. `values-prod.yaml` holds only the domain, the GPU count and disk sizes; everything else comes from `deploy/values.yaml`.
 
 Running `install.sh` again is the upgrade path. If Pipelines or Endpoints are running, it lists them and asks once `Continue? [y/N]` before changing anything (`MLP_YES=1` skips the prompt). It then cancels the Pipelines (`cancelled`), stops the Endpoints (`stopped`) and replaces our pods and Deployments; all data is kept (Postgres, SeaweedFS, MLflow, Model Cache). At the end it removes outdated images (ours from older builds, and upstream ones a newer tag replaced) and prunes the BuildKit cache to `buildCacheGb`.
 
