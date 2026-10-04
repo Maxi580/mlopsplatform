@@ -59,8 +59,12 @@ A Kubernetes object that executes part of a user's submitted work. Internal: use
 _Avoid_: Task, pod (when meaning the unit of work)
 
 **Sandbox**:
-The isolated place where the platform runs user-written and model-generated Python, one stateless execution at a time. Nothing else executes untrusted code.
+The isolated place where the platform runs user-written and model-generated Python as Snippets, each in its own fresh process that keeps no state. Nothing else executes untrusted code.
 _Avoid_: Code runner, executor
+
+**Snippet**:
+One piece of Python sent to the Sandbox, run as a script with its input on stdin; its result is a status (`ok`, `error`, `timeout`, `memory_limit`) and its output. Callers send Snippets in batches.
+_Avoid_: Job, task, script (when meaning what the Sandbox runs)
 
 **Run**:
 An MLflow run: the tracked record of params, metrics and artifacts. Used for nothing else.

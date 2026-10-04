@@ -46,7 +46,8 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     # 2. Its Pipeline, whose name prefixes all it creates; the reconciler cleans up after it.
     name = datetime.now(UTC).strftime(config.SMOKE_TEST_NAME)
     trainings = finetune_cases(selection)
-    cases = dict.fromkeys(["fetch", *trainings], "pending")
+    sandbox = [config.SMOKE_TEST_SANDBOX_CASE] if selection.sandbox else []
+    cases = dict.fromkeys(["fetch", *sandbox, *trainings], "pending")
     pipeline_id = create_pipeline(engine, name, {}, cases)
 
     try:
@@ -92,6 +93,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             pipeline_id,
             name,
             base_model,
+            selection.sandbox,
             requests,
             state.cluster.steps,
             state.settings,

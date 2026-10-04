@@ -219,6 +219,8 @@ SMOKE_TEST_UPLOADED_MODEL = "hf:trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 # The case that finetunes from it, with its Phase algorithm, method and backend.
 SMOKE_TEST_UPLOADED_MODEL_CASE = "uploaded-model"
 SMOKE_TEST_UPLOADED_MODEL_TRAINING = ("sft", "lora", "hf")
+# Runs right after `fetch`: a Pipeline step sends snippets to the Sandbox and checks its limits.
+SMOKE_TEST_SANDBOX_CASE = "sandbox"
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
 # uploaded tiny full-weight model, and the Adapter of the first finetune case.
 SMOKE_TEST_SERVING_CASES = ("serve-base-model", "serve-full-weights", "serve-adapter")
@@ -249,3 +251,9 @@ SMOKE_TEST_CASE_RESULTS = {
 }
 # How often `mlp smoke-test` asks for new case results.
 SMOKE_TEST_POLL_INTERVAL = timedelta(seconds=30)
+
+# Sandbox
+# Where the Sandbox takes a batch of snippets and answers each one's result, in order.
+SANDBOX_PATH = "/snippets"
+# Each of a snippet's stdout and stderr; a snippet writing more is stopped.
+SANDBOX_OUTPUT_LIMIT_BYTES = 2**20

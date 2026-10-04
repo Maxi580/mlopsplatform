@@ -44,6 +44,11 @@ def nodes(cluster) -> list[dict]:
     return ordered
 
 
+def node(cluster, case: str) -> dict:
+    [found] = [task for task in nodes(cluster) if task["taskInfo"]["name"] == case]
+    return found
+
+
 def case_names(cluster) -> list[str]:
     return [task["taskInfo"]["name"] for task in nodes(cluster)]
 
@@ -64,6 +69,7 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
     assert started["kubeflow_run_url"] == "/pipeline/#/runs/details/run-1"
     assert case_names(cluster) == [
         "fetch",
+        "sandbox",
         "sft-lora-hf",
         "uploaded-model",
         "finetune-serve-finetune",
@@ -90,6 +96,7 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
     [
         ({}, ["fetch"]),
         ({"uploaded_model": True}, ["fetch", "uploaded-model"]),
+        ({"sandbox": True}, ["fetch", "sandbox"]),
         ({"finetune": {"phases": ["sft"]}}, ["fetch", "sft-lora-hf"]),
         ({"finetune": {"phases": ["sft"], "methods": [], "backends": ["hf"]}}, ["fetch"]),
     ],
@@ -122,7 +129,7 @@ def test_a_finetune_case_trains_the_pinned_base_model_on_its_uploaded_bundled_da
 ):
     name = start(logged_in_api).json()["name"]
 
-    _, finetune, *_ = nodes(cluster)
+    finetune = node(cluster, "sft-lora-hf")
     parameters = finetune["inputs"]["parameters"]
     request = json.loads(parameters["request"]["runtimeValue"]["constant"])
     assert request["name"] == f"{name}-sft-lora-hf"
@@ -138,7 +145,7 @@ def test_the_uploaded_model_case_finetunes_a_tiny_model_uploaded_the_normal_way(
 ):
     name = start(logged_in_api).json()["name"]
 
-    _, _, uploaded_model, *_ = nodes(cluster)
+    uploaded_model = node(cluster, "uploaded-model")
     parameters = uploaded_model["inputs"]["parameters"]
     request = json.loads(parameters["request"]["runtimeValue"]["constant"])
     assert request["name"] == f"{name}-uploaded-model"
@@ -146,6 +153,21 @@ def test_the_uploaded_model_case_finetunes_a_tiny_model_uploaded_the_normal_way(
     [version] = models(logged_in_api)[f"{name}-uploaded"]
     assert (version["tags"]["source"], version["tags"]["weights"]) == ("uploaded", "full")
     assert version["size_bytes"] == sum(len(content) for content in FULL_WEIGHTS.values())
+
+
+def test_the_sandbox_case_runs_snippets_in_the_sandbox_from_a_pipeline_step(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, {"sandbox": True})
+
+    _, sandbox = nodes(cluster)
+    assert sandbox["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED"
+    pipeline = cluster.submitted["pipeline_spec"]["pipeline_spec"]
+    container = pipeline["deploymentSpec"]["executors"]["exec-sandbox"]["container"]
+    assert container["command"] == ["mlp-stage", "check-sandbox"]
+    assert {"name": "SANDBOX_URL", "value": "http://sandbox.mlp.test:8090"} in container["env"]
+    memory = sandbox["inputs"]["parameters"]["sandbox_memory_mb"]["runtimeValue"]["constant"]
+    assert memory == "1024"
 
 
 def test_only_one_smoke_test_runs_at_a_time(logged_in_api, qwen_on_the_hub, cluster):
@@ -282,6 +304,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
 
     assert list(smoke_test(logged_in_api)["cases"]) == [
         "fetch",
+        "sandbox",
         "sft-lora-hf",
         "uploaded-model",
         "finetune-serve",
@@ -349,7 +372,9 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
 ):
     name = start(logged_in_api).json()["name"]
     register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
-    steps = dict.fromkeys(["fetch", "sft-lora-hf", "uploaded-model", "finetune-serve"], "SUCCEEDED")
+    steps = dict.fromkeys(
+        ["fetch", "sandbox", "sft-lora-hf", "uploaded-model", "finetune-serve"], "SUCCEEDED"
+    )
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)
 
     reconcile(logged_in_api)

@@ -14,6 +14,10 @@ def smoke_test(
     phases: Cases = "",
     methods: Cases = "",
     backends: Cases = "",
+    sandbox: Annotated[
+        bool,
+        typer.Option(help="Run snippets in the Sandbox and check its limits; runs a custom one"),
+    ] = False,
     uploaded_model: Annotated[
         bool, typer.Option(help="Upload a tiny model and finetune from it; runs a custom one")
     ] = False,
@@ -27,6 +31,8 @@ def smoke_test(
     named = {"phases": phases, "methods": methods, "backends": backends}
     finetune = {key: value.split(",") for key, value in named.items() if value}
     selection = {"finetune": finetune} if finetune else {}
+    if sandbox:
+        selection["sandbox"] = True
     if uploaded_model:
         selection["uploaded_model"] = True
     if serving:

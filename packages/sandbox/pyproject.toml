@@ -2,7 +2,7 @@
 name = "mlp-sandbox"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["mlp-core"]
+dependencies = ["mlp-core", "fastapi", "uvicorn"]
 
 [tool.uv.sources]
 mlp-core = { workspace = true }

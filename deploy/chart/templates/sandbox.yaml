@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandbox
+spec:
+  selector:
+    app: sandbox
+  ports:
+    - port: {{ .Values.ports.sandbox }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox
+spec:
+  replicas: {{ .Values.settings.sandbox_replicas }}
+  selector:
+    matchLabels:
+      app: sandbox
+  template:
+    metadata:
+      labels:
+        app: sandbox
+      annotations:
+        checksum/settings: {{ .Values.settings | toJson | sha256sum }}
+    spec:
+      runtimeClassName: gvisor
+      # Snippets get no Kubernetes credentials.
+      automountServiceAccountToken: false
+      containers:
+        - name: sandbox
+          image: {{ .Values.images.sandbox }}:{{ required "images.tag is set by install.sh" .Values.images.tag }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: platform-settings
+          env:
+            - name: UVICORN_PORT
+              value: {{ .Values.ports.sandbox | quote }}
+          # One snippet per CPU at once, each up to its memory limit.
+          {{- $cpus := .Values.settings.sandbox_cpus_per_replica }}
+          {{- $memory := add (mul $cpus .Values.settings.sandbox_memory_mb) .Values.sandboxServerMemoryMb }}
+          resources:
+            requests:
+              cpu: {{ $cpus }}
+              memory: {{ $memory }}Mi
+            limits:
+              cpu: {{ $cpus }}
+              memory: {{ $memory }}Mi
+          ports:
+            - containerPort: {{ .Values.ports.sandbox }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.ports.sandbox }}
+---
+# Only Pipeline steps reach the Sandbox, and snippets reach nothing: there's no egress rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        # Argo labels every pod of a Kubeflow run with its workflow.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.kubeflow }}
+          podSelector:
+            matchExpressions:
+              - key: workflows.argoproj.io/workflow
+                operator: Exists
+      ports:
+        - port: {{ .Values.ports.sandbox }}

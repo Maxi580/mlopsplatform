@@ -127,6 +127,7 @@ build_images() {
   log "Building images with tag $TAG"
   # The Python images build from the whole uv workspace, the Web UI from its own directory.
   build_image api "$ROOT" "$ROOT/packages/api/Dockerfile"
+  build_image sandbox "$ROOT" "$ROOT/packages/sandbox/Dockerfile"
   build_image stages "$ROOT" "$ROOT/packages/stages/Dockerfile"
   build_image trainerHf "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=hf
   build_image webui "$ROOT/packages/interface/webui" "$ROOT/packages/interface/webui/Dockerfile"
@@ -179,7 +180,7 @@ install_cert_manager() {
 }
 
 install_platform_chart() {
-  log "Installing the platform chart (API, Web UI, Postgres, TLS, routes)"
+  log "Installing the platform chart (API, Sandbox, Web UI, Postgres, TLS, routes)"
   helm upgrade --install mlp "$ROOT/deploy/chart" --namespace "$(value .namespaces.platform)" \
     -f "$VALUES" --set images.tag="$TAG" --wait --timeout 10m
 }

@@ -21,6 +21,7 @@ class StepEnvironment:
     object_store_bucket: str
     # How the `serve` step reaches the API inside the cluster.
     api_url: str
+    sandbox_url: str
 
     @classmethod
     def from_environment(cls) -> "StepEnvironment":
@@ -31,6 +32,7 @@ class StepEnvironment:
             object_store_url=os.environ["S3_ENDPOINT_URL"],
             object_store_bucket=os.environ["S3_BUCKET"],
             api_url=os.environ["API_URL"],
+            sandbox_url=os.environ["SANDBOX_URL"],
         )
 
 
@@ -69,6 +71,7 @@ def compile_smoke_test(
     pipeline_id: int,
     name: str,
     base_model: str,
+    sandbox: bool,
     finetune_cases: dict[str, PipelineRequest],
     steps: StepEnvironment,
     settings: Settings,
@@ -78,8 +81,16 @@ def compile_smoke_test(
     @dsl.pipeline(name=name)
     def pipeline():
         previous = fetch_step(base_model, steps, settings).set_display_name("fetch")
+        # Each later case runs once the one before it ended, even if that failed; no data passes
+        # between them.
+        if sandbox:
+            previous = (
+                sandbox_step(steps, settings)
+                .set_display_name(config.SMOKE_TEST_SANDBOX_CASE)
+                .after(previous)
+                .ignore_upstream_failure()
+            )
         for case, request in finetune_cases.items():
-            # Runs once the case before it ended, even if that failed; no data passes between them.
             previous = (
                 finetune_step(pipeline_id, request, steps, settings.gpus_per_stage)
                 .set_display_name(case)
@@ -151,6 +162,22 @@ def serve_step(pipeline_id: int, steps: StepEnvironment):
         config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
         {"serve_token": config.SECRET_ENV_VARS["serve_token"]},
     )
+    return task
+
+
+# Runs snippets in the Sandbox, which only Pipeline steps can reach.
+def sandbox_step(steps: StepEnvironment, settings: Settings):
+    @dsl.container_component
+    def sandbox(sandbox_memory_mb: str):
+        return dsl.ContainerSpec(
+            image=steps.stages_image,
+            command=["mlp-stage", "check-sandbox"],
+            args=[sandbox_memory_mb],
+        )
+
+    task = sandbox(sandbox_memory_mb=str(settings.sandbox_memory_mb))
+    task.set_caching_options(False)
+    task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
     return task
 
 

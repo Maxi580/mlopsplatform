@@ -14,6 +14,8 @@ STEPS = {
     "download": "mlp_stages.operations.download:download",
     "finetune": "mlp_stages.finetune.main:finetune",
     "serve": "mlp_stages.operations.serve:serve",
+    # The Smoke Test's sandbox case.
+    "check-sandbox": "mlp_stages.operations.check_sandbox:check_sandbox",
 }
 
 

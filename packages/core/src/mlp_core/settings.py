@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     gpus_per_endpoint: int
     sandbox_timeout_seconds: int
     sandbox_memory_mb: int
+    sandbox_replicas: int
+    sandbox_cpus_per_replica: int
     model_cache_size: str
     model_cache_high_water_mark: float
     object_store_size: str

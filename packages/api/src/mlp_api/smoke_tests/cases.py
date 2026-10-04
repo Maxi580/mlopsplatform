@@ -18,6 +18,8 @@ class SmokeTestSelection(Strict):
     """The cases of a custom Smoke Test; `fetch` always runs, as every other case needs it."""
 
     finetune: FinetuneCases | None = None
+    # Runs snippets in the Sandbox and checks its limits, from a Pipeline step.
+    sandbox: bool = False
     # Uploads a tiny model and trains an sft/lora/hf Phase from it.
     uploaded_model: bool = False
     # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints;
@@ -26,7 +28,7 @@ class SmokeTestSelection(Strict):
 
 
 COMPLETE_SMOKE_TEST = SmokeTestSelection(
-    finetune=FinetuneCases(), uploaded_model=True, serving=True
+    finetune=FinetuneCases(), sandbox=True, uploaded_model=True, serving=True
 )
 
 

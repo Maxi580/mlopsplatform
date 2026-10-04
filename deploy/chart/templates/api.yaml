@@ -86,6 +86,9 @@ spec:
             # Where a Pipeline's `serve` step asks the API to start its Endpoint, inside the cluster.
             - name: API_URL
               value: http://api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.api }}
+            # Where Pipeline steps send snippets.
+            - name: SANDBOX_URL
+              value: http://sandbox.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.sandbox }}
             # Endpoints run in this namespace, mount the Model Cache from the node and are routed
             # under the domain.
             - name: PLATFORM_NAMESPACE
