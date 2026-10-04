@@ -18,9 +18,12 @@ def build_pipeline_request(
     finetune_phases: list[str],
     serve: bool = False,
     evaluate: bool = False,
+    distill: bool = False,
 ) -> dict:
     """A Pipeline Request holding only the named Stages and Phases, in the order named."""
     request = {"name": name or profile.get("name")}
+    if distill:
+        request["distill"] = profile.get("distill") or {}
     if finetune_phases:
         finetune = dict(profile["finetune"])
         variants = finetune.pop("phases")

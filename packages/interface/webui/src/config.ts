@@ -9,7 +9,10 @@ export const FINISHED_STATUSES = ["succeeded", "failed", "cancelled"];
 // The last part of the name under which a section's further TRL/PEFT settings are kept.
 export const MORE_SETTINGS = "*";
 // Secret slot -> its label; the values travel beside the Pipeline Request, never inside it.
-export const SECRET_SLOTS = { hf_token: "Hugging Face token" };
+export const SECRET_SLOTS = {
+  hf_token: "Hugging Face token",
+  teacher_api_key: "Teacher API key",
+};
 // Hints for text fields whose schema pattern starts with a Reference prefix.
 export const REFERENCE_PLACEHOLDERS: Record<string, string> = {
   "^hf:": "hf:org/name or hf:org/name@revision",

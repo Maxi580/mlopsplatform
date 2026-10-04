@@ -100,3 +100,12 @@ def test_a_smoke_test_already_running_is_reported(started, fake_api):
 
     assert result.exit_code == 1
     assert "still running" in result.output
+
+
+def test_a_custom_smoke_test_can_run_the_distill_case(started, fake_api):
+    fake_api.answers[api_paths.PIPELINES] = (200, [smoke_test("succeeded", {"fetch": "passed"})])
+
+    result = mlp("smoke-test", "--distill")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received[0] == (api_paths.SMOKE_TEST_CUSTOM, {"distill": True})

@@ -27,10 +27,17 @@ class SmokeTestSelection(Strict):
     serving: bool = False
     # Evaluates the Base Model and, with a finetune case, its Adapter on one benchmark.
     evaluate: bool = False
+    # Distills prompts with the Base Model as Teacher and a tool, then trains on its replies.
+    distill: bool = False
 
 
 COMPLETE_SMOKE_TEST = SmokeTestSelection(
-    finetune=FinetuneCases(), sandbox=True, uploaded_model=True, serving=True, evaluate=True
+    finetune=FinetuneCases(),
+    sandbox=True,
+    uploaded_model=True,
+    serving=True,
+    evaluate=True,
+    distill=True,
 )
 
 
@@ -46,7 +53,9 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, s
     }
     first_training = next(iter(cases.values()), None)
     if selection.uploaded_model:
-        cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_UPLOADED_MODEL_TRAINING
+        cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_TRAINING
+    if selection.distill:
+        cases[config.SMOKE_TEST_DISTILL_CASE] = config.SMOKE_TEST_TRAINING
     if selection.serving and first_training:
         cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = first_training
     return cases
@@ -55,10 +64,21 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, s
 def finetune_case_request(
     case: str, smoke_test: str, starting_model: dict, phase: str, method: str, backend: str
 ) -> dict:
-    """The Pipeline Request of one case, which trains on the Smoke Test's Dataset for the Phase."""
-    serve = {"serve": {}} if case == config.SMOKE_TEST_SERVE_STAGE_CASE else {}
+    """The Pipeline Request of one case, training on its Phase's bundled Dataset or `@distill`."""
+    stages, dataset = {}, f"dataset:{smoke_test}-{phase}"
+    if case == config.SMOKE_TEST_SERVE_STAGE_CASE:
+        stages["serve"] = {}
+    if case == config.SMOKE_TEST_DISTILL_CASE:
+        stages["distill"] = {
+            "dataset": f"dataset:{smoke_test}-distill",
+            "teacher": config.SMOKE_TEST_BASE_MODEL,
+            "tools": config.SMOKE_TEST_DISTILL_TOOLS,
+            "max_tokens": config.SMOKE_TEST_DISTILL_MAX_TOKENS,
+            "temperature": 0,
+        }
+        dataset = config.DISTILL_OUTPUT
     return {
-        **serve,
+        **stages,
         "name": f"{smoke_test}-{case}",
         "finetune": {
             **starting_model,
@@ -66,7 +86,7 @@ def finetune_case_request(
             "phases": [
                 {
                     "algorithm": phase,
-                    "dataset": f"dataset:{smoke_test}-{phase}",
+                    "dataset": dataset,
                     "method": method,
                     **config.SMOKE_TEST_PHASE,
                 }

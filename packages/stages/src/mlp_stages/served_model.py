@@ -12,46 +12,36 @@ import mlflow
 from mlp_core import config
 from mlp_core.endpoint_spec import ServingOptions, VllmModel, vllm_args
 from mlp_core.pipeline_request.references import (
-    model_reference,
     split_base_model_reference,
     split_endpoint_reference,
     split_model_reference,
 )
-from mlp_core.pipeline_request.schema import PipelineRequest
 
 
 @contextmanager
 def served_model(
-    request: PipelineRequest, pipeline_id: str, endpoint_url: str, gpus: int, scratch: Path
+    model: str,
+    options: ServingOptions | None,
+    served_name: str,
+    endpoint_url: str,
+    gpus: int,
+    scratch: Path,
 ) -> Iterator[tuple[str, str]]:
-    """The URL and name the evaluated model is served under, until the block ends."""
+    """The URL and name the model or its Endpoint is served under, until the block ends."""
     # 1. A running Endpoint, under its name.
-    model = request.evaluate.model
     if endpoint_url:
         yield endpoint_url, split_endpoint_reference(model)
         return
 
-    # 2. Otherwise a vLLM of its own, with the request's serving options, from the Model Cache.
-    if model == config.FINETUNE_OUTPUT:
-        model = pipeline_output(request.name, pipeline_id)
-    options = request.evaluate.serving or ServingOptions()
-    args = vllm_args(options, vllm_model(model, scratch), request.name, gpus)
+    # 2. Otherwise a vLLM of its own, with the serving options, from the Model Cache.
+    args = vllm_args(options or ServingOptions(), vllm_model(model, scratch), served_name, gpus)
     vllm = subprocess.Popen(["vllm", "serve", *args])
     try:
         wait_until_ready(vllm)
-        yield config.LOCAL_VLLM_URL, request.name
+        yield config.LOCAL_VLLM_URL, served_name
     finally:
         vllm.terminate()
         vllm.wait()
-
-
-def pipeline_output(name: str, pipeline_id: str) -> str:
-    """The `model:` Reference of the last Model Version the Pipeline registered."""
-    versions = mlflow.MlflowClient().search_model_versions(f"name='{name}'")
-    produced = [v for v in versions if v.tags.get("pipeline") == pipeline_id]
-    if not produced:
-        raise SystemExit(f"Pipeline {pipeline_id} registered no Model Version to evaluate")
-    return model_reference(name, max(int(version.version) for version in produced))
 
 
 def vllm_model(reference: str, scratch: Path) -> VllmModel:

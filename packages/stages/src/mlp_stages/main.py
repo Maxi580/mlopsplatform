@@ -12,6 +12,7 @@ STEPS = {
     "cleanup": "mlp_stages.operations.cleanup:cleanup",
     # An Endpoint's init container: the Model Version files vLLM loads.
     "download": "mlp_stages.operations.download:download",
+    "distill": "mlp_stages.distill.main:distill",
     "finetune": "mlp_stages.finetune.main:finetune",
     "evaluate": "mlp_stages.evaluate.main:evaluate",
     "serve": "mlp_stages.operations.serve:serve",

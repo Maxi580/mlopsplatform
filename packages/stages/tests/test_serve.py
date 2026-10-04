@@ -1,6 +1,7 @@
 import httpx2 as httpx
 import pytest
 
+from mlp_stages import platform_api
 from mlp_stages.operations import serve
 
 
@@ -15,21 +16,21 @@ def api(monkeypatch):
         return httpx.Response(answer["status"], json=answer["json"])
 
     monkeypatch.setenv("API_URL", "http://api.test:8000")
-    monkeypatch.setenv("MLP_SERVE_TOKEN", "serve-token")
+    monkeypatch.setenv("MLP_STEP_TOKEN", "step-token")
     monkeypatch.setattr(
-        serve, "api_client", lambda: httpx.Client(transport=httpx.MockTransport(handle))
+        platform_api, "api_client", lambda: httpx.Client(transport=httpx.MockTransport(handle))
     )
     return received, answer
 
 
-def test_serve_asks_the_api_with_the_serve_token(api, capsys):
+def test_serve_asks_the_api_with_the_step_token(api, capsys):
     received, _ = api
 
     serve.serve("7")
 
     [request] = received
     assert str(request.url) == "http://api.test:8000/pipelines/7/serve"
-    assert request.headers["authorization"] == "Bearer serve-token"
+    assert request.headers["authorization"] == "Bearer step-token"
     assert "/endpoints/chat/v1" in capsys.readouterr().out
 
 

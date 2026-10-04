@@ -55,10 +55,10 @@ def test_serve_starts_after_finetune_from_the_stages_image(logged_in_api, cluste
     assert inputs == {"pipeline_id": str(pipeline_id)}
     [secret] = kubernetes["deploymentSpec"]["executors"]["exec-serve"]["secretAsEnv"]
     assert secret["secretName"] == f"pipeline-{pipeline_id}"
-    assert secret["keyToEnv"] == [{"secretKey": "serve_token", "envVar": "MLP_SERVE_TOKEN"}]
+    assert secret["keyToEnv"] == [{"secretKey": "step_token", "envVar": "MLP_STEP_TOKEN"}]
 
 
-def test_a_pipeline_without_serve_has_no_serve_step_nor_serve_token(logged_in_api, cluster):
+def test_a_pipeline_without_serve_has_no_serve_step_nor_step_token(logged_in_api, cluster):
     pipeline_id = submit(logged_in_api, secrets={"hf_token": HF_TOKEN}).json()["id"]
 
     assert "serve" not in tasks(cluster)
@@ -100,11 +100,11 @@ def test_serving_options_are_checked_like_an_endpoints(logged_in_api):
     assert error["loc"] == ["serve", "gpu_memory_utilization"]
 
 
-# What the `serve` step does: call the API with the serve token from the Pipeline's Secret.
+# What the `serve` step does: call the API with the step token from the Pipeline's Secret.
 def serve_step(api, pipeline_id, token=None):
     """The API's answer to the step, sent without the login cookie the test client holds."""
     secret = api.app.state.cluster.secrets.get(f"pipeline-{pipeline_id}", {})
-    token = token or secret["serve_token"]
+    token = token or secret["step_token"]
     response = api.post(
         api_paths.SERVE_PIPELINE.format(id=pipeline_id),
         headers={"authorization": f"Bearer {token}"},
@@ -143,8 +143,8 @@ def test_the_serve_step_starts_an_endpoint_for_the_pipelines_last_model_version(
     assert contains(vllm_args(cluster, "qwen-sft"), ["--max-model-len", "2048"])
 
 
-def test_a_serve_token_only_serves_its_own_pipeline(logged_in_api, served_pipeline, cluster):
-    token = cluster.secrets[f"pipeline-{served_pipeline}"]["serve_token"]
+def test_a_step_token_only_serves_its_own_pipeline(logged_in_api, served_pipeline, cluster):
+    token = cluster.secrets[f"pipeline-{served_pipeline}"]["step_token"]
 
     other = serve_step(logged_in_api, served_pipeline + 1, token=token)
     listing = logged_in_api.get(api_paths.ENDPOINTS, headers={"authorization": f"Bearer {token}"})
@@ -184,7 +184,7 @@ def test_the_endpoint_outlives_its_pipeline(logged_in_api, served_pipeline, clus
 
 
 def test_a_finished_pipeline_serves_no_more(logged_in_api, served_pipeline, cluster):
-    token = cluster.secrets[f"pipeline-{served_pipeline}"]["serve_token"]
+    token = cluster.secrets[f"pipeline-{served_pipeline}"]["step_token"]
     finish_run(cluster, "FAILED")
     reconcile_once(logged_in_api.app.state)
 

@@ -12,8 +12,8 @@ from mlp_core.config import (
     MAX_FAILED_LOGINS,
     PUBLIC_PATHS,
     SECRET_MAX_AGE,
-    SERVE_TOKEN_CLAIM,
     SESSION_COOKIE,
+    STEP_TOKEN_CLAIM,
     TOKEN_LIFETIME,
     WEB_UI_LOGIN_URL,
 )
@@ -34,22 +34,23 @@ def issue_token(jwt_secret: str) -> str:
 
 
 # The Pipeline's Secret holds it, so it needs to last only as long as Secrets are kept.
-def issue_serve_token(jwt_secret: str, pipeline_id: int) -> str:
-    claims = {"exp": datetime.now(UTC) + SECRET_MAX_AGE, SERVE_TOKEN_CLAIM: pipeline_id}
+def issue_step_token(jwt_secret: str, pipeline_id: int) -> str:
+    claims = {"exp": datetime.now(UTC) + SECRET_MAX_AGE, STEP_TOKEN_CLAIM: pipeline_id}
     return jwt.encode(claims, jwt_secret, JWT_ALGORITHM)
 
 
 def is_logged_in(request: Request) -> bool:
     claims = token_claims(request)
-    return claims is not None and SERVE_TOKEN_CLAIM not in claims
+    return claims is not None and STEP_TOKEN_CLAIM not in claims
 
 
-# A serve token reaches only its own Pipeline's serve route.
-def is_serve_step(request: Request) -> bool:
+# A step token reaches only its own Pipeline's step routes.
+def is_pipeline_step(request: Request) -> bool:
     claims = token_claims(request)
-    if claims is None or SERVE_TOKEN_CLAIM not in claims:
+    if claims is None or STEP_TOKEN_CLAIM not in claims:
         return False
-    return request.url.path == api_paths.SERVE_PIPELINE.format(id=claims[SERVE_TOKEN_CLAIM])
+    paths = [path.format(id=claims[STEP_TOKEN_CLAIM]) for path in api_paths.STEP_PATHS]
+    return request.url.path in paths
 
 
 def token_claims(request: Request) -> dict | None:
@@ -68,7 +69,7 @@ def token_claims(request: Request) -> dict | None:
 
 
 async def require_login(request: Request, call_next) -> Response:
-    allowed = request.url.path in PUBLIC_PATHS or is_logged_in(request) or is_serve_step(request)
+    allowed = request.url.path in PUBLIC_PATHS or is_logged_in(request) or is_pipeline_step(request)
     if allowed:
         return await call_next(request)
     # Browsers go to the Web UI's login, also via Traefik's forwardAuth for the KFP and MLflow UIs.

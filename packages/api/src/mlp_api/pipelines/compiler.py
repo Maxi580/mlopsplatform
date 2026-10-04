@@ -69,10 +69,14 @@ def compile_pipeline(
                     optional=True,
                 )
 
-            # 2. The Stages, one after another in their fixed order.
-            stages = []
+            # 2. The Stages, one after another in their fixed order; `@distill` is distill's output.
+            stages, distilled = [], ""
+            if request.distill:
+                stages.append(distill_step(pipeline_id, request, steps, settings.gpus_per_stage))
+                distilled = stages[-1].outputs["dataset"]
             if request.finetune:
-                stages.append(finetune_step(pipeline_id, request, steps, settings.gpus_per_stage))
+                gpus = settings.gpus_per_stage
+                stages.append(finetune_step(pipeline_id, request, steps, gpus, distilled))
             if request.evaluate:
                 stages.append(evaluate_step(pipeline_id, request, steps, settings.gpus_per_stage))
             if request.serve:
@@ -110,6 +114,18 @@ def compile_smoke_test(
             )
         gpus = settings.gpus_per_stage
         for case, request in cases.items():
+            # The distill case passes or fails with its finetune step, run once distill passed.
+            if request.distill:
+                distill_task = (
+                    distill_step(pipeline_id, request, steps, gpus)
+                    .set_display_name(f"{case}-distill")
+                    .after(previous)
+                    .ignore_upstream_failure()
+                )
+                distilled = distill_task.outputs["dataset"]
+                finetune_task = finetune_step(pipeline_id, request, steps, gpus, distilled)
+                previous = finetune_task.set_display_name(case)
+                continue
             stage = finetune_step if request.finetune else evaluate_step
             previous = (
                 stage(pipeline_id, request, steps, gpus)
@@ -140,22 +156,65 @@ def fetch_step(references: list[str], steps: StepEnvironment, settings: Settings
     return task
 
 
-def finetune_step(
+def distill_step(
     pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, gpus_per_stage: int
+):
+    """The step that asks the Teacher about every prompt and registers the replies via the API."""
+
+    @dsl.container_component
+    def distill(
+        pipeline_id: str, request: str, teacher_url: str, gpus: str, dataset: dsl.OutputPath(str)
+    ):
+        return dsl.ContainerSpec(
+            image=steps.stages_image,
+            command=["mlp-stage", "distill"],
+            args=[pipeline_id, request, teacher_url, gpus, dataset],
+        )
+
+    # 1. Only a Base Model or Model Version Teacher runs here, on GPUs; the others have a URL.
+    api_url = request.distill.api_url
+    teacher_url = api_url or endpoint_service_url(request.distill.teacher, steps)
+    gpus = 0 if teacher_url else gpus_per_stage
+
+    # 2. The step, with the step token to register the replies and an API Teacher's key.
+    task = distill(
+        pipeline_id=str(pipeline_id),
+        request=request.model_dump_json(),
+        teacher_url=teacher_url,
+        gpus=str(gpus),
+    )
+    secrets = {"step_token": config.SECRET_ENV_VARS["step_token"]}
+    if api_url:
+        secrets["teacher_api_key"] = config.SECRET_ENV_VARS["teacher_api_key"]
+    kubernetes.use_secret_as_env(task, config.PIPELINE_SECRET_NAME.format(id=pipeline_id), secrets)
+    task.set_env_variable("API_URL", steps.api_url)
+    use_vllm(task, steps, gpus)
+    return task
+
+
+def finetune_step(
+    pipeline_id: int,
+    request: PipelineRequest,
+    steps: StepEnvironment,
+    gpus_per_stage: int,
+    distilled_dataset="",
 ):
     trainer_image = steps.trainer_images[request.finetune.backend]
 
     @dsl.container_component
-    def finetune(pipeline_id: str, phase_index: str, request: str):
+    def finetune(pipeline_id: str, phase_index: str, request: str, distilled_dataset: str):
         return dsl.ContainerSpec(
             image=trainer_image,
             command=["mlp-stage", "finetune"],
-            args=[pipeline_id, phase_index, request],
+            args=[pipeline_id, phase_index, request, distilled_dataset],
         )
 
     # The request holds no Secret value, so it can be a parameter.
     task = finetune(
-        pipeline_id=str(pipeline_id), phase_index="0", request=request.model_dump_json()
+        pipeline_id=str(pipeline_id),
+        phase_index="0",
+        request=request.model_dump_json(),
+        distilled_dataset=distilled_dataset,
     )
     use_model_cache(task, steps)
     task.set_env_variable("HF_HUB_OFFLINE", "1")
@@ -179,22 +238,33 @@ def evaluate_step(
         )
 
     # 1. An Endpoint already serves its model; any other gets a vLLM of its own, on GPUs.
-    model = request.evaluate.model
-    endpoint_url = ""
-    if model.startswith("endpoint:"):
-        object_name = config.ENDPOINT_OBJECT_NAME.format(name=split_endpoint_reference(model))
-        endpoint_url = config.ENDPOINT_SERVICE_URL.format(
-            object_name=object_name, namespace=steps.platform_namespace, port=config.VLLM_PORT
-        )
+    endpoint_url = endpoint_service_url(request.evaluate.model, steps)
     gpus = 0 if endpoint_url else gpus_per_stage
 
-    # 2. The step, reading the Model Cache offline and Model Versions from the object store.
+    # 2. The step.
     task = evaluate(
         pipeline_id=str(pipeline_id),
         request=request.model_dump_json(),
         endpoint_url=endpoint_url,
         gpus=str(gpus),
     )
+    use_vllm(task, steps, gpus)
+    return task
+
+
+def endpoint_service_url(model: str, steps: StepEnvironment) -> str:
+    """Where steps reach the `endpoint:` Reference's Service; empty for any other model."""
+    if not model.startswith("endpoint:"):
+        return ""
+    object_name = config.ENDPOINT_OBJECT_NAME.format(name=split_endpoint_reference(model))
+    return config.ENDPOINT_SERVICE_URL.format(
+        object_name=object_name, namespace=steps.platform_namespace, port=config.VLLM_PORT
+    )
+
+
+# A step that may start vLLM: it reads the Model Cache offline and Model Versions from the object
+# store, on its GPUs if it has any.
+def use_vllm(task, steps: StepEnvironment, gpus: int) -> None:
     use_model_cache(task, steps)
     task.set_env_variable("HF_HUB_OFFLINE", "1")
     task.set_env_variable("HF_DATASETS_OFFLINE", "1")
@@ -202,7 +272,6 @@ def evaluate_step(
         task.set_accelerator_type(config.GPU_RESOURCE)
         task.set_accelerator_limit(gpus)
     use_object_store(task, steps)
-    return task
 
 
 def serve_step(pipeline_id: int, steps: StepEnvironment):
@@ -220,7 +289,7 @@ def serve_step(pipeline_id: int, steps: StepEnvironment):
     kubernetes.use_secret_as_env(
         task,
         config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
-        {"serve_token": config.SECRET_ENV_VARS["serve_token"]},
+        {"step_token": config.SECRET_ENV_VARS["step_token"]},
     )
     return task
 

@@ -8,7 +8,8 @@ import pytest
 mlflow = pytest.importorskip("mlflow", reason="needs the evaluate extra: uv sync --extra evaluate")
 
 from mlp_core import config  # noqa: E402
-from mlp_stages.evaluate import harness, served_model  # noqa: E402
+from mlp_stages import served_model  # noqa: E402
+from mlp_stages.evaluate import harness  # noqa: E402
 from mlp_stages.main import main  # noqa: E402
 
 REPO = "Qwen/Qwen2.5-0.5B-Instruct"

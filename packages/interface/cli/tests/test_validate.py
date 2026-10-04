@@ -125,3 +125,15 @@ def test_serve_works_without_a_serve_block_in_the_profile(profile, fake_api):
     mlp_validate("--finetune", "sft", "--serve")
 
     assert sent_submission(fake_api)["request"]["serve"] == {}
+
+
+def test_distill_adds_the_profiles_distill_block(home, fake_api, platform_ca):
+    distill = {"dataset": "dataset:prompts", "teacher": "hf:Qwen/Qwen3-8B"}
+    write_profile(home, fake_api.url, platform_ca, **{**PROFILE, "distill": distill})
+    fake_api.answers[api_paths.VALIDATE_PIPELINE] = (200, {"request": {}})
+
+    mlp_validate("--distill", "--finetune", "sft")
+
+    request = sent_submission(fake_api)["request"]
+    assert request["distill"] == distill
+    assert request["finetune"]["phases"][0]["algorithm"] == "sft"

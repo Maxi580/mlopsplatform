@@ -44,7 +44,7 @@ def stop(name: str, request: Request) -> dict:
     return {"name": name, "status": "stopped"}
 
 
-# The Pipeline's `serve` step; require_login lets only that Pipeline's serve token through.
+# The Pipeline's `serve` step; require_login lets only that Pipeline's step token through.
 @router.post(api_paths.SERVE_PIPELINE, status_code=201)
 def serve(id: int, request: Request) -> dict:
     try:

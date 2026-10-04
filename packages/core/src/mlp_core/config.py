@@ -83,11 +83,17 @@ VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
 # Names the Pipeline's last Model Version, before `finetune` registered it.
 FINETUNE_OUTPUT = "@finetune"
-# Secret slot -> the environment variable of the one step that receives it. The API adds
-# `serve_token` itself, for the `serve` step to call the API with.
-SECRET_ENV_VARS = {"hf_token": "HF_TOKEN", "serve_token": "MLP_SERVE_TOKEN"}
-# How long the `serve` step waits for the API to start the Endpoint.
-SERVE_REQUEST_TIMEOUT = timedelta(minutes=5)
+# Names the Distillation Dataset Version the Pipeline's `distill` step registers.
+DISTILL_OUTPUT = "@distill"
+# Secret slot -> the environment variable of the steps that receive it. The API adds
+# `step_token` itself, for the `distill` and `serve` steps to call the API with.
+SECRET_ENV_VARS = {
+    "hf_token": "HF_TOKEN",
+    "teacher_api_key": "MLP_TEACHER_API_KEY",
+    "step_token": "MLP_STEP_TOKEN",
+}
+# How long a step waits for the API, e.g. to start the Endpoint.
+STEP_REQUEST_TIMEOUT = timedelta(minutes=5)
 # Where steps mount the Model Cache; the Hugging Face cache lives inside it.
 MODEL_CACHE_PATH = "/model-cache"
 # The Kubernetes resource the NVIDIA device plugin offers GPUs as.
@@ -104,8 +110,8 @@ MIN_PASSWORD_LENGTH = 12
 SESSION_COOKIE = "mlp_session"
 TOKEN_LIFETIME = timedelta(hours=12)
 JWT_ALGORITHM = "HS256"
-# Marks a serve token: it only starts its Pipeline's Endpoint, and lives as long as Secrets do.
-SERVE_TOKEN_CLAIM = "serve_pipeline"
+# Marks a step token: it only reaches its Pipeline's step routes, and lives as long as Secrets do.
+STEP_TOKEN_CLAIM = "pipeline_step"
 MAX_FAILED_LOGINS = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
 PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN}
@@ -189,6 +195,9 @@ ROW_FORMATS = {
     "messages": {"messages": "messages"},
     "text": {"text": "a string"},
 }
+# `distill` asks the Teacher about each prompt, and stores the prompt with the Teacher's reply.
+PROMPT_ROW_FORMAT = "prompt_only"
+DISTILLATION_ROW_FORMAT = "prompt_completion"
 
 # Storage
 # Suffixes of the Kubernetes sizes the settings use, e.g. `object_store_size: 100Gi`.
@@ -222,9 +231,11 @@ SMOKE_TEST_NAME = "smoketest-%y%m%d-%H%M%S"
 SMOKE_TEST_BASE_MODEL = "hf:Qwen/Qwen2.5-0.5B-Instruct"
 # A tiny full-weight model, uploaded the normal way by each Smoke Test and finetuned from.
 SMOKE_TEST_UPLOADED_MODEL = "hf:trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
-# The case that finetunes from it, with its Phase algorithm, method and backend.
+# The case that finetunes from it.
 SMOKE_TEST_UPLOADED_MODEL_CASE = "uploaded-model"
-SMOKE_TEST_UPLOADED_MODEL_TRAINING = ("sft", "lora", "hf")
+# The Phase algorithm, method and backend of the cases that train once: from the tiny model, and
+# on `@distill`.
+SMOKE_TEST_TRAINING = ("sft", "lora", "hf")
 # Runs right after `fetch`: a Pipeline step sends snippets to the Sandbox and checks its limits.
 SMOKE_TEST_SANDBOX_CASE = "sandbox"
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
@@ -233,9 +244,32 @@ SMOKE_TEST_SERVING_CASES = ("serve-base-model", "serve-full-weights", "serve-ada
 # Trains like the first finetune case, then its `serve` step starts an Endpoint; that Endpoint is
 # stopped once the case has a result, so it never holds a GPU the other cases wait for.
 SMOKE_TEST_SERVE_STAGE_CASE = "finetune-serve"
-# Finetune cases that train from the tiny model, or end with an Endpoint; the others train only
-# an Adapter on the Base Model.
-SMOKE_TEST_SPECIAL_FINETUNE_CASES = (SMOKE_TEST_UPLOADED_MODEL_CASE, SMOKE_TEST_SERVE_STAGE_CASE)
+# Distills the bundled `distill` prompts with the Base Model as Teacher, offering it one tool, then
+# trains on `@distill` with SMOKE_TEST_TRAINING.
+SMOKE_TEST_DISTILL_CASE = "distill-tools"
+# Enough for the bundled prompts' one-sentence answers; a cut-off reply is dropped as malformed.
+SMOKE_TEST_DISTILL_MAX_TOKENS = 256
+SMOKE_TEST_DISTILL_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "The current weather in a city.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        },
+    }
+]
+# Finetune cases that train from the tiny model, end with an Endpoint or follow `distill`; the
+# others train only an Adapter on the Base Model.
+SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
+    SMOKE_TEST_UPLOADED_MODEL_CASE,
+    SMOKE_TEST_SERVE_STAGE_CASE,
+    SMOKE_TEST_DISTILL_CASE,
+)
 # Evaluate the Base Model, and the Adapter of the first finetune case, on a few samples of one
 # small benchmark that scores log-likelihoods, the harder path through vLLM.
 SMOKE_TEST_EVALUATE_CASES = ("evaluate-base-model", "evaluate-adapter")
@@ -333,6 +367,16 @@ VLLM_READY_POLL_INTERVAL = timedelta(seconds=5)
 ENDPOINT_SERVICE_URL = "http://{object_name}.{namespace}.svc:{port}"
 # Where `evaluate` reaches the vLLM it starts for a model that no Endpoint serves.
 LOCAL_VLLM_URL = f"http://localhost:{VLLM_PORT}"
+
+# Distill
+# Requests the `distill` step sends the Teacher at once.
+DISTILL_CONCURRENT_REQUESTS = 16
+# How long the step waits for one Teacher reply.
+DISTILL_REPLY_TIMEOUT = timedelta(minutes=10)
+# The step fails if it drops more of the Teacher's replies than this, as malformed (#17).
+DISTILL_MAX_DROPPED_FRACTION = 0.2
+# Dropped replies logged to the MLflow Run, with why each was dropped.
+DISTILL_DROPPED_SAMPLES = 5
 
 # Sandbox
 # Where the Sandbox takes a batch of snippets and answers each one's result, in order.

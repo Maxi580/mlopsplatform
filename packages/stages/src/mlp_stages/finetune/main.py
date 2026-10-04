@@ -3,28 +3,30 @@ import os
 import tempfile
 from pathlib import Path
 
-import boto3
 import mlflow
 import torch
 from datasets import Dataset
 from huggingface_hub import snapshot_download
 
+from mlp_core import config
 from mlp_core.pipeline_request.references import (
-    dataset_key,
     split_base_model_reference,
-    split_dataset_reference,
     split_model_reference,
 )
 from mlp_core.pipeline_request.schema import Finetune, PipelineRequest
+from mlp_stages.dataset_versions import download_dataset_version
 from mlp_stages.finetune.model_version import register_model_version
 
 
-def finetune(pipeline_id: str, phase_index: str, request: str) -> None:
+def finetune(pipeline_id: str, phase_index: str, request: str, distilled_dataset: str = "") -> None:
     """Trains one Phase of the resolved request and registers its Adapter as a Model Version."""
     # 1. The Phase to train, from the resolved request the compiler passed in.
     resolved = PipelineRequest.model_validate_json(request)
     index = int(phase_index)
     phase = resolved.finetune.phases[index]
+    # `@distill` is the Dataset Version the `distill` step registered, which KFP hands over.
+    if phase.dataset == config.DISTILL_OUTPUT:
+        phase.dataset = distilled_dataset
     starting_model = resolved.finetune.starting_model
     # Read now, as MLflow removes it from the environment once the trainer resumes the Run.
     run_id = os.environ["MLFLOW_RUN_ID"]
@@ -37,7 +39,8 @@ def finetune(pipeline_id: str, phase_index: str, request: str) -> None:
         # 3. The Dataset; conversations only ever use the starting model's own chat template (#16).
         starting_directory = starting_model_directory(resolved.finetune, Path(output_directory))
         tokenizer = backend.load_tokenizer(starting_directory)
-        dataset = load_dataset_version(phase.dataset)
+        path = download_dataset_version(phase.dataset, Path(output_directory))
+        dataset = Dataset.from_json(str(path), keep_in_memory=True)
         if is_conversation(dataset[0]) and tokenizer.chat_template is None:
             raise SystemExit(
                 f"{starting_model} has no chat template, so it can't train on the conversations "
@@ -76,16 +79,6 @@ def starting_model_directory(finetune: Finetune, scratch: Path) -> Path:
     name, version = split_model_reference(finetune.from_)
     uri = f"models:/{name}/{version}"
     return Path(mlflow.artifacts.download_artifacts(uri, dst_path=str(scratch / "starting-model")))
-
-
-def load_dataset_version(reference: str) -> Dataset:
-    """The Dataset Version's rows, from the platform bucket."""
-    name, version = split_dataset_reference(reference)
-    object_store = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT_URL"])
-    with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, "data.jsonl")
-        object_store.download_file(os.environ["S3_BUCKET"], dataset_key(name, version), path)
-        return Dataset.from_json(path, keep_in_memory=True)
 
 
 # Rows of messages, which TRL renders with the chat template; TRL may only load after the backend.

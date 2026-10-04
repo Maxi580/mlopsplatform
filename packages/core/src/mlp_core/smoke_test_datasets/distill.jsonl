@@ -1,0 +1,8 @@
+{"prompt": "What's the weather in Berlin right now?"}
+{"prompt": "Is it raining in Paris at the moment?"}
+{"prompt": "How warm is it in Tokyo today?"}
+{"prompt": "In one sentence, what is the capital of Italy?"}
+{"prompt": "In one sentence, why is the sky blue?"}
+{"prompt": [{"role": "user", "content": "Check the current weather in Madrid for me."}]}
+{"prompt": [{"role": "user", "content": "In one sentence, what is 2 + 2?"}]}
+{"prompt": "Do I need an umbrella in London today?"}

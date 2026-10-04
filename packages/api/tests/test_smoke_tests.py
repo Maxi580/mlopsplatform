@@ -23,7 +23,7 @@ EVALUATE_CASES = ["evaluate-base-model", "evaluate-adapter"]
 @pytest.fixture
 def qwen_on_the_hub(logged_in_api, hugging_face):
     for repo in (QWEN, TINY_QWEN):
-        hugging_face.models[repo] = HubModel(commit=COMMIT, needs_remote_code=False)
+        hugging_face.models[repo] = HubModel(COMMIT, needs_remote_code=False, model_type="qwen2")
     # A download leaves its own bookkeeping next to the model files.
     hugging_face.files[TINY_QWEN] = {**FULL_WEIGHTS, ".cache/huggingface/download.lock": b""}
 
@@ -73,6 +73,8 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "sandbox",
         "sft-lora-hf",
         "uploaded-model",
+        "distill-tools-distill",
+        "distill-tools",
         "evaluate-base-model",
         "evaluate-adapter",
         "finetune-serve-finetune",
@@ -86,10 +88,13 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
 ):
     start(logged_in_api)
 
-    # Only a serve step waits for its own training to pass.
+    # Only a step that follows its case's earlier Stage waits for that to pass.
     first, *later, serve = nodes(cluster)
+    trains_on_distill = node(cluster, "distill-tools")
     assert "triggerPolicy" not in first
     assert "triggerPolicy" not in serve
+    assert "triggerPolicy" not in trains_on_distill
+    later.remove(trains_on_distill)
     assert later
     assert all(t["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED" for t in later)
 
@@ -141,7 +146,7 @@ def test_a_finetune_case_trains_the_pinned_base_model_on_its_uploaded_bundled_da
     [phase] = request["finetune"]["phases"]
     assert phase["dataset"] == f"dataset:{name}-sft@1"
     datasets = logged_in_api.get(api_paths.DATASETS).json()
-    assert [d["name"] for d in datasets] == [f"{name}-sft"]
+    assert [d["name"] for d in datasets] == [f"{name}-distill", f"{name}-sft"]
 
 
 def test_the_uploaded_model_case_finetunes_a_tiny_model_uploaded_the_normal_way(
@@ -157,6 +162,43 @@ def test_the_uploaded_model_case_finetunes_a_tiny_model_uploaded_the_normal_way(
     [version] = models(logged_in_api)[f"{name}-uploaded"]
     assert (version["tags"]["source"], version["tags"]["weights"]) == ("uploaded", "full")
     assert version["size_bytes"] == sum(len(content) for content in FULL_WEIGHTS.values())
+
+
+def test_the_distill_case_distills_with_the_base_model_and_a_tool_then_trains_on_it(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    started = start(logged_in_api, {"distill": True}).json()
+    name = started["name"]
+
+    assert case_names(cluster) == ["fetch", "distill-tools-distill", "distill-tools"]
+    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "distill-tools"]
+    distill, finetune = node(cluster, "distill-tools-distill"), node(cluster, "distill-tools")
+    request = json.loads(distill["inputs"]["parameters"]["request"]["runtimeValue"]["constant"])
+    assert request["distill"]["teacher"] == f"hf:{QWEN}@{COMMIT}"
+    assert request["distill"]["dataset"] == f"dataset:{name}-distill@1"
+    assert request["distill"]["tools"][0]["function"]["name"] == "get_weather"
+    assert request["distill"]["serving"]["tool_parser"] == "hermes"
+    assert request["finetune"]["phases"][0]["dataset"] == "@distill"
+    handoff = finetune["inputs"]["parameters"]["distilled_dataset"]["taskOutputParameter"]
+    assert handoff["outputParameterKey"] == "dataset"
+    assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"step_token"}
+
+
+def test_the_distill_cases_step_registers_its_dataset_under_the_cases_name(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    started = start(logged_in_api, {"distill": True}).json()
+    token = cluster.secrets[f"pipeline-{started['id']}"]["step_token"]
+    row = {"prompt": "Hi", "completion": "Hello"}
+
+    response = logged_in_api.post(
+        api_paths.DISTILL_PIPELINE.format(id=started["id"]),
+        content=json.dumps(row) + "\n",
+        headers={"authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json() == {"dataset": f"dataset:{started['name']}-distill-tools@1"}
 
 
 def test_the_sandbox_case_runs_snippets_in_the_sandbox_from_a_pipeline_step(
@@ -278,7 +320,7 @@ def test_its_datasets_stay_while_it_runs(logged_in_api, qwen_on_the_hub, cluster
 
     reconcile(logged_in_api)
 
-    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 1
+    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 2
 
 
 def test_a_smoke_test_that_could_not_start_is_failed_and_cleaned_up(
@@ -331,6 +373,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "sandbox",
         "sft-lora-hf",
         "uploaded-model",
+        "distill-tools",
         "evaluate-base-model",
         "evaluate-adapter",
         "finetune-serve",
@@ -399,7 +442,8 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
     name = start(logged_in_api).json()["name"]
     register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
     steps = dict.fromkeys(
-        ["fetch", "sandbox", "sft-lora-hf", "uploaded-model", *EVALUATE_CASES, "finetune-serve"],
+        ["fetch", "sandbox", "sft-lora-hf", "uploaded-model", "distill-tools", *EVALUATE_CASES]
+        + ["finetune-serve"],
         "SUCCEEDED",
     )
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)
@@ -441,7 +485,7 @@ def test_the_serve_stage_case_trains_like_the_first_finetune_case_then_serves_it
     assert request["serve"]["name"] == f"{started['name']}-finetune-serve"
     assert request["finetune"]["phases"][0]["algorithm"] == "sft"
     assert serve["dependentTasks"] == [next(k for k, t in tasks(cluster).items() if t is finetune)]
-    assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"serve_token"}
+    assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"step_token"}
 
 
 def tasks(cluster) -> dict:

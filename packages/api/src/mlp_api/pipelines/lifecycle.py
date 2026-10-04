@@ -14,7 +14,7 @@ from sqlalchemy import (
     update,
 )
 
-from mlp_api.auth.session import issue_serve_token
+from mlp_api.auth.session import issue_step_token
 from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.compiler import compile_pipeline
 from mlp_api.smoke_tests.cases import case_results
@@ -46,14 +46,14 @@ def submit_pipeline(
     state, request: PipelineRequest, secrets: dict[str, str], fetched: list[str]
 ) -> int:
     """The new Pipeline's ID, once its Kubeflow run is submitted; RuntimeError if that failed."""
-    # 1. The Pipeline, whose ID names its Secret and its serve token.
+    # 1. The Pipeline, whose ID names its Secret and its step token.
     engine, cluster = state.engine, state.cluster
     pipeline_id = create_pipeline(engine, request.name, request.model_dump(mode="json"))
 
     # 2. The Secret and the run; a failure leaves the Secret to the reconciler.
     try:
-        if request.serve:
-            secrets = {**secrets, "serve_token": issue_serve_token(state.jwt_secret, pipeline_id)}
+        if request.distill or request.serve:
+            secrets = {**secrets, "step_token": issue_step_token(state.jwt_secret, pipeline_id)}
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
         spec = compile_pipeline(pipeline_id, request, fetched, cluster.steps, state.settings)
         run_id = cluster.submit_run(f"{request.name}-{pipeline_id}", spec)
@@ -143,6 +143,18 @@ def set_pipeline(engine: Engine, pipeline_id: int, **values) -> None:
         connection.execute(
             update(pipeline).where(pipeline.c.id == pipeline_id, unfinished).values(**values)
         )
+
+
+def find_running_request(engine: Engine, pipeline_id: int, smoke_test_case: str) -> PipelineRequest:
+    """The unfinished Pipeline's resolved request; LookupError if unknown, else ValueError."""
+    row = find_pipeline(engine, pipeline_id)
+    if row.status in config.FINISHED_STATUSES:
+        raise ValueError(f"Pipeline {pipeline_id} already {row.status}")
+    # A Smoke Test keeps each case's request under the case's name.
+    is_smoke_test = row.cases is not None
+    return PipelineRequest.model_validate(
+        row.request[smoke_test_case] if is_smoke_test else row.request
+    )
 
 
 def find_pipeline(engine: Engine, pipeline_id: int):

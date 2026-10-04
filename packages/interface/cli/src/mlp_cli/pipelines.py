@@ -13,6 +13,7 @@ PipelineName = Annotated[str | None, typer.Option(help="Pipeline name; default: 
 DryRun = Annotated[bool, typer.Option(help="Only list what the Pipeline would download")]
 Serve = Annotated[bool, typer.Option(help="End with an Endpoint for the last Model Version")]
 Evaluate = Annotated[bool, typer.Option(help="Run the Profile's benchmarks on its model")]
+Distill = Annotated[bool, typer.Option(help="First distill the Profile's prompts with its Teacher")]
 
 
 def validate(
@@ -20,9 +21,10 @@ def validate(
     name: PipelineName = None,
     evaluate: Evaluate = False,
     serve: Serve = False,
+    distill: Distill = False,
 ) -> None:
     """Check the Pipeline Request built from the CLI Profile, without running anything."""
-    chosen = (finetune, name, evaluate, serve)
+    chosen = (finetune, name, evaluate, serve, distill)
     resolved = send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen)
     typer.echo(yaml.safe_dump(resolved["request"], sort_keys=False))
     typer.echo("Valid")
@@ -33,10 +35,11 @@ def run(
     name: PipelineName = None,
     evaluate: Evaluate = False,
     serve: Serve = False,
+    distill: Distill = False,
     dry_run: DryRun = False,
 ) -> None:
     """Submit the Pipeline Request built from the CLI Profile; returns once it is queued."""
-    chosen = (finetune, name, evaluate, serve)
+    chosen = (finetune, name, evaluate, serve, distill)
     if dry_run:
         print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen))
         return
@@ -83,14 +86,14 @@ def cancel(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")])
 
 
 def send_pipeline_request(
-    path: str, finetune: str, name: str | None, evaluate: bool, serve: bool
+    path: str, finetune: str, name: str | None, evaluate: bool, serve: bool, distill: bool
 ) -> dict:
     """The API's answer to the Profile's Pipeline Request and Secrets; exits on a rejection."""
     # 1. The request, with only the named Stages and Phases.
     profile = load_profile()
     try:
         phases = [p for p in finetune.split(",") if p]
-        request = build_pipeline_request(profile, name, phases, serve, evaluate)
+        request = build_pipeline_request(profile, name, phases, serve, evaluate, distill)
     except ValueError as error:
         typer.echo(error, err=True)
         raise typer.Exit(1) from None

@@ -1789,6 +1789,7 @@ dependencies = [
     { name = "boto3" },
     { name = "httpx2" },
     { name = "huggingface-hub" },
+    { name = "jsonschema" },
     { name = "mlp-core" },
 ]
 
@@ -1809,6 +1810,7 @@ requires-dist = [
     { name = "boto3" },
     { name = "httpx2" },
     { name = "huggingface-hub", specifier = ">=1.31,<2" },
+    { name = "jsonschema" },
     { name = "lm-eval", extras = ["api", "ifeval"], marker = "extra == 'evaluate'", specifier = ">=0.4.13" },
     { name = "mlflow-skinny", marker = "extra == 'evaluate'" },
     { name = "mlflow-skinny", marker = "extra == 'hf'" },

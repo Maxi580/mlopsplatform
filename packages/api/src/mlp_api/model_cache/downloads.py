@@ -7,20 +7,28 @@ from mlp_core.pipeline_request.schema import PipelineRequest
 
 def fetched_references(state, request: PipelineRequest) -> list[str]:
     """Every Base Model and benchmark the Pipeline's fetch step pulls into the Model Cache."""
+    distill, finetune, evaluate = request.distill, request.finetune, request.evaluate
     base_models = []
-    if request.finetune and request.finetune.base_model:
-        base_models.append(request.finetune.base_model)
-    # The Base Model the evaluated model loads: itself, or the one under a Model Version.
-    evaluate = request.evaluate
-    if evaluate and evaluate.model.startswith("hf:"):
-        base_models.append(evaluate.model)
-    elif evaluate and evaluate.model.startswith("model:"):
-        model = find_endpoint_model(
-            evaluate.model, state.hugging_face, state.model_registry, state.object_store
-        )
-        base_models.append(model.base_model)
+    if distill and not distill.api_url:
+        base_models.append(base_model_of(state, distill.teacher))
+    if finetune:
+        base_models.append(finetune.base_model)
+    if evaluate:
+        base_models.append(base_model_of(state, evaluate.model))
     benchmarks = evaluate.benchmarks if evaluate else []
     return list(dict.fromkeys(reference for reference in base_models + benchmarks if reference))
+
+
+def base_model_of(state, model: str) -> str | None:
+    """The Base Model the model is or is built on; None for an Endpoint or `@finetune`."""
+    if model.startswith("hf:"):
+        return model
+    if model.startswith("model:"):
+        found = find_endpoint_model(
+            model, state.hugging_face, state.model_registry, state.object_store
+        )
+        return found.base_model
+    return None
 
 
 def preview_downloads(state, references: list[str], token: str | None) -> dict:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import select, update
 
-from mlp_api.auth.session import issue_serve_token
+from mlp_api.auth.session import issue_step_token
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
 from mlp_api.endpoints.lifecycle import list_endpoints, stop_endpoint
 from mlp_api.model_cache.downloads import preview_downloads
@@ -61,9 +61,12 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         make_room_for_downloads(state, preview_downloads(state, fetched, None)["download_bytes"])
 
         # 4. The bundled Datasets and the tiny model, uploaded the normal way.
-        for phase in {phase for phase, _, _ in trainings.values()}:
-            dataset = config.SMOKE_TEST_DATASETS_DIRECTORY / f"{phase}.jsonl"
-            upload_dataset_version(engine, state.object_store, f"{name}-{phase}", dataset)
+        bundled = {phase for phase, _, _ in trainings.values()}
+        if config.SMOKE_TEST_DISTILL_CASE in trainings:
+            bundled.add("distill")
+        for dataset in bundled:
+            path = config.SMOKE_TEST_DATASETS_DIRECTORY / f"{dataset}.jsonl"
+            upload_dataset_version(engine, state.object_store, f"{name}-{dataset}", path)
         starting_models = dict.fromkeys(trainings, {"base_model": base_model})
         uploaded = None
         if config.SMOKE_TEST_UPLOADED_MODEL_CASE in trainings or selection.serving:
@@ -96,10 +99,10 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             cases={**cases, **dict.fromkeys(serving, "pending")},
         )
 
-        # 7. The run, one node per case; a serve step calls the API with its serve token.
-        if config.SMOKE_TEST_SERVE_STAGE_CASE in requests:
-            token = issue_serve_token(state.jwt_secret, pipeline_id)
-            state.cluster.create_secret(pipeline_secret_name(pipeline_id), {"serve_token": token})
+        # 7. The run, one node per case; distill and serve steps call the API with a step token.
+        if {config.SMOKE_TEST_DISTILL_CASE, config.SMOKE_TEST_SERVE_STAGE_CASE} & set(requests):
+            token = issue_step_token(state.jwt_secret, pipeline_id)
+            state.cluster.create_secret(pipeline_secret_name(pipeline_id), {"step_token": token})
         spec = compile_smoke_test(
             pipeline_id,
             name,
