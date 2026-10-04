@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 from pathlib import Path
@@ -34,16 +35,21 @@ def model_cache(monkeypatch, tmp_path):
     return tmp_path / "hub"
 
 
-class FakeLmEval:
-    """Records each process lm-eval runs in; a download writes its datasets where told to."""
+class FakeHarnesses:
+    """Records each process a harness runs in; a download writes its datasets where told to."""
 
     def __init__(self):
         self.runs = []
         self.failing = set()
 
     def __call__(self, command, env):
-        assert command[command.index("--model") + 1] == "dummy"
-        task = command[command.index("--tasks") + 1]
+        if "mlp_stages.evaluate.evalscope_harness" in command:
+            task_config = json.loads(command[-1])
+            assert task_config["eval_type"] == "mock_llm"
+            [task] = task_config["datasets"]
+        else:
+            assert command[command.index("--model") + 1] == "dummy"
+            task = command[command.index("--tasks") + 1]
         self.runs.append((task, env))
         if task in self.failing:
             return SimpleNamespace(returncode=1)
@@ -54,8 +60,8 @@ class FakeLmEval:
 
 
 @pytest.fixture
-def lm_eval(monkeypatch):
-    fake = FakeLmEval()
+def harnesses(monkeypatch):
+    fake = FakeHarnesses()
     monkeypatch.setattr(harness.subprocess, "run", fake)
     return fake
 
@@ -146,11 +152,11 @@ def test_files_already_cached_need_no_room(monkeypatch, downloads, model_cache):
 
 
 def test_fetch_downloads_benchmark_datasets_into_the_model_cache(
-    monkeypatch, downloads, model_cache, lm_eval
+    monkeypatch, downloads, model_cache, harnesses
 ):
     mlp_stage(monkeypatch, "fetch", "100Gi", f"{BASE_MODEL},lm_eval:gsm8k")
 
-    [(task, env)] = lm_eval.runs
+    [(task, env)] = harnesses.runs
     assert task == "gsm8k"
     benchmark = model_cache.parent / "benchmarks" / "lm_eval" / "gsm8k"
     assert env["HF_DATASETS_CACHE"] == str(benchmark / "datasets")
@@ -159,18 +165,20 @@ def test_fetch_downloads_benchmark_datasets_into_the_model_cache(
     assert len(downloads) == 1
 
 
-def test_a_fetched_benchmark_is_not_downloaded_again(monkeypatch, downloads, model_cache, lm_eval):
+def test_a_fetched_benchmark_is_not_downloaded_again(
+    monkeypatch, downloads, model_cache, harnesses
+):
     mlp_stage(monkeypatch, "fetch", "100Gi", "lm_eval:gsm8k")
     mlp_stage(monkeypatch, "fetch", "100Gi", "lm_eval:gsm8k")
 
-    assert len(lm_eval.runs) == 1
+    assert len(harnesses.runs) == 1
     assert downloads == []
 
 
 def test_a_benchmark_that_fails_to_download_is_left_unmarked_and_fetch_goes_on(
-    monkeypatch, downloads, model_cache, lm_eval
+    monkeypatch, downloads, model_cache, harnesses
 ):
-    lm_eval.failing.add("gsm8k")
+    harnesses.failing.add("gsm8k")
 
     mlp_stage(monkeypatch, "fetch", "100Gi", "lm_eval:gsm8k,lm_eval:ifeval")
 
@@ -180,11 +188,24 @@ def test_a_benchmark_that_fails_to_download_is_left_unmarked_and_fetch_goes_on(
 
 
 def test_benchmark_sizes_count_towards_the_room_fetch_needs(
-    monkeypatch, downloads, model_cache, lm_eval
+    monkeypatch, downloads, model_cache, harnesses
 ):
     size = config.BENCHMARKS["lm_eval:gsm8k"]["size_bytes"]
 
     with pytest.raises(RuntimeError, match=f"needs {500 + size} bytes"):
         mlp_stage(monkeypatch, "fetch", str(size), f"{BASE_MODEL},lm_eval:gsm8k")
 
-    assert (downloads, lm_eval.runs) == ([], [])
+    assert (downloads, harnesses.runs) == ([], [])
+
+
+def test_an_evalscope_benchmark_downloads_into_the_model_cache_through_modelscope(
+    monkeypatch, downloads, model_cache, harnesses
+):
+    mlp_stage(monkeypatch, "fetch", "100Gi", "evalscope:mbpp_plus")
+
+    [(task, env)] = harnesses.runs
+    assert task == "mbpp_plus"
+    benchmark = model_cache.parent / "benchmarks" / "evalscope" / "mbpp_plus"
+    assert env["MODELSCOPE_CACHE"] == str(benchmark / "modelscope")
+    assert env["EVALSCOPE_CACHE"] == str(benchmark / "evalscope")
+    assert (benchmark / "fetched").exists()

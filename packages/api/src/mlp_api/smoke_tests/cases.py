@@ -25,7 +25,8 @@ class SmokeTestSelection(Strict):
     # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints;
     # with a finetune case, also runs the `serve` Stage.
     serving: bool = False
-    # Evaluates the Base Model and, with a finetune case, its Adapter on one benchmark.
+    # Evaluates the Base Model on a benchmark and on a coding benchmark of each harness, and, with
+    # a finetune case, its Adapter.
     evaluate: bool = False
     # Distills prompts with the Base Model as Teacher and a tool, then trains on its replies.
     distill: bool = False
@@ -99,18 +100,22 @@ def evaluate_cases(selection: SmokeTestSelection, trainings: dict) -> dict[str, 
     """Evaluate case -> the finetune case whose Adapter it evaluates; None for the Base Model."""
     if not selection.evaluate:
         return {}
-    base_model, adapter = config.SMOKE_TEST_EVALUATE_CASES
+    adapter = config.SMOKE_TEST_ADAPTER_EVALUATE_CASE
     finetunes = [c for c in trainings if c not in config.SMOKE_TEST_SPECIAL_FINETUNE_CASES]
-    return {base_model: None, **({adapter: finetunes[0]} if finetunes else {})}
+    return {
+        case: finetunes[0] if case == adapter else None
+        for case in config.SMOKE_TEST_EVALUATE_CASES
+        if case != adapter or finetunes
+    }
 
 
 def evaluate_case_request(case: str, smoke_test: str, model: str) -> dict:
-    """The Pipeline Request of one evaluate case: a few samples of the Smoke Test's benchmark."""
+    """The Pipeline Request of one evaluate case: a few samples of its benchmark."""
     return {
         "name": f"{smoke_test}-{case}",
         "evaluate": {
             "model": model,
-            "benchmarks": [config.SMOKE_TEST_BENCHMARK],
+            "benchmarks": [config.SMOKE_TEST_EVALUATE_CASES[case]],
             "limit": config.SMOKE_TEST_EVALUATE_LIMIT,
         },
     }

@@ -270,10 +270,16 @@ SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
     SMOKE_TEST_SERVE_STAGE_CASE,
     SMOKE_TEST_DISTILL_CASE,
 )
-# Evaluate the Base Model, and the Adapter of the first finetune case, on a few samples of one
-# small benchmark that scores log-likelihoods, the harder path through vLLM.
-SMOKE_TEST_EVALUATE_CASES = ("evaluate-base-model", "evaluate-adapter")
-SMOKE_TEST_BENCHMARK = "lm_eval:truthfulqa_mc2"
+# Evaluate case -> its benchmark, run on a few samples. The Base Model, and the Adapter of the first
+# finetune case, run a small benchmark that scores log-likelihoods, the harder path through vLLM;
+# the Base Model also runs a coding benchmark of each harness, scored in the Sandbox.
+SMOKE_TEST_EVALUATE_CASES = {
+    "evaluate-base-model": "lm_eval:truthfulqa_mc2",
+    "evaluate-adapter": "lm_eval:truthfulqa_mc2",
+    "evaluate-coding": "lm_eval:humaneval",
+    "evaluate-evalscope": "evalscope:mbpp_plus",
+}
+SMOKE_TEST_ADAPTER_EVALUATE_CASE = "evaluate-adapter"
 SMOKE_TEST_EVALUATE_LIMIT = 5
 # One tiny Dataset per Phase algorithm, named after it, uploaded the normal way by each Smoke Test.
 SMOKE_TEST_DATASETS_DIRECTORY = Path(__file__).parent / "smoke_test_datasets"
@@ -354,12 +360,38 @@ BENCHMARKS = {
         "licence": "Apache-2.0",
         "size_bytes": 15_707_103,
     },
+    "lm_eval:humaneval": {
+        "category": "coding",
+        "description": "Completes Python functions from their docstrings; unit tests score them.",
+        "licence": "MIT",
+        "size_bytes": 7_433_045,
+    },
+    "lm_eval:mbpp": {
+        "category": "coding",
+        "description": "Short Python programming problems, each checked by three tests.",
+        "licence": "CC-BY-4.0",
+        "size_bytes": 7_867_255,
+    },
+    # Run by EvalScope. Its other coding tasks need libraries the Sandbox lacks, run languages
+    # other than Python, or fail the licence gate.
+    "evalscope:mbpp_plus": {
+        "category": "coding",
+        "description": "MBPP with corrected problems and many more tests per problem.",
+        "licence": "Apache-2.0",
+        "size_bytes": 10_818_570,
+    },
+    "evalscope:super_gpqa": {
+        "category": "knowledge",
+        "description": "Graduate-level multiple-choice questions across 285 disciplines.",
+        "licence": "ODC-BY",
+        "size_bytes": 64_001_903,
+    },
 }
 # Where the Model Cache holds benchmark datasets, under `<harness>/<task>/`.
 BENCHMARKS_DIRECTORY = "benchmarks"
 # Written into a benchmark's directory once fetch downloaded all its datasets.
 BENCHMARK_FETCHED_MARKER = "fetched"
-# Requests lm-eval sends to vLLM at once.
+# Requests a harness sends to vLLM at once.
 EVALUATE_CONCURRENT_REQUESTS = 16
 # How often `evaluate` checks whether its vLLM is ready.
 VLLM_READY_POLL_INTERVAL = timedelta(seconds=5)

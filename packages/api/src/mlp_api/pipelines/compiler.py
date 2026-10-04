@@ -153,6 +153,8 @@ def fetch_step(references: list[str], steps: StepEnvironment, settings: Settings
 
     task = fetch(model_cache_size=settings.model_cache_size, references=",".join(references))
     use_model_cache(task, steps)
+    # A benchmark's download scores one sample, which for a coding benchmark runs in the Sandbox.
+    task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
     return task
 
 
@@ -249,6 +251,7 @@ def evaluate_step(
         gpus=str(gpus),
     )
     use_vllm(task, steps, gpus)
+    task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
     return task
 
 

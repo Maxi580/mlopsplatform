@@ -40,7 +40,7 @@ def fetch(model_cache_size: str, references: str) -> None:
         if download_benchmark(benchmark):
             marker(benchmark).touch()
         else:
-            print(f"Downloading {benchmark} failed; see lm-eval's log above")
+            print(f"Downloading {benchmark} failed; see its harness's log above")
 
 
 # Exists once all of the benchmark's datasets are downloaded.

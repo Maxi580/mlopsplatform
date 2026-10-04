@@ -55,9 +55,10 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     pipeline_id = create_pipeline(engine, name, {}, cases)
 
     try:
-        # 3. The Base Model, pinned to a commit, and the benchmark, with room in the Model Cache.
+        # 3. The Base Model, pinned to a commit, and the benchmarks, with room in the Model Cache.
         base_model = pin_base_model(state.hugging_face, config.SMOKE_TEST_BASE_MODEL, None)
-        fetched = [base_model, *([config.SMOKE_TEST_BENCHMARK] if evaluations else [])]
+        benchmarks = dict.fromkeys(config.SMOKE_TEST_EVALUATE_CASES[case] for case in evaluations)
+        fetched = [base_model, *benchmarks]
         make_room_for_downloads(state, preview_downloads(state, fetched, None)["download_bytes"])
 
         # 4. The bundled Datasets and the tiny model, uploaded the normal way.

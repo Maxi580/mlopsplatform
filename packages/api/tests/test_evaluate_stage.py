@@ -237,3 +237,12 @@ def test_the_benchmark_catalog_lists_category_description_and_size(logged_in_api
     assert gsm8k["category"] == "maths"
     assert gsm8k["description"]
     assert gsm8k["size_bytes"] == GSM8K_BYTES
+
+
+def test_evaluate_and_fetch_reach_the_sandbox_that_scores_generated_code(logged_in_api, cluster):
+    # fetch scores one sample to download all a benchmark needs, generated code included.
+    submit(logged_in_api, evaluate_only(f"hf:{BASE_MODEL}", benchmarks=["lm_eval:humaneval"]))
+
+    for step in ("fetch", "evaluate"):
+        sandbox_url = {"name": "SANDBOX_URL", "value": "http://sandbox.mlp.test:8090"}
+        assert sandbox_url in container(cluster, step)["env"]

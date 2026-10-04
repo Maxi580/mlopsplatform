@@ -28,12 +28,12 @@ def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str) -> No
             model, evaluate.serving, resolved.name, endpoint_url, int(gpus), Path(scratch)
         )
         with served as (url, served_name):
-            # 3. Each benchmark in its own lm-eval process, so a failing one fails alone.
+            # 3. Each benchmark in its own harness process, so a failing one fails alone.
             for benchmark in evaluate.benchmarks:
                 metrics = run_benchmark(benchmark, url, served_name, evaluate.limit, Path(scratch))
                 if metrics is None:
                     client.set_tag(run_id, mlflow_key(benchmark), "NA")
-                    print(f"{benchmark} failed and is logged as NA; see lm-eval's log above")
+                    print(f"{benchmark} failed and is logged as NA; see its harness's log above")
                 for key, value in (metrics or {}).items():
                     client.log_metric(run_id, key, value)
 

@@ -17,7 +17,12 @@ COMMIT = "c0ffee"
 # The cases that run as Kubeflow nodes, without the serving cases' Endpoints.
 WITHOUT_SERVING = {"finetune": {}, "uploaded_model": True}
 SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter"]
-EVALUATE_CASES = ["evaluate-base-model", "evaluate-adapter"]
+EVALUATE_CASES = [
+    "evaluate-base-model",
+    "evaluate-adapter",
+    "evaluate-coding",
+    "evaluate-evalscope",
+]
 
 
 @pytest.fixture
@@ -77,6 +82,8 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "distill-tools",
         "evaluate-base-model",
         "evaluate-adapter",
+        "evaluate-coding",
+        "evaluate-evalscope",
         "finetune-serve-finetune",
         "finetune-serve",
     ]
@@ -105,7 +112,10 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
         ({}, ["fetch"]),
         ({"uploaded_model": True}, ["fetch", "uploaded-model"]),
         ({"sandbox": True}, ["fetch", "sandbox"]),
-        ({"evaluate": True}, ["fetch", "evaluate-base-model"]),
+        (
+            {"evaluate": True},
+            ["fetch", "evaluate-base-model", "evaluate-coding", "evaluate-evalscope"],
+        ),
         ({"finetune": {"phases": ["sft"]}}, ["fetch", "sft-lora-hf"]),
         ({"finetune": {"phases": ["sft"], "methods": [], "backends": ["hf"]}}, ["fetch"]),
     ],
@@ -216,23 +226,27 @@ def test_the_sandbox_case_runs_snippets_in_the_sandbox_from_a_pipeline_step(
     assert memory == "1024"
 
 
-def test_the_evaluate_cases_run_one_benchmark_on_the_base_model_and_an_adapter(
+def test_the_evaluate_cases_run_a_few_samples_of_their_benchmark_on_the_base_model_or_adapter(
     logged_in_api, qwen_on_the_hub, cluster
 ):
     name = start(logged_in_api).json()["name"]
 
     fetch = node(cluster, "fetch")["inputs"]["parameters"]["references"]["runtimeValue"]
-    assert fetch["constant"] == f"hf:{QWEN}@{COMMIT},lm_eval:truthfulqa_mc2"
-    models = {}
-    for case in ("evaluate-base-model", "evaluate-adapter"):
+    assert fetch["constant"] == (
+        f"hf:{QWEN}@{COMMIT},lm_eval:truthfulqa_mc2,lm_eval:humaneval,evalscope:mbpp_plus"
+    )
+    evaluated = {}
+    for case in EVALUATE_CASES:
         parameters = node(cluster, case)["inputs"]["parameters"]
         request = json.loads(parameters["request"]["runtimeValue"]["constant"])
-        assert request["evaluate"]["benchmarks"] == ["lm_eval:truthfulqa_mc2"]
         assert request["evaluate"]["limit"] == 5
-        models[case] = request["evaluate"]["model"]
-    assert models == {
-        "evaluate-base-model": f"hf:{QWEN}@{COMMIT}",
-        "evaluate-adapter": f"model:{name}-sft-lora-hf@1",
+        evaluated[case] = (request["evaluate"]["model"], *request["evaluate"]["benchmarks"])
+    base_model = f"hf:{QWEN}@{COMMIT}"
+    assert evaluated == {
+        "evaluate-base-model": (base_model, "lm_eval:truthfulqa_mc2"),
+        "evaluate-adapter": (f"model:{name}-sft-lora-hf@1", "lm_eval:truthfulqa_mc2"),
+        "evaluate-coding": (base_model, "lm_eval:humaneval"),
+        "evaluate-evalscope": (base_model, "evalscope:mbpp_plus"),
     }
 
 
@@ -374,8 +388,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "sft-lora-hf",
         "uploaded-model",
         "distill-tools",
-        "evaluate-base-model",
-        "evaluate-adapter",
+        *EVALUATE_CASES,
         "finetune-serve",
         *SERVING_CASES,
     ]
