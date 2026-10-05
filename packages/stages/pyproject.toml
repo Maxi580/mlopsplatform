@@ -13,8 +13,8 @@ hf = ["trl>=1.14", "peft", "torch", "mlflow-skinny", "bitsandbytes", "vllm==0.30
 unsloth = ["unsloth>=2026.9", "mlflow-skinny", "bitsandbytes", "vllm>=0.11; sys_platform == 'linux'"]
 # The stages image: fetch downloads benchmarks and evaluate runs them with lm-eval and EvalScope
 # against vLLM, which the image's vLLM base provides; quantize merges Adapters with PEFT and
-# quantizes with llm-compressor.
-evaluate = ["lm-eval[api,ifeval]>=0.4.13", "evalscope>=1.12", "mlflow-skinny", "guidellm>=0.7.4; sys_platform == 'linux'", "llmcompressor>=0.14", "peft"]
+# quantizes with llm-compressor; speculate trains Speculators with speculators.
+evaluate = ["lm-eval[api,ifeval]>=0.4.13", "evalscope>=1.12", "mlflow-skinny", "guidellm>=0.7.4; sys_platform == 'linux'", "llmcompressor>=0.14", "peft", "speculators>=0.8"]
 
 [project.scripts]
 mlp-stage = "mlp_stages.main:main"

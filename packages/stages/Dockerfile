@@ -13,6 +13,14 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY packages ./packages
 RUN uv sync --frozen --no-dev --package mlp-stages ${STAGES_EXTRA:+--extra "$STAGES_EXTRA"}
+# speculators derives the draft layers' head_dim from the verifier when its config leaves it unset
+# (Qwen2 does), then hands the unset value on anyway, which transformers refuses. The upstream fix
+# is this one word; the grep fails the build once a release carries it, so this gets deleted.
+RUN if [ "$STAGES_EXTRA" = "evaluate" ]; then \
+      CLI="$(find /app/.venv -path '*/speculators/train/cli.py')" \
+      && grep -q 'head_dim=head_dim,' "$CLI" \
+      && sed -i 's/head_dim=head_dim,/head_dim=resolved_head_dim,/' "$CLI"; \
+    fi
 # BFCL pins libraries the other harnesses can't share, so it gets a virtualenv of its own, with
 # the platform's code to drive it; its qwen-agent imports soundfile without depending on it.
 RUN if [ -n "$BFCL_VERSION" ]; then \

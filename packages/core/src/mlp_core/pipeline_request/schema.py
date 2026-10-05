@@ -29,6 +29,12 @@ from mlp_core.config import (
     QUANTIZE_OUTPUT,
     REWARD_SOURCE_MAX_LENGTH,
     REWARDS_INFOBOX,
+    SPECULATE_DRAFT_VOCAB_SIZE,
+    SPECULATE_EPOCHS,
+    SPECULATE_LEARNING_RATE,
+    SPECULATE_SAMPLES,
+    SPECULATE_SEQ_LENGTH,
+    SPECULATORS,
     UNCALIBRATED_SCHEMES,
     WEIGHT_METHODS,
 )
@@ -244,6 +250,30 @@ class Quantize(Strict):
         return self
 
 
+class SpeculateSettings(Strict):
+    # Conversations rendered through the verifier; their hidden states fill the step's disk.
+    samples: int = Field(SPECULATE_SAMPLES, gt=0)
+    # Tokens per conversation, and the length batches are packed to.
+    seq_length: int = Field(SPECULATE_SEQ_LENGTH, gt=0)
+    epochs: int = Field(SPECULATE_EPOCHS, gt=0)
+    learning_rate: float = Field(SPECULATE_LEARNING_RATE, gt=0)
+    # The tokens the Speculator may propose, picked by frequency.
+    draft_vocab_size: int = Field(SPECULATE_DRAFT_VOCAB_SIZE, gt=0)
+
+
+class Speculate(Strict):
+    """A Speculator trained with `speculators` on the verifier's hidden states, for it alone."""
+
+    speculator: Literal[SPECULATORS] = "eagle3"
+    # The verifier; validation names `@quantize`, else `@finetune`, when none is given.
+    model: (
+        BaseModelReference | ModelReference | Literal[FINETUNE_OUTPUT, QUANTIZE_OUTPUT] | None
+    ) = None
+    # Conversations like the traffic the Endpoint will see; `@distill`'s replies count as ones.
+    dataset: DatasetReference | Literal[DISTILL_OUTPUT]
+    settings: SpeculateSettings = SpeculateSettings()
+
+
 class Performance(Strict):
     """Serving performance by GuideLLM: synthetic chat requests, a fixed number at once."""
 
@@ -293,14 +323,16 @@ class PipelineRequest(Strict):
     distill: Distill | None = None
     finetune: Finetune | None = None
     quantize: Quantize | None = None
+    speculate: Speculate | None = None
     evaluate: Evaluate | None = None
     serve: Serve | None = None
 
     @model_validator(mode="after")
     def check_stages(self) -> "PipelineRequest":
-        if not (self.distill or self.finetune or self.quantize or self.evaluate):
+        if not (self.distill or self.finetune or self.quantize or self.speculate or self.evaluate):
             raise ValueError(
-                "enable at least one of `distill`, `finetune`, `quantize` and `evaluate`"
+                "enable at least one of `distill`, `finetune`, `quantize`, `speculate` and "
+                "`evaluate`"
             )
         if self.serve and not (self.finetune or self.quantize):
             raise ValueError("`serve` serves the output of `finetune` or `quantize`; enable either")

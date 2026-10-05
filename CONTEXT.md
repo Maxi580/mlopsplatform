@@ -102,7 +102,7 @@ How a Pipeline Request names a Base Model (`hf:org/name@revision`) or a Dataset 
 _Avoid_: Path, URI
 
 **Registered Model**:
-A named model that a Pipeline produced. Every `finetune` and `quantize` output becomes a new Model Version of one. Base Models are not Registered Models.
+A named model that a Pipeline produced. Every `finetune`, `quantize` and `speculate` output becomes a new Model Version of one. Base Models are not Registered Models.
 _Avoid_: Finetuned model, checkpoint (when meaning the platform concept)
 
 **Model Version**:
@@ -120,5 +120,5 @@ One evaluation from the platform's catalog, named `harness:task` (e.g. `lm_eval:
 _Avoid_: Eval, test (when meaning the platform concept)
 
 **Speculator**:
-A small draft model trained for exactly one verifier (a Model Version or Base Model), used for speculative decoding.
+A small draft model trained for exactly one verifier (a Model Version or Base Model), used for speculative decoding. The `speculate` Stage registers each as a Model Version of `<pipeline>-speculator`, tagged with its verifier; an Endpoint drafts only with one trained for the model it serves.
 _Avoid_: Draft model (when meaning one the platform trained)

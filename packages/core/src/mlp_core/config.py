@@ -250,6 +250,39 @@ CALIBRATION_SOURCE = {
     "commit": "85e4a40773bf4cbc9dc17d6c63ee69ccd8390b6d",
     "file": "calibration.json.gz",
 }
+# The Speculator types `speculate` trains with `speculators`, each served with its own method.
+SPECULATORS = ("eagle3", "dflash", "dspark", "peagle")
+# A Pipeline's Speculators are versions of the Registered Model `<pipeline>-speculator`.
+SPECULATOR_MODEL_NAME = "{pipeline}-speculator"
+# `speculate` defaults: conversations, tokens per conversation, epochs, learning rate, and the
+# tokens the Speculator may propose, picked by frequency.
+SPECULATE_SAMPLES = 1000
+SPECULATE_SEQ_LENGTH = 8192
+SPECULATE_EPOCHS = 5
+SPECULATE_LEARNING_RATE = 1e-4
+SPECULATE_DRAFT_VOCAB_SIZE = 32000
+SPECULATE_ROW_FORMATS = ("messages",)
+# Where `speculators` training points at the epoch it kept as its best.
+SPECULATE_BEST_CHECKPOINT = "checkpoint_best"
+# What the `speculators` launcher sets: the endpoint the hidden-state connector is reached through,
+# and few BLAS threads per process, so they don't crowd vLLM off the cores.
+SPECULATE_ENVIRONMENT = {
+    "VLLM_ENABLE_SCALE_OUT_ENDPOINTS": "1",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "RAYON_NUM_THREADS": "2",
+}
+# Endpoint speculative method -> its vLLM speculative config; P-EAGLE drafts its tokens at once.
+SPECULATIVE_METHODS = {
+    "ngram": {"method": "ngram"},
+    "draft": {"method": "draft_model"},
+    "eagle3": {"method": "eagle3"},
+    "dflash": {"method": "dflash"},
+    "dspark": {"method": "dspark"},
+    "peagle": {"method": "eagle3", "parallel_drafting": True},
+}
+SPECULATIVE_TOKENS = 3
 # Secret slot -> the environment variable of the steps that receive it. The API adds
 # `step_token` itself, for the `distill` and `serve` steps to call the API with.
 SECRET_ENV_VARS = {
@@ -337,6 +370,7 @@ VLLM_PORT = 8000
 ENDPOINT_MODEL_DIRECTORY = "/models"
 ENDPOINT_WEIGHTS_DIRECTORY = f"{ENDPOINT_MODEL_DIRECTORY}/weights"
 ENDPOINT_ADAPTER_DIRECTORY = f"{ENDPOINT_MODEL_DIRECTORY}/adapter"
+ENDPOINT_DRAFTER_DIRECTORY = f"{ENDPOINT_MODEL_DIRECTORY}/drafter"
 # Prefixed with `endpoint-`, an Endpoint's name names Kubernetes objects, which allow 63 characters.
 ENDPOINT_NAME_MAX_LENGTH = 54
 # The object store keys in the platform namespace, which Endpoints download Model Versions with.
@@ -561,15 +595,30 @@ SMOKE_TEST_QUANTIZE_CASES = {
     SMOKE_TEST_QUANTIZE_ADAPTER_CASE: "fp8-dynamic",
 }
 SMOKE_TEST_CALIBRATION = {"samples": 16, "max_length": 256}
+# Speculate case -> its Speculator type, each trained briefly for the Base Model on the bundled
+# `sft` conversations.
+SMOKE_TEST_SPECULATE_CASES = {f"speculate-{speculator}": speculator for speculator in SPECULATORS}
+SMOKE_TEST_SPECULATE_SETTINGS = {
+    "samples": 16,
+    "seq_length": 256,
+    "epochs": 1,
+    "draft_vocab_size": 1024,
+}
+# Serves the Base Model drafting with n-gram, which needs no Speculator.
+SMOKE_TEST_NGRAM_CASE = "serve-ngram"
+SMOKE_TEST_NGRAM = {"method": "ngram", "prompt_lookup_min": 2, "prompt_lookup_max": 4}
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
 # uploaded tiny full-weight model, the Adapter of the first finetune case that keeps one, the
-# merged QLoRA model, and the Base Model quantized with each scheme.
+# merged QLoRA model, the Base Model quantized with each scheme, and the Base Model with n-gram
+# and with each Speculator type.
 SMOKE_TEST_SERVING_CASES = (
     "serve-base-model",
     "serve-full-weights",
     "serve-adapter",
     "serve-merged",
     *(f"serve-quantize-{scheme}" for scheme in QUANTIZATION_SCHEMES),
+    SMOKE_TEST_NGRAM_CASE,
+    *(f"serve-{case}" for case in SMOKE_TEST_SPECULATE_CASES),
 )
 # Each serving case's Endpoint answers one real chat request, which its stats must then count.
 SMOKE_TEST_CHAT_REQUEST = {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8}

@@ -8,6 +8,7 @@ from mlp_api.pipelines.reconciler import reconcile_once
 from mlp_core import api_paths, config
 
 from .test_endpoint_stats import IDLE, SERVED
+from .test_endpoints import register as register_tagged
 from .test_endpoints import register_adapter
 from .test_model_uploads import FULL_WEIGHTS
 from .test_models import models, register
@@ -26,12 +27,20 @@ QUANTIZE_CASES = [
     "quantize-w4a16-awq",
     "quantize-w8a8-int8",
 ]
+SPECULATE_CASES = [
+    "speculate-eagle3",
+    "speculate-dflash",
+    "speculate-dspark",
+    "speculate-peagle",
+]
 SERVING_CASES = [
     "serve-base-model",
     "serve-full-weights",
     "serve-adapter",
     "serve-merged",
     *(f"serve-{case}" for case in QUANTIZE_CASES),
+    "serve-ngram",
+    *(f"serve-{case}" for case in SPECULATE_CASES),
 ]
 # Every Phase algorithm with every method of the `hf` backend, and those `unsloth` trains.
 UNSLOTH = {"sft", "dpo", "kto", "grpo-lora", "grpo-qlora", "rloo-lora", "rloo-qlora"}
@@ -126,6 +135,7 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "resume",
         *QUANTIZE_CASES,
         "quantize-adapter",
+        *SPECULATE_CASES,
         "evaluate-base-model",
         "evaluate-adapter",
         "evaluate-coding",
@@ -161,6 +171,7 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
         ({"uploaded_model": True}, ["fetch", "uploaded-model"]),
         ({"sandbox": True}, ["fetch", "sandbox"]),
         ({"quantize": True}, ["fetch", *QUANTIZE_CASES]),
+        ({"speculate": True}, ["fetch", *SPECULATE_CASES]),
         (
             {"quantize": True, "finetune": {"phases": ["sft"], "methods": ["lora"]}},
             ["fetch", "sft-lora-hf", "sft-lora-unsloth", "sft-assistant-only-hf"]
@@ -651,6 +662,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "resume",
         *QUANTIZE_CASES,
         "quantize-adapter",
+        *SPECULATE_CASES,
         *EVALUATE_CASES,
         "finetune-serve",
         *SERVING_CASES,
@@ -658,6 +670,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
     assert running_endpoints(logged_in_api) == {
         f"{name}-serve-base-model": f"hf:{QWEN}@{COMMIT}",
         f"{name}-serve-full-weights": f"model:{name}-uploaded@1",
+        f"{name}-serve-ngram": f"hf:{QWEN}@{COMMIT}",
     }
 
 
@@ -666,8 +679,9 @@ def test_a_custom_smoke_test_can_serve_without_finetuning(logged_in_api, qwen_on
 
     reconcile(logged_in_api)
 
-    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", *SERVING_CASES[:2]]
+    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", *SERVING_CASES[:2], "serve-ngram"]
     assert list(running_endpoints(logged_in_api)) == [
+        f"{name}-serve-ngram",
         f"{name}-serve-full-weights",
         f"{name}-serve-base-model",
     ]
@@ -705,6 +719,7 @@ def test_a_serving_case_passes_once_its_endpoint_answered_a_chat_request_and_the
     cluster.endpoint_states[f"{name}-serve-base-model"] = "running"
     cluster.metrics[f"{name}-serve-base-model"] = SERVED
     cluster.endpoint_states[f"{name}-serve-full-weights"] = "failed"
+    cluster.endpoint_states[f"{name}-serve-ngram"] = "failed"
 
     reconcile(logged_in_api)
 
@@ -746,6 +761,9 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
     register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
     for full_weights in ("sft-qlora-merged-hf", *QUANTIZE_CASES):
         register(model_registry, object_store, f"{name}-{full_weights}", 1, weights="full")
+    for case in SPECULATE_CASES:
+        tags = {"speculator": case.removeprefix("speculate-"), "verifier": f"hf:{QWEN}@{COMMIT}"}
+        register_tagged(model_registry, object_store, f"{name}-{case}-speculator", tags)
     steps = dict.fromkeys(case_names(cluster), "SUCCEEDED")
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)
 
@@ -762,6 +780,45 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
     assert found["status"] == "succeeded"
     assert set(found["cases"].values()) == {"passed"}
     assert model_registry.versions == []
+
+
+def test_a_speculate_case_trains_its_type_for_the_base_model_on_the_bundled_conversations(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api, {"speculate": True}).json()["name"]
+
+    parameters = node(cluster, "speculate-peagle")["inputs"]["parameters"]
+    request = json.loads(parameters["request"]["runtimeValue"]["constant"])
+    assert request["speculate"] == {
+        "speculator": "peagle",
+        "model": f"hf:{QWEN}@{COMMIT}",
+        "dataset": f"dataset:{name}-sft@1",
+        "settings": {**config.SMOKE_TEST_SPECULATE_SETTINGS, "learning_rate": 1e-4},
+    }
+
+
+def test_a_speculator_is_served_once_its_speculate_case_registered_it(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
+):
+    name = start(logged_in_api, {"speculate": True, "serving": True}).json()["name"]
+    reconcile(logged_in_api)
+    tags = {"speculator": "dflash", "verifier": f"hf:{QWEN}@{COMMIT}"}
+    register_tagged(model_registry, object_store, f"{name}-speculate-dflash-speculator", tags)
+    cluster.runs["run-1"] = KubeflowRun("RUNNING", None, {"speculate-dflash": "SUCCEEDED"})
+
+    reconcile(logged_in_api)
+
+    served = {name: endpoint["spec"] for name, endpoint in endpoint_specs(logged_in_api).items()}
+    assert served[f"{name}-serve-speculate-dflash"]["speculative"] == {
+        "method": "dflash",
+        "model": f"model:{name}-speculate-dflash-speculator@1",
+    }
+    assert served[f"{name}-serve-ngram"]["speculative"] == config.SMOKE_TEST_NGRAM
+    assert f"{name}-serve-speculate-eagle3" not in served
+
+
+def endpoint_specs(api) -> dict[str, dict]:
+    return {e["name"]: e for e in api.get(api_paths.ENDPOINTS).json() if e["status"] != "stopped"}
 
 
 def test_a_cancelled_smoke_test_stops_its_endpoints(logged_in_api, qwen_on_the_hub, cluster):

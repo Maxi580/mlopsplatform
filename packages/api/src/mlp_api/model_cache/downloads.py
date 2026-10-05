@@ -8,7 +8,7 @@ from mlp_core.pipeline_request.schema import PipelineRequest
 def fetched_references(state, request: PipelineRequest) -> list[str]:
     """Every Base Model and benchmark the Pipeline's fetch step pulls into the Model Cache."""
     distill, finetune, quantize = request.distill, request.finetune, request.quantize
-    evaluate = request.evaluate
+    speculate, evaluate = request.speculate, request.evaluate
     base_models = []
     if distill and not distill.api_url:
         base_models.append(base_model_of(state, distill.teacher))
@@ -19,6 +19,8 @@ def fetched_references(state, request: PipelineRequest) -> list[str]:
         ]
     if quantize:
         base_models.append(base_model_of(state, quantize.model))
+    if speculate:
+        base_models.append(base_model_of(state, speculate.model))
     if evaluate:
         base_models.append(base_model_of(state, evaluate.model))
     benchmarks = evaluate.benchmarks if evaluate else []
@@ -33,7 +35,7 @@ def base_model_of(state, model: str) -> str | None:
         found = find_endpoint_model(
             model, state.hugging_face, state.model_registry, state.object_store
         )
-        return found.base_model
+        return next(iter(found.base_models), None)
     return None
 
 

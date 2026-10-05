@@ -40,6 +40,10 @@ export const ENDPOINT_STATS_HISTORY_MS = 15 * MS_PER_MINUTE;
 // KV cache usage, in percent, from which its bar turns amber and then red.
 export const KV_CACHE_WARNING_PERCENT = 70;
 export const KV_CACHE_DANGER_PERCENT = 90;
+// What the Serving page's n-gram drafts with: the next tokens found after the last 2 to 4 in the
+// context. Both n-gram and a Speculator propose this many tokens per step unless changed.
+export const NGRAM_LOOKUP = { prompt_lookup_min: 2, prompt_lookup_max: 4 };
+export const SPECULATIVE_TOKENS = 3;
 // Curated stats that are shares of a whole, shown in percent.
 export const PERCENT_STATS = ["kv_cache_usage", "prefix_cache_hit_rate", "acceptance_rate"];
 // The stats page's charts, and room for their y-axis labels such as "123 ms".

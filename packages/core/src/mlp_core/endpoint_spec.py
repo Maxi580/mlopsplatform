@@ -1,9 +1,16 @@
+import json
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from mlp_core.config import ENDPOINT_NAME_MAX_LENGTH, VLLM_LORA_RANKS, VLLM_TOOL_PARSERS
+from mlp_core.config import (
+    ENDPOINT_NAME_MAX_LENGTH,
+    SPECULATIVE_METHODS,
+    SPECULATIVE_TOKENS,
+    VLLM_LORA_RANKS,
+    VLLM_TOOL_PARSERS,
+)
 from mlp_core.pipeline_request.references import BaseModelReference, ModelReference
 
 # Names the Endpoint's Kubernetes objects and its URL, so it must be a DNS label.
@@ -32,8 +39,33 @@ class ServingOptions(BaseModel):
     tool_parser: Literal[VLLM_TOOL_PARSERS] | None = None
 
 
+class Speculative(BaseModel):
+    """Speculative decoding: `ngram` looks the next tokens up in the context, the others draft."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    method: Literal[tuple(SPECULATIVE_METHODS)]
+    # A Speculator trained for the served model, or a small model for `draft`.
+    model: BaseModelReference | ModelReference | None = None
+    num_speculative_tokens: int = Field(SPECULATIVE_TOKENS, gt=0)
+    prompt_lookup_min: int | None = Field(None, gt=0)
+    prompt_lookup_max: int | None = Field(None, gt=0)
+
+    @model_validator(mode="after")
+    def check_method(self) -> "Speculative":
+        ngram = self.method == "ngram"
+        if ngram and self.model:
+            raise ValueError("`ngram` drafts from the context; leave out `model`")
+        if not ngram and not self.model:
+            raise ValueError(f"`{self.method}` drafts with a model; name it in `model`")
+        if not ngram and (self.prompt_lookup_min or self.prompt_lookup_max):
+            raise ValueError("`prompt_lookup_min` and `prompt_lookup_max` are for `ngram` only")
+        return self
+
+
 class EndpointSpec(ServingOptions):
     model: BaseModelReference | ModelReference
+    speculative: Speculative | None = None
 
 
 @dataclass(frozen=True)
@@ -46,13 +78,22 @@ class VllmModel:
     adapter_rank: int | None = None
     # The parser the model's `model_type` maps to; None serves it without tool calling.
     tool_parser: str | None = None
+    # Where vLLM finds the speculative `model`, if one drafts.
+    drafter_path: str | None = None
+    drafter_revision: str | None = None
 
 
 # Options whose vLLM flag has another name than the option.
 VLLM_FLAGS = {"prefix_caching": "enable-prefix-caching"}
 
 
-def vllm_args(spec: ServingOptions, model: VllmModel, served_name: str, gpus: int) -> list[str]:
+def vllm_args(
+    spec: ServingOptions,
+    model: VllmModel,
+    served_name: str,
+    gpus: int,
+    speculative: Speculative | None = None,
+) -> list[str]:
     """The `vllm serve` arguments for the spec, shared by Endpoints, `evaluate` and Teachers."""
     # 1. The model, which clients call `served_name`; an Adapter takes the name from its base.
     base_name = f"{served_name}-base" if model.adapter_path else served_name
@@ -67,7 +108,7 @@ def vllm_args(spec: ServingOptions, model: VllmModel, served_name: str, gpus: in
         args += ["--enable-lora", "--lora-modules", lora, "--max-lora-rank", str(rank)]
 
     # 2. The serving options that are set; a boolean one is switched on or off explicitly.
-    options = spec.model_dump(exclude={"model", "tool_parser"}, exclude_none=True)
+    options = spec.model_dump(exclude={"model", "tool_parser", "speculative"}, exclude_none=True)
     for option, value in options.items():
         flag = VLLM_FLAGS.get(option, option.replace("_", "-"))
         if isinstance(value, bool):
@@ -79,4 +120,16 @@ def vllm_args(spec: ServingOptions, model: VllmModel, served_name: str, gpus: in
     tool_parser = spec.tool_parser or model.tool_parser
     if tool_parser:
         args += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
+
+    # 4. Speculative decoding, an Endpoint option only.
+    if speculative:
+        args += ["--speculative-config", json.dumps(speculative_config(speculative, model))]
     return args
+
+
+def speculative_config(speculative: Speculative, model: VllmModel) -> dict:
+    """vLLM's speculative config for the method, drafting with the model vLLM finds."""
+    settings = speculative.model_dump(exclude={"method", "model"}, exclude_none=True)
+    drafter = {"model": model.drafter_path, "revision": model.drafter_revision}
+    drafter = {key: value for key, value in drafter.items() if value}
+    return {**SPECULATIVE_METHODS[speculative.method], **drafter, **settings}

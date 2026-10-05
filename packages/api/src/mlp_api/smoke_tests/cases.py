@@ -39,6 +39,8 @@ class SmokeTestSelection(Strict):
     # Quantizes the Base Model with each scheme and, with a finetune case, its Adapter; `serving`
     # serves each scheme's output.
     quantize: bool = False
+    # Trains each Speculator type for the Base Model; `serving` serves it with each and n-gram.
+    speculate: bool = False
 
 
 COMPLETE_SMOKE_TEST = SmokeTestSelection(
@@ -52,6 +54,7 @@ COMPLETE_SMOKE_TEST = SmokeTestSelection(
     weights=True,
     resume=True,
     quantize=True,
+    speculate=True,
 )
 
 
@@ -181,6 +184,21 @@ def quantize_case_request(case: str, smoke_test: str, model: str) -> dict:
     return {"name": f"{smoke_test}-{case}", "quantize": quantize}
 
 
+def speculate_cases(selection: SmokeTestSelection) -> list[str]:
+    return list(config.SMOKE_TEST_SPECULATE_CASES) if selection.speculate else []
+
+
+def speculate_case_request(case: str, smoke_test: str, base_model: str) -> dict:
+    """The Pipeline Request of one speculate case: its Speculator type for the Base Model."""
+    speculate = {
+        "speculator": config.SMOKE_TEST_SPECULATE_CASES[case],
+        "model": base_model,
+        "dataset": f"dataset:{smoke_test}-sft",
+        "settings": config.SMOKE_TEST_SPECULATE_SETTINGS,
+    }
+    return {"name": f"{smoke_test}-{case}", "speculate": speculate}
+
+
 def evaluate_cases(selection: SmokeTestSelection, trainings: dict) -> dict[str, str | None]:
     """Evaluate case -> the finetune case whose Adapter it evaluates; None for the Base Model."""
     if not selection.evaluate:
@@ -199,28 +217,41 @@ def evaluate_case_request(case: str, smoke_test: str, model: str) -> dict:
     return {"name": f"{smoke_test}-{case}", "evaluate": evaluate}
 
 
-def run_order(sandbox: bool, trainings: dict, quantizations: dict, evaluations: dict) -> list[str]:
+def run_order(
+    sandbox: bool, trainings: dict, quantizations: dict, speculations: list, evaluations: dict
+) -> list[str]:
     """The cases run as Kubeflow nodes, in the order they run."""
     # The `serve` Stage case comes last, as its serve step runs only once its training passed.
     serve_stage = [case for case in trainings if case == config.SMOKE_TEST_SERVE_STAGE_CASE]
     finetunes = [case for case in trainings if case not in serve_stage]
     sandbox_case = [config.SMOKE_TEST_SANDBOX_CASE] if sandbox else []
-    return ["fetch", *sandbox_case, *finetunes, *quantizations, *evaluations, *serve_stage]
+    stages = [*finetunes, *quantizations, *speculations, *evaluations, *serve_stage]
+    return ["fetch", *sandbox_case, *stages]
 
 
 def serving_cases(
     selection: SmokeTestSelection,
     trainings: dict,
     quantizations: dict,
+    speculations: list,
     smoke_test: str,
     base_model: str,
     uploaded_model: str | None,
 ) -> dict[str, dict]:
-    """Serving case -> the model its Endpoint serves, and the case making it, if any."""
+    """Serving case -> the model its Endpoint serves, how it drafts, and the case making either."""
     if not selection.serving:
         return {}
     base, full_weights, adapter, merged, *_ = config.SMOKE_TEST_SERVING_CASES
-    cases = {base: {"model": base_model}, full_weights: {"model": uploaded_model}}
+    cases = {
+        base: {"model": base_model},
+        full_weights: {"model": uploaded_model},
+        config.SMOKE_TEST_NGRAM_CASE: {"model": base_model, "speculative": config.SMOKE_TEST_NGRAM},
+    }
+    for case in speculations:
+        speculator = config.SMOKE_TEST_SPECULATE_CASES[case]
+        drafter = model_reference(f"{smoke_test}-{case}-speculator", 1)
+        speculative = {"method": speculator, "model": drafter}
+        cases[f"serve-{case}"] = {"model": base_model, "speculative": speculative, "made_by": case}
     made_by = {adapter: first_adapter_case(trainings)}
     if config.SMOKE_TEST_MERGED_CASE in trainings:
         made_by[merged] = config.SMOKE_TEST_MERGED_CASE
@@ -231,7 +262,7 @@ def serving_cases(
         if making_case:
             model = model_reference(f"{smoke_test}-{making_case}", 1)
             cases[case] = {"model": model, "made_by": making_case}
-    return cases
+    return {case: cases[case] for case in config.SMOKE_TEST_SERVING_CASES if case in cases}
 
 
 def has_pending_serving_cases(cases: dict[str, str]) -> bool:

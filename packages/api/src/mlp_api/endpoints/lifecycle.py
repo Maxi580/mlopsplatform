@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import Engine, insert, select, update
 
-from mlp_api.endpoints.endpoint_model import find_endpoint_model
+from mlp_api.endpoints.endpoint_model import add_drafter, find_endpoint_model
 from mlp_api.endpoints.manifests import endpoint_manifests
 from mlp_api.endpoints.table import endpoint, not_stopped
 from mlp_api.model_cache.downloads import preview_downloads
@@ -28,13 +28,20 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
         if find_endpoint(state.engine, name) is not None:
             raise EndpointNameTaken(f"Endpoint {name} is already running; stop it or pick a name")
 
-        # 2. What vLLM loads, pinned, with room for a Base Model in the Model Cache.
+        # 2. What vLLM loads, pinned, and what drafts for it, with room for the Base Models in the
+        # Model Cache.
         model = find_endpoint_model(
             spec.model, state.hugging_face, state.model_registry, state.object_store
         )
-        spec = spec.model_copy(update={"model": model.references[0]})
-        if model.base_model:
-            downloads = preview_downloads(state, [model.base_model], None)
+        pinned = {"model": model.references[0]}
+        if spec.speculative:
+            model, drafter = add_drafter(
+                model, spec.speculative, state.hugging_face, state.model_registry
+            )
+            pinned["speculative"] = spec.speculative.model_copy(update={"model": drafter})
+        spec = spec.model_copy(update=pinned)
+        if model.base_models:
+            downloads = preview_downloads(state, model.base_models, None)
             make_room_for_downloads(state, downloads["download_bytes"])
 
         # 3. Its row first, so in-use checks and the reconciler know every Deployment.

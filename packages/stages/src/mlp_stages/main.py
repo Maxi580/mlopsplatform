@@ -15,6 +15,7 @@ STEPS = {
     "distill": "mlp_stages.distill.main:distill",
     "finetune": "mlp_stages.finetune.main:finetune",
     "quantize": "mlp_stages.quantize.main:quantize",
+    "speculate": "mlp_stages.speculate.main:speculate",
     "evaluate": "mlp_stages.evaluate.main:evaluate",
     "serve": "mlp_stages.operations.serve:serve",
     # The Smoke Test's sandbox case.

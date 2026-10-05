@@ -17,6 +17,9 @@ Distill = Annotated[bool, typer.Option(help="First distill the Profile's prompts
 Quantize = Annotated[
     bool, typer.Option(help="Quantize the model as the Profile's quantize block says")
 ]
+Speculate = Annotated[
+    bool, typer.Option(help="Train a Speculator as the Profile's speculate block says")
+]
 
 
 def validate(
@@ -26,9 +29,10 @@ def validate(
     serve: Serve = False,
     distill: Distill = False,
     quantize: Quantize = False,
+    speculate: Speculate = False,
 ) -> None:
     """Check the Pipeline Request built from the CLI Profile, without running anything."""
-    chosen = (finetune, name, evaluate, serve, distill, quantize)
+    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate)
     resolved = send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen)
     typer.echo(yaml.safe_dump(resolved["request"], sort_keys=False))
     typer.echo("Valid")
@@ -41,10 +45,11 @@ def run(
     serve: Serve = False,
     distill: Distill = False,
     quantize: Quantize = False,
+    speculate: Speculate = False,
     dry_run: DryRun = False,
 ) -> None:
     """Submit the Pipeline Request built from the CLI Profile; returns once it is queued."""
-    chosen = (finetune, name, evaluate, serve, distill, quantize)
+    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate)
     if dry_run:
         print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen))
         return
@@ -110,13 +115,16 @@ def send_pipeline_request(
     serve: bool,
     distill: bool,
     quantize: bool,
+    speculate: bool,
 ) -> dict:
     """The API's answer to the Profile's Pipeline Request and Secrets; exits on a rejection."""
     # 1. The request, with only the named Stages and Phases.
     profile = load_profile()
     try:
         phases = [p for p in finetune.split(",") if p]
-        request = build_pipeline_request(profile, name, phases, serve, evaluate, distill, quantize)
+        request = build_pipeline_request(
+            profile, name, phases, serve, evaluate, distill, quantize, speculate
+        )
     except ValueError as error:
         typer.echo(error, err=True)
         raise typer.Exit(1) from None

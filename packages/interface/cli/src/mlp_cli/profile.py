@@ -20,6 +20,7 @@ def build_pipeline_request(
     evaluate: bool = False,
     distill: bool = False,
     quantize: bool = False,
+    speculate: bool = False,
 ) -> dict:
     """A Pipeline Request holding only the named Stages and Phases, in the order named."""
     request = {"name": name or profile.get("name")}
@@ -36,6 +37,8 @@ def build_pipeline_request(
         request["finetune"] = finetune
     if quantize:
         request["quantize"] = profile.get("quantize") or {}
+    if speculate:
+        request["speculate"] = profile.get("speculate") or {}
     if evaluate:
         request["evaluate"] = profile.get("evaluate") or {}
     if serve:

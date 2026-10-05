@@ -150,6 +150,18 @@ def test_distill_adds_the_profiles_distill_block(home, fake_api, platform_ca):
     assert request["finetune"]["phases"][0]["algorithm"] == "sft"
 
 
+def test_speculate_adds_the_profiles_speculate_block(home, fake_api, platform_ca):
+    speculate = {"speculator": "dflash", "dataset": "dataset:chat"}
+    write_profile(home, fake_api.url, platform_ca, **{**PROFILE, "speculate": speculate})
+    fake_api.answers[api_paths.VALIDATE_PIPELINE] = (200, {"request": {}})
+
+    mlp_validate("--finetune", "sft", "--quantize", "--speculate")
+
+    request = sent_submission(fake_api)["request"]
+    assert list(request) == ["name", "finetune", "quantize", "speculate"]
+    assert request["speculate"] == speculate
+
+
 def test_quantize_adds_the_profiles_quantize_block_after_finetune(home, fake_api, platform_ca):
     quantize = {"scheme": "w4a16-gptq", "calibration": {}}
     write_profile(home, fake_api.url, platform_ca, **{**PROFILE, "quantize": quantize})

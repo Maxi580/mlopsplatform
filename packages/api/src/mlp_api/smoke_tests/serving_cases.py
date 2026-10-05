@@ -49,7 +49,8 @@ def serving_case_result(state, name: str, serving: dict, cases: dict, endpoints:
     endpoint = endpoints.get(name)
     if endpoint is None:
         try:
-            start_endpoint(state, name, EndpointSpec(model=serving["model"]))
+            spec = EndpointSpec(model=serving["model"], speculative=serving.get("speculative"))
+            start_endpoint(state, name, spec)
         except Exception:
             logger.exception("Smoke Test Endpoint %s did not start", name)
             return "failed"

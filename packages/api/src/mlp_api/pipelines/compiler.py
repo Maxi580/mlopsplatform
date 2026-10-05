@@ -89,7 +89,7 @@ def compile_pipeline(
 
             # 2. The Stages, one after another in their fixed order; `@distill` is distill's output,
             # `@finetune` the last Phase's or, once every Phase finished, the last one reused.
-            stages, distilled = [], resume.distilled_dataset or ""
+            stages, distilled, quantized = [], resume.distilled_dataset or "", ""
             finetuned = (resume.model_versions or [""])[-1]
             gpus = settings.gpus_per_stage
             if request.distill and not distilled:
@@ -102,6 +102,13 @@ def compile_pipeline(
                     finetuned = phases[-1].outputs["model_version"]
             if request.quantize:
                 stages.append(quantize_step(pipeline_id, request, finetuned, steps, gpus))
+                quantized = stages[-1].outputs["model_version"]
+            if request.speculate:
+                stages.append(
+                    speculate_step(
+                        pipeline_id, request, steps, settings, finetuned, quantized, distilled
+                    )
+                )
             if request.evaluate:
                 evaluated = evaluated_request(request, resume)
                 stages.append(evaluate_step(pipeline_id, evaluated, steps, gpus))
@@ -171,6 +178,9 @@ def compile_smoke_test(
                 case_steps.append(
                     ("quantize", quantize_step(pipeline_id, request, "", steps, gpus))
                 )
+            if request.speculate:
+                speculated = speculate_step(pipeline_id, request, steps, settings)
+                case_steps.append(("speculate", speculated))
             if request.evaluate:
                 case_steps.append(("evaluate", evaluate_step(pipeline_id, request, steps, gpus)))
             if request.serve:
@@ -327,6 +337,56 @@ def quantize_step(
         pipeline_id=str(pipeline_id), request=request.model_dump_json(), finetuned=finetuned
     )
     use_vllm(task, steps, gpus)
+    return task
+
+
+def speculate_step(
+    pipeline_id: int,
+    request: PipelineRequest,
+    steps: StepEnvironment,
+    settings: Settings,
+    finetuned="",
+    quantized="",
+    distilled="",
+):
+    """The step that trains a Speculator and registers it, handed the earlier Stages' outputs."""
+
+    @dsl.container_component
+    def speculate(
+        pipeline_id: str,
+        request: str,
+        finetuned: str,
+        quantized: str,
+        distilled_dataset: str,
+        gpus: str,
+        dataloader_workers: str,
+        model_version: dsl.OutputPath(str),
+    ):
+        return dsl.ContainerSpec(
+            image=steps.stages_image,
+            command=["mlp-stage", "speculate"],
+            args=[
+                pipeline_id,
+                request,
+                finetuned,
+                quantized,
+                distilled_dataset,
+                gpus,
+                dataloader_workers,
+                model_version,
+            ],
+        )
+
+    task = speculate(
+        pipeline_id=str(pipeline_id),
+        request=request.model_dump_json(),
+        finetuned=finetuned,
+        quantized=quantized,
+        distilled_dataset=distilled,
+        gpus=str(settings.gpus_per_stage),
+        dataloader_workers=str(settings.speculate_dataloader_workers),
+    )
+    use_vllm(task, steps, settings.gpus_per_stage)
     return task
 
 

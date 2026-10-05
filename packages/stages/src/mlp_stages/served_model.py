@@ -35,11 +35,17 @@ def served_model(
 
     # 2. Otherwise a vLLM of its own, with the serving options, from the Model Cache.
     loaded = vllm_model(model, scratch)
-    args = vllm_args(options or ServingOptions(), loaded, served_name, gpus)
+    with running_vllm(vllm_args(options or ServingOptions(), loaded, served_name, gpus)):
+        yield config.LOCAL_VLLM_URL, served_name, loaded
+
+
+@contextmanager
+def running_vllm(args: list[str]) -> Iterator[None]:
+    """`vllm serve` with the args, at LOCAL_VLLM_URL until the block ends and frees its GPUs."""
     vllm = subprocess.Popen(["vllm", "serve", *args])
     try:
         wait_until_ready(vllm)
-        yield config.LOCAL_VLLM_URL, served_name, loaded
+        yield
     finally:
         vllm.terminate()
         vllm.wait()

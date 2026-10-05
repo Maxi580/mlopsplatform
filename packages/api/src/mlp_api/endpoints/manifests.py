@@ -19,14 +19,15 @@ def endpoint_manifests(
     model_cache = {"name": "model-cache", "mountPath": config.MODEL_CACHE_PATH}
     models = {"name": "models", "mountPath": config.ENDPOINT_MODEL_DIRECTORY}
 
-    # 1. Before vLLM starts: the Base Model into the Model Cache, and the Model Version files.
+    # 1. Before vLLM starts: the Base Models into the Model Cache, and the Model Version files.
     init_containers = []
-    if model.base_model:
+    if model.base_models:
+        references = ",".join(model.base_models)
         init_containers.append(
             {
                 "name": "fetch",
                 "image": environment.stages_image,
-                "command": ["mlp-stage", "fetch", model_cache_size, model.base_model],
+                "command": ["mlp-stage", "fetch", model_cache_size, references],
                 "env": [{"name": "HF_HOME", "value": config.MODEL_CACHE_PATH}],
                 "volumeMounts": [model_cache],
             }
@@ -52,7 +53,7 @@ def endpoint_manifests(
         "name": "vllm",
         "image": environment.vllm_image,
         "command": ["vllm", "serve"],
-        "args": vllm_args(spec, model.vllm, name, gpus),
+        "args": vllm_args(spec, model.vllm, name, gpus, spec.speculative),
         "env": [
             {"name": "HF_HOME", "value": config.MODEL_CACHE_PATH},
             {"name": "HF_HUB_OFFLINE", "value": "1"},

@@ -109,7 +109,14 @@ def validate_pipeline_request(
             request, secrets.get("hf_token"), hugging_face, engine, model_registry, object_store
         )
 
-    # 9. The model `evaluate` runs on, pinned; the Pipeline's last Model Version unless named. BFCL
+    # 9. What `speculate` reads: full weights, `@quantize` or `@finetune` unless named, and the
+    # conversations it trains on.
+    if request.speculate:
+        errors += pin_speculate(
+            request, secrets.get("hf_token"), hugging_face, engine, model_registry
+        )
+
+    # 10. The model `evaluate` runs on, pinned; the Pipeline's last Model Version unless named. BFCL
     # scores its tool calls as `serve` would parse them, with the parser of the model it came from.
     evaluate = request.evaluate
     if evaluate:
@@ -133,7 +140,7 @@ def validate_pipeline_request(
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
 
-    # 10. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
+    # 11. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
     if request.serve:
         name = request.serve.name = request.serve.name or request.name
         if not is_endpoint_name(name):
@@ -389,6 +396,54 @@ def pin_quantize(
     return errors
 
 
+def pin_speculate(
+    request: PipelineRequest,
+    token: str | None,
+    hugging_face: HuggingFace,
+    engine: Engine,
+    model_registry: MLflow,
+) -> list[dict]:
+    """Every error with its path, after pinning the verifier and the conversations."""
+    # 1. A Stage's output unless named, else a pinned model; a Speculator reads the hidden states of
+    # full weights, as an Adapter served on its base has others.
+    speculate, errors = request.speculate, []
+    model = speculate.model
+    if model is None:
+        model = config.QUANTIZE_OUTPUT if request.quantize else config.FINETUNE_OUTPUT
+    outputs = {config.FINETUNE_OUTPUT: request.finetune, config.QUANTIZE_OUTPUT: request.quantize}
+    try:
+        if model in outputs and outputs[model] is None:
+            stage = model.removeprefix("@")
+            raise ValueError(f"`{stage}` isn't enabled, so name the verifier")
+        if model == config.FINETUNE_OUTPUT and request.finetune.phases[-1].keeps_adapter:
+            raise ValueError(
+                "the last Phase registers an Adapter; set `output: merged` on it, or quantize it"
+            )
+        if model not in outputs:
+            model = pin_served_model(model, token, hugging_face, engine, model_registry)
+            found = model.startswith("model:") and find_referenced_model_version(
+                model_registry, model
+            )
+            if found and found.tags.get("weights") == "adapter":
+                raise ValueError(f"{model} is an Adapter; name full weights, e.g. merged")
+        speculate.model = model
+    except ValueError as reason:
+        errors.append(error(["speculate", "model"], str(reason)))
+
+    # 2. Conversations: messages rows, or the replies `distill` registers.
+    loc = ["speculate", "dataset"]
+    if speculate.dataset == config.DISTILL_OUTPUT and request.distill is None:
+        errors.append(error(loc, "`distill` isn't enabled, so name a Dataset"))
+    elif speculate.dataset != config.DISTILL_OUTPUT:
+        row_formats = config.SPECULATE_ROW_FORMATS
+        reads = f"`speculate` trains on {', '.join(row_formats)} rows"
+        try:
+            speculate.dataset = pin_dataset(engine, speculate.dataset, row_formats, reads)
+        except ValueError as reason:
+            errors.append(error(loc, str(reason)))
+    return errors
+
+
 def is_quantized(
     model: str,
     token: str | None,
@@ -492,7 +547,10 @@ def pin_served_model(
             raise ValueError(f"no Endpoint {name} is running")
         return model
     found = find_referenced_model_version(model_registry, model)
-    return model_reference(found.name, found.version)
+    pinned = model_reference(found.name, found.version)
+    if "speculator" in found.tags:
+        raise ValueError(f"{pinned} is a Speculator; it only drafts for {found.tags['verifier']}")
+    return pinned
 
 
 def pin_tool_parser(

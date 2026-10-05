@@ -32,6 +32,8 @@ from mlp_api.smoke_tests.cases import (
     quantize_cases,
     run_order,
     serving_cases,
+    speculate_case_request,
+    speculate_cases,
 )
 from mlp_core import config
 from mlp_core.pipeline_request.references import model_reference, split_base_model_reference
@@ -53,8 +55,9 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     name = datetime.now(UTC).strftime(config.SMOKE_TEST_NAME)
     trainings = finetune_cases(selection)
     quantizations = quantize_cases(selection, trainings)
+    speculations = speculate_cases(selection)
     evaluations = evaluate_cases(selection, trainings)
-    order = run_order(selection.sandbox, trainings, quantizations, evaluations)
+    order = run_order(selection.sandbox, trainings, quantizations, speculations, evaluations)
     cases = dict.fromkeys(order, "pending")
     pipeline_id = create_pipeline(engine, name, {}, cases=cases)
 
@@ -75,6 +78,8 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             bundled.add("distill")
         if quantizations:
             bundled.add("calibration")
+        if speculations:
+            bundled.add("sft")
         for dataset in bundled:
             path = config.SMOKE_TEST_DATASETS_DIRECTORY / f"{dataset}.jsonl"
             upload_dataset_version(engine, state.object_store, f"{name}-{dataset}", path)
@@ -106,6 +111,13 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")
+        for case in speculations:
+            data = speculate_case_request(case, name, base_model)
+            requests[case], errors = validate_pipeline_request(
+                data, {}, state.hugging_face, engine, state.model_registry, state.object_store
+            )
+            if errors:
+                raise RuntimeError(f"case {case} is invalid: {errors}")
         for case, made_by in evaluations.items():
             model = model_reference(f"{name}-{made_by}", 1) if made_by else base_model
             data = evaluate_case_request(case, name, model)
@@ -114,7 +126,9 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         resolved = {case: request.model_dump(mode="json") for case, request in requests.items()}
 
         # 6. The serving cases, which the reconciler runs once their model exists.
-        serving = serving_cases(selection, trainings, quantizations, name, base_model, uploaded)
+        serving = serving_cases(
+            selection, trainings, quantizations, speculations, name, base_model, uploaded
+        )
         set_pipeline(
             engine,
             pipeline_id,

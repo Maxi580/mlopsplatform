@@ -16,6 +16,7 @@ import {
 import StatusBadge from "../pipelines/StatusBadge";
 import type { ModelCache, RegisteredModel } from "../storage/storage";
 import { type Endpoint, formatSeconds, ratePerSecond } from "./endpoint";
+import SpeculatorPicker, { type Speculative } from "./SpeculatorPicker";
 
 type Notice = { text: string; failed: boolean };
 type PublishedSchema = { $defs: Record<string, Record<string, unknown>> };
@@ -98,7 +99,8 @@ export default function ServingPage() {
       <section className="storage-section">
         <h2>Start an Endpoint</h2>
         <p className="muted">
-          Any Model Version or Base Model; GPUs come from the platform settings.
+          Any Model Version or Base Model, optionally drafting with n-gram or a Speculator; GPUs
+          come from the platform settings.
         </p>
         <StartForm
           onStarted={(name) => {
@@ -178,18 +180,21 @@ function EndpointRow({
   );
 }
 
-/** The model to serve, its Endpoint name and the curated options of the `serve` Stage. */
+/** The model to serve, its Endpoint name, the `serve` Stage's options, and how it drafts. */
 function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   const schema = useApi<PublishedSchema>(SCHEMA).data;
   const models = useApi<RegisteredModel[]>(MODELS).data;
   const cache = useApi<ModelCache>(MODEL_CACHE).data;
   const form = useMemo(() => schema && servingOptionsForm(schema), [schema]);
   const [model, setModel] = useState("");
+  const [speculative, setSpeculative] = useState<Speculative | null>(null);
   const [values, setValues] = useState<FormValues>({ fields: {}, more: {} });
   const [errors, setErrors] = useState<ReturnType<typeof placeErrors>>();
   const [busy, setBusy] = useState(false);
   const suggestions = [
-    ...(models ?? []).flatMap((m) => m.versions.map((v) => `model:${m.name}@${v.version}`)),
+    ...(models ?? []).flatMap((m) =>
+      m.versions.filter((v) => !v.tags?.speculator).map((v) => `model:${m.name}@${v.version}`),
+    ),
     ...(cache?.entries ?? [])
       .filter((entry) => entry.kind === "base_model")
       .map((entry) => entry.reference),
@@ -200,7 +205,11 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   async function start(form: FormSection) {
     setBusy(true);
     setErrors(undefined);
-    const body = { model: model.trim(), ...pipelineRequestFromForm(form, values) };
+    const body = {
+      model: model.trim(),
+      ...pipelineRequestFromForm(form, values),
+      ...(speculative && { speculative }),
+    };
     try {
       const started = await callApi<Endpoint>(ENDPOINTS, body);
       onStarted(started.name);
@@ -256,6 +265,12 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
         errors={errors?.byName ?? {}}
         datasetReferences={[]}
         onChange={setValues}
+      />
+      <SpeculatorPicker
+        models={models ?? []}
+        model={model}
+        value={speculative}
+        onChange={setSpeculative}
       />
       <div className="serve-actions">
         <button type="submit" className="button primary" disabled={busy}>

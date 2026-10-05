@@ -55,9 +55,14 @@ def tool_parser_of(reference: str, model_type: str) -> str:
 
 
 def register_model_version(
-    model_directory: Path, run_id: str, request: PipelineRequest, tags: dict[str, str]
+    model_directory: Path,
+    run_id: str,
+    request: PipelineRequest,
+    tags: dict[str, str],
+    name: str | None = None,
 ) -> str:
-    """The `model:` Reference of the files, logged into the Run as the Pipeline's next version."""
+    """The files' `model:` Reference, logged as the next version of `name` or the Pipeline's."""
+    name = name or request.name
     # 1. The resolved request travels with the weights.
     (model_directory / "pipeline_request.json").write_text(request.model_dump_json(indent=1))
 
@@ -67,17 +72,17 @@ def register_model_version(
 
     # 3. The next Model Version, with its lineage; another Pipeline may create the name first.
     try:
-        client.create_registered_model(request.name)
+        client.create_registered_model(name)
     except MlflowException as error:
         if error.error_code != "RESOURCE_ALREADY_EXISTS":
             raise
     registered = client.create_model_version(
-        request.name,
+        name,
         source=f"{client.get_run(run_id).info.artifact_uri}/model",
         run_id=run_id,
         tags=tags,
     )
-    return model_reference(request.name, int(registered.version))
+    return model_reference(name, int(registered.version))
 
 
 # A template that drops the tools a client sends can't teach or serve tool calls (#16).

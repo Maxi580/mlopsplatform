@@ -37,7 +37,19 @@ const stats: EndpointStatsSummary = {
 const routes: Parameters<typeof fakeApi>[0] = {
   "GET /schema": [200, schema],
   "GET /endpoints": [200, [chat, { ...chat, name: "old", status: "stopped" }]],
-  "GET /models": [200, [{ name: "qwen-sft", versions: [{ version: 2 }] }]],
+  "GET /models": [
+    200,
+    [
+      { name: "qwen-sft", versions: [{ version: 2, tags: { weights: "full" } }] },
+      {
+        name: "qwen-sft-speculator",
+        versions: [
+          { version: 1, tags: { speculator: "eagle3", verifier: "model:qwen-sft@2" } },
+          { version: 2, tags: { speculator: "dflash", verifier: "hf:Qwen/Qwen3@abc" } },
+        ],
+      },
+    ],
+  ],
   "GET /cache": [200, { entries: [{ kind: "base_model", reference: "hf:Qwen/Qwen3@abc" }] }],
   "GET /settings": [200, { gpu_count: 1 }],
 };
@@ -91,6 +103,48 @@ test("an Endpoint starts for a Model Version or Base Model with the curated opti
     name: "sft",
     max_model_len: 8192,
     prefix_caching: false,
+  });
+});
+
+test("only a Speculator trained for the model can be picked to draft for it", async () => {
+  const calls = fakeApi({ ...routes, "POST /endpoints": [201, chat] });
+  renderApp("/serving");
+
+  await userEvent.type(await screen.findByLabelText(/^Model/), "model:qwen-sft@2");
+  const picker = screen.getByLabelText(/^Speculative decoding/);
+  const options = within(picker).getAllByRole("option") as HTMLOptionElement[];
+  expect(options.map((option) => [option.value, option.disabled])).toEqual([
+    ["", false],
+    ["ngram", false],
+    ["model:qwen-sft-speculator@1", false],
+    ["model:qwen-sft-speculator@2", true],
+  ]);
+  await userEvent.selectOptions(picker, "model:qwen-sft-speculator@1");
+  await userEvent.clear(screen.getByLabelText(/^Draft tokens/));
+  await userEvent.type(screen.getByLabelText(/^Draft tokens/), "5");
+  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+
+  await screen.findByText(/Started chat/);
+  expect(calls.find((call) => call.route === "POST /endpoints")!.body.speculative).toEqual({
+    method: "eagle3",
+    model: "model:qwen-sft-speculator@1",
+    num_speculative_tokens: 5,
+  });
+});
+
+test("n-gram drafts without a Speculator", async () => {
+  const calls = fakeApi({ ...routes, "POST /endpoints": [201, chat] });
+  renderApp("/serving");
+
+  await userEvent.selectOptions(await screen.findByLabelText(/^Speculative decoding/), "ngram");
+  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+
+  await screen.findByText(/Started chat/);
+  expect(calls.find((call) => call.route === "POST /endpoints")!.body.speculative).toEqual({
+    method: "ngram",
+    num_speculative_tokens: 3,
+    prompt_lookup_min: 2,
+    prompt_lookup_max: 4,
   });
 });
 
