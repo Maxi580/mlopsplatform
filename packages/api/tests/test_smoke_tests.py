@@ -44,6 +44,8 @@ EVALUATE_CASES = [
 def qwen_on_the_hub(logged_in_api, hugging_face):
     for repo in (QWEN, TINY_QWEN):
         hugging_face.models[repo] = HubModel(COMMIT, needs_remote_code=False, model_type="qwen2")
+    # The assistant-only loss case checks that the Base Model's template marks assistant turns.
+    hugging_face.files[QWEN] = {"chat_template.jinja": b"{% generation %}{% endgeneration %}"}
     # A download leaves its own bookkeeping next to the model files.
     hugging_face.files[TINY_QWEN] = {**FULL_WEIGHTS, ".cache/huggingface/download.lock": b""}
 
@@ -92,6 +94,7 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "fetch",
         "sandbox",
         *GRID_CASES,
+        "sft-assistant-only-hf",
         "uploaded-model",
         "distill-tools-distill",
         "distill-tools",
@@ -141,7 +144,7 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
         ),
         (
             {"finetune": {"phases": ["sft"]}},
-            ["fetch", "sft-lora-hf", "sft-qlora-hf", "sft-full-hf"],
+            ["fetch", "sft-lora-hf", "sft-qlora-hf", "sft-full-hf", "sft-assistant-only-hf"],
         ),
         ({"finetune": {"phases": ["sft"], "methods": ["full"]}}, ["fetch", "sft-full-hf"]),
         ({"finetune": {"phases": ["sft"], "methods": [], "backends": ["hf"]}}, ["fetch"]),
@@ -279,7 +282,7 @@ def phases(cluster, case: str) -> list[dict]:
     return json.loads(parameters["request"]["runtimeValue"]["constant"])["finetune"]["phases"]
 
 
-def test_a_full_case_trains_every_weight_and_the_others_an_adapter(
+def test_a_full_case_trains_every_weight_the_others_an_adapter_one_assistant_only(
     logged_in_api, qwen_on_the_hub, cluster
 ):
     start(logged_in_api, {"finetune": {"phases": ["sft"]}})
@@ -289,9 +292,11 @@ def test_a_full_case_trains_every_weight_and_the_others_an_adapter(
         "sft-lora-hf": "lora",
         "sft-qlora-hf": "qlora",
         "sft-full-hf": "full",
+        "sft-assistant-only-hf": "lora",
     }
     assert trained["sft-full-hf"]["lora"] is None
     assert trained["sft-qlora-hf"]["lora"]["r"] == 8
+    assert trained["sft-assistant-only-hf"]["settings"]["assistant_only_loss"] is True
 
 
 def test_the_weight_cases_try_rslora_merged_outputs_and_a_full_phase_after_an_adapter(
@@ -423,6 +428,7 @@ def test_each_case_reports_its_own_result(logged_in_api, qwen_on_the_hub, cluste
     assert smoke_test(logged_in_api)["cases"] == {
         "fetch": "failed",
         "sft-lora-hf": "pending",
+        "sft-assistant-only-hf": "pending",
         "uploaded-model": "pending",
     }
 
@@ -440,6 +446,7 @@ def test_a_failed_case_does_not_stop_the_others(logged_in_api, qwen_on_the_hub, 
     assert found["cases"] == {
         "fetch": "failed",
         "sft-lora-hf": "passed",
+        "sft-assistant-only-hf": "failed",
         "uploaded-model": "failed",
     }
 
@@ -453,6 +460,7 @@ def test_a_case_that_never_ran_in_a_finished_run_failed(logged_in_api, qwen_on_t
     assert smoke_test(logged_in_api)["cases"] == {
         "fetch": "passed",
         "sft-lora-hf": "failed",
+        "sft-assistant-only-hf": "failed",
         "uploaded-model": "failed",
     }
 
@@ -517,6 +525,7 @@ def test_cancelling_a_smoke_test_fails_its_unfinished_cases(
     assert smoke_test(logged_in_api)["cases"] == {
         "fetch": "passed",
         "sft-lora-hf": "failed",
+        "sft-assistant-only-hf": "failed",
         "uploaded-model": "failed",
     }
 
@@ -538,6 +547,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "fetch",
         "sandbox",
         *GRID_CASES,
+        "sft-assistant-only-hf",
         "uploaded-model",
         "distill-tools",
         "sft-dpo-chain",

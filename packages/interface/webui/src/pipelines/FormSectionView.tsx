@@ -105,7 +105,10 @@ function FieldInput({
     name: field.name,
     value,
     "aria-invalid": !!errors,
-    "aria-describedby": errors ? `${field.name}-error` : undefined,
+    "aria-describedby":
+      [field.description && `${field.name}-info`, errors && `${field.name}-error`]
+        .filter(Boolean)
+        .join(" ") || undefined,
     onChange: (event: { target: { value: string } }) => onChange(event.target.value),
   };
 
@@ -140,6 +143,11 @@ function FieldInput({
             <option key={reference} value={reference} />
           ))}
         </datalist>
+      )}
+      {field.description && (
+        <p className="field-info" id={`${field.name}-info`}>
+          {field.description}
+        </p>
       )}
       <FieldErrors id={`${field.name}-error`} messages={errors} />
     </div>

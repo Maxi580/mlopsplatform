@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import pytest
 from sqlalchemy import create_engine
 
@@ -91,10 +94,15 @@ def model_registry():
 
 
 @pytest.fixture
-def validate(hugging_face, engine, chat_dataset, model_registry):
+def object_store():
+    return FakeObjectStore()
+
+
+@pytest.fixture
+def validate(hugging_face, engine, chat_dataset, model_registry, object_store):
     def run(request, secrets=None):
         return validate_pipeline_request(
-            request, secrets or {}, hugging_face, engine, model_registry
+            request, secrets or {}, hugging_face, engine, model_registry, object_store
         )
 
     return run
@@ -484,3 +492,103 @@ def test_finetune_starts_from_exactly_one_model(validate, model_registry, both):
         del request["finetune"]["from"]
 
     assert "exactly one" in rejection(validate(request))
+
+
+MARKED_TEMPLATE = (
+    "{% for m in messages %}{% if m.role == 'assistant' %}{%- generation %}{{ m.content }}"
+    "{% endgeneration %}{% else %}{{ m.content }}{% endif %}{% endfor %}"
+)
+UNMARKED_TEMPLATE = "{% for m in messages %}{{ m.content }}{% endfor %}"
+ASSISTANT_ONLY = {"assistant_only_loss": True}
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"chat_template.jinja": MARKED_TEMPLATE.encode()},
+        {"tokenizer_config.json": json.dumps({"chat_template": MARKED_TEMPLATE}).encode()},
+    ],
+    ids=["jinja-file", "tokenizer-config"],
+)
+def test_assistant_only_loss_trains_with_a_template_that_marks_assistant_turns(
+    validate, hugging_face, files
+):
+    hugging_face.files[BASE_MODEL] = files
+
+    request, errors = validate(pipeline_request(settings=ASSISTANT_ONLY))
+
+    assert errors == []
+    assert request.finetune.phases[0].settings.assistant_only_loss is True
+
+
+def test_assistant_only_loss_is_rejected_for_a_template_without_generation_markers(
+    validate, hugging_face
+):
+    hugging_face.files[BASE_MODEL] = {"chat_template.jinja": UNMARKED_TEMPLATE.encode()}
+
+    message = rejection(validate(pipeline_request(settings=ASSISTANT_ONLY)))
+
+    assert "'settings', 'assistant_only_loss']" in message
+    assert "doesn't mark the assistant's turns with `{% generation %}`" in message
+
+
+def test_a_template_trl_swaps_for_a_training_template_needs_no_markers(
+    validate, hugging_face, tmp_path, monkeypatch
+):
+    # TRL brings marked versions of known templates, e.g. Qwen2.5's, and trains with those.
+    known = tmp_path / "TrainingChatTemplates.json"
+    known.write_text(json.dumps([hashlib.sha256(UNMARKED_TEMPLATE.encode()).hexdigest()]))
+    monkeypatch.setattr(config, "TRAINING_CHAT_TEMPLATES", known)
+    hugging_face.files[BASE_MODEL] = {"chat_template.jinja": UNMARKED_TEMPLATE.encode()}
+
+    _, errors = validate(pipeline_request(settings=ASSISTANT_ONLY))
+
+    assert errors == []
+
+
+def test_assistant_only_loss_is_rejected_for_a_model_without_a_chat_template(
+    validate, hugging_face
+):
+    hugging_face.files[BASE_MODEL] = {"tokenizer_config.json": b"{}"}
+
+    assert "has no chat template" in rejection(validate(pipeline_request(settings=ASSISTANT_ONLY)))
+
+
+def test_the_template_of_a_model_version_to_start_from_is_read_from_its_files(
+    validate, model_registry, object_store
+):
+    files = {"model.safetensors": b"weights", "chat_template.jinja": UNMARKED_TEMPLATE.encode()}
+    register(model_registry, object_store, "uploaded", 1, files=files, weights="full")
+    request = starting_from("model:uploaded@1")
+    request["finetune"]["phases"][0]["settings"].update(ASSISTANT_ONLY)
+
+    assert "model:uploaded@1's chat template doesn't mark" in rejection(validate(request))
+
+
+@pytest.mark.parametrize(
+    ("row", "message"),
+    [
+        ('{"prompt": "Hi", "completion": "Hello"}', "prompt_completion rows train only on"),
+        ('{"text": "Hi"}', "is for messages rows"),
+    ],
+)
+def test_assistant_only_loss_is_only_for_messages_rows(validate, engine, tmp_path, row, message):
+    upload_rows(engine, tmp_path, "rows", row)
+    request = pipeline_request(settings=ASSISTANT_ONLY, phase={"dataset": "dataset:rows"})
+
+    assert message in rejection(validate(request))
+
+
+def test_assistant_only_loss_is_only_an_sft_setting(validate, preference_datasets):
+    request = pipeline_request()
+    request["finetune"]["phases"].append(then("dpo", "dataset:pairs"))
+    request["finetune"]["phases"][1]["settings"].update(ASSISTANT_ONLY)
+
+    assert "`assistant_only_loss` is not a DPOConfig setting" in rejection(validate(request))
+
+
+def test_a_phase_leaving_assistant_only_loss_out_passes_trl_no_value_for_it(validate):
+    request, errors = validate(pipeline_request())
+
+    assert errors == []
+    assert "assistant_only_loss" not in request.finetune.phases[0].settings.model_dump()

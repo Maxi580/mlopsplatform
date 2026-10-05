@@ -62,6 +62,9 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[dict,
         if method in config.BACKENDS[backend]
     }
     adapter_case = first_adapter_case(cases)
+    if "sft" in chosen.phases and "lora" in chosen.methods:
+        phases = (config.SMOKE_TEST_ASSISTANT_ONLY_PHASE,)
+        cases.update({f"sft-assistant-only-{b}": (phases, b) for b in chosen.backends})
     if selection.uploaded_model:
         cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_TRAINING
     if selection.distill:
@@ -133,7 +136,7 @@ def phase_request(earlier: dict | None, phase: dict, dataset: str) -> dict:
         "dataset": dataset,
         "method": phase["method"],
         "output": phase.get("output", "adapter"),
-        "settings": {**config.SMOKE_TEST_PHASE["settings"], **length},
+        "settings": {**config.SMOKE_TEST_PHASE["settings"], **length, **phase.get("settings", {})},
         # After a kept Adapter, a Phase continues it, so only the others set `lora`.
         **(
             {"lora": {**config.SMOKE_TEST_PHASE["lora"], **phase.get("lora", {})}}

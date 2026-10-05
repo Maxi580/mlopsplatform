@@ -1,14 +1,21 @@
 # Run with the trainer image's versions:
 # uv run --with trl==X --with peft==Y python -m mlp_core.pipeline_request.generate_trainer_configs
 import dataclasses
+import hashlib
 import json
 import typing
+from pathlib import Path
 
 import peft
 import trl
 from pydantic import TypeAdapter
 
-from mlp_core.config import ALGORITHMS, LORA_CONFIG, TRAINER_CONFIGS_DIRECTORY
+from mlp_core.config import (
+    ALGORITHMS,
+    LORA_CONFIG,
+    TRAINER_CONFIGS_DIRECTORY,
+    TRAINING_CHAT_TEMPLATES,
+)
 
 
 def inline_definitions(schema: dict) -> dict:
@@ -71,6 +78,17 @@ def main() -> None:
             continue
         schema = json.dumps(config_schema(config), indent=1)
         (TRAINER_CONFIGS_DIRECTORY / f"{name}.json").write_text(schema + "\n")
+    templates = training_chat_template_hashes(Path(trl.__file__).parent / "chat_templates")
+    TRAINING_CHAT_TEMPLATES.write_text(json.dumps(templates, indent=1) + "\n")
+
+
+# TRL swaps `<family>.jinja` for `<family>_training.jinja`, which marks assistant turns.
+def training_chat_template_hashes(directory: Path) -> list[str]:
+    return sorted(
+        hashlib.sha256(template.read_text(encoding="utf-8").encode()).hexdigest()
+        for template in directory.glob("*.jinja")
+        if template.with_name(f"{template.stem}_training.jinja").exists()
+    )
 
 
 if __name__ == "__main__":

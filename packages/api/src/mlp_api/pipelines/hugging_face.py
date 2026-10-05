@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 from huggingface_hub.errors import HfHubHTTPError
 
 from mlp_core import config
@@ -51,6 +51,15 @@ class HuggingFace:
         except (HfHubHTTPError, httpx.HTTPError):
             return None
         return sum(file.size or 0 for file in info.siblings or [])
+
+    def model_file(self, repo: str, commit: str, path: str, token: str | None) -> bytes | None:
+        """One file of the model at the commit, or None if it has none or Hugging Face fails."""
+        try:
+            return Path(
+                hf_hub_download(repo, path, revision=commit, token=token or False)
+            ).read_bytes()
+        except (HfHubHTTPError, httpx.HTTPError):
+            return None
 
     def download_model(self, repo: str, commit: str, directory: Path) -> None:
         snapshot_download(repo, revision=commit, local_dir=directory, token=False)

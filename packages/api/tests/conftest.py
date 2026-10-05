@@ -78,6 +78,9 @@ class FakeHuggingFace:
     def model_size(self, repo, commit, token):
         return self.sizes.get(repo)
 
+    def model_file(self, repo, commit, path, token):
+        return self.files.get(repo, {}).get(path)
+
     def download_model(self, repo, commit, directory):
         for path, content in self.files[repo].items():
             (directory / path).parent.mkdir(parents=True, exist_ok=True)

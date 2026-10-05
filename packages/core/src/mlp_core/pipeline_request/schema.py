@@ -1,9 +1,18 @@
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    model_serializer,
+    model_validator,
+)
 
 from mlp_core.config import (
     ALGORITHMS,
+    ASSISTANT_ONLY_LOSS_INFOBOX,
     BACKENDS,
     BENCHMARKS,
     DISTILL_OUTPUT,
@@ -43,6 +52,18 @@ class PhaseSettings(TrainerSettings):
     num_train_epochs: float
     per_device_train_batch_size: int
     gradient_accumulation_steps: int
+    # An SFTConfig setting, a field of its own for its infobox; validation checks the rest.
+    assistant_only_loss: bool | None = Field(
+        None, title="Assistant-only loss (sft)", description=ASSISTANT_ONLY_LOSS_INFOBOX
+    )
+
+    # Left out, it reaches no TRL config, as only SFTConfig has it.
+    @model_serializer(mode="wrap")
+    def without_unset_assistant_only_loss(self, serialize) -> dict:
+        settings = serialize(self)
+        if settings.get("assistant_only_loss") is None:
+            settings.pop("assistant_only_loss", None)
+        return settings
 
 
 # Checked against PEFT's LoraConfig.

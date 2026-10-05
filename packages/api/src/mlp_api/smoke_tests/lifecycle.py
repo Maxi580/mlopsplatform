@@ -83,7 +83,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         for case, training in trainings.items():
             data = finetune_case_request(case, name, starting_models[case], *training)
             requests[case], errors = validate_pipeline_request(
-                data, {}, state.hugging_face, engine, state.model_registry
+                data, {}, state.hugging_face, engine, state.model_registry, state.object_store
             )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")

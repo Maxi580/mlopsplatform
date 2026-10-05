@@ -20,6 +20,8 @@ export type FormField = {
   fixed?: unknown;
   choices?: unknown[];
   pattern?: string;
+  // Shown next to the field, e.g. what `assistant_only_loss` does.
+  description?: string;
 };
 
 export type FormNode = FormSection | FormField;
@@ -95,7 +97,6 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
   title = schema.title ?? humanize(title);
   const child = (key: string) => (name ? `${name}.${key}` : key);
   if ("const" in node) return { kind: "fixed", name, title, fixed: node.const };
-  if ("enum" in node) return { kind: "choice", name, title, choices: node.enum };
   if (types.has("object")) {
     const children = Object.entries(node.properties ?? {}).map(([key, value]) =>
       nodeOf(value as Schema, defs, child(key), key),
@@ -115,16 +116,22 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
     );
     return { kind: "section", name, title, children, moreSettings: false, optional };
   }
+  const description = schema.description ?? node.description;
+  return { ...fieldOf(node, defs, types), name, title, ...(description && { description }) };
+}
+
+function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {
+  if ("enum" in node) return { kind: "choice" as const, choices: node.enum };
   // A list of values from a fixed set, such as benchmarks from the catalog.
   const items = node.type === "array" ? resolveRef(node.items, defs) : undefined;
-  if (items?.enum) return { kind: "choices", name, title, choices: items.enum };
-  if (types.has("boolean")) return { kind: "choice", name, title, choices: [true, false] };
-  if (types.has("array")) return { kind: "list", name, title };
-  if (types.has("integer")) return { kind: "integer", name, title };
-  if (types.has("number")) return { kind: "number", name, title };
+  if (items?.enum) return { kind: "choices" as const, choices: items.enum };
+  if (types.has("boolean")) return { kind: "choice" as const, choices: [true, false] };
+  if (types.has("array")) return { kind: "list" as const };
+  if (types.has("integer")) return { kind: "integer" as const };
+  if (types.has("number")) return { kind: "number" as const };
   // An optional value's pattern sits on its non-null option.
   const pattern = node.pattern ?? node.anyOf?.find((option: Schema) => option.pattern)?.pattern;
-  return { kind: "text", name, title, pattern };
+  return { kind: "text" as const, pattern };
 }
 
 function humanize(key: string): string {

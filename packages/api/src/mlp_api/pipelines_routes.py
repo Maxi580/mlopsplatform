@@ -129,6 +129,7 @@ def resolve(submission: Submission, request: Request) -> PipelineRequest:
         request.app.state.hugging_face,
         request.app.state.engine,
         request.app.state.model_registry,
+        request.app.state.object_store,
     )
     if errors:
         raise HTTPException(422, errors)

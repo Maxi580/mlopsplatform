@@ -204,3 +204,39 @@ test("the benchmark picker shows each benchmark's category, description and size
   const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
   expect(submitted.request.evaluate).toEqual({ benchmarks: ["lm_eval:gsm8k", "lm_eval:mmlu"] });
 });
+
+test("a setting with a description shows it as an infobox next to the setting", async () => {
+  const infobox = "Off: the model learns from every token of a conversation.";
+  const settings = {
+    type: "object",
+    title: "Settings",
+    properties: {
+      assistant_only_loss: {
+        anyOf: [{ type: "boolean" }, { type: "null" }],
+        default: null,
+        title: "Assistant-only loss (sft)",
+        description: infobox,
+      },
+    },
+  };
+  const withAssistantOnly = {
+    type: "object",
+    properties: { finetune: { type: "object", title: "Finetune", properties: { settings } } },
+  };
+  const calls = fakeApi({
+    "GET /schema": [200, withAssistantOnly],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 7 }],
+  });
+  renderApp("/pipelines/new");
+
+  const setting = await screen.findByLabelText(/^Assistant-only loss/);
+  expect(setting).toHaveAccessibleDescription(infobox);
+  await userEvent.selectOptions(setting, "true");
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+  await screen.findByText(/Submitted Pipeline 7/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.finetune.settings).toEqual({ assistant_only_loss: true });
+});

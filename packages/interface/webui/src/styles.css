@@ -638,6 +638,14 @@ select[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
+.field-info {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+
 .field-error,
 .error {
   margin: 0;

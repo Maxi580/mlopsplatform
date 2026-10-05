@@ -7,6 +7,20 @@ from mlp_core import api_paths
 # Pipeline Request
 # JSON Schemas of the TRL/PEFT config classes, written by generate_trainer_configs.py.
 TRAINER_CONFIGS_DIRECTORY = Path(__file__).parent / "pipeline_request" / "trainer_configs"
+# SHA-256 of each chat template TRL trains with a version of its own that marks assistant turns.
+TRAINING_CHAT_TEMPLATES = TRAINER_CONFIGS_DIRECTORY / "TrainingChatTemplates.json"
+# Marks a template's assistant turns, which `assistant_only_loss` needs; TRL checks the same.
+GENERATION_MARKER = re.compile(r"\{%-?\s*generation\s*-?%\}")
+# The README carries the same text.
+ASSISTANT_ONLY_LOSS_INFOBOX = (
+    "Off: the model learns from every token of a conversation, including what the user wrote, so "
+    "it also learns to imitate users and tool results. On: only the assistant's replies count "
+    "towards the loss; everything else is context it reads but isn't graded on. Turn it on for "
+    "chat and instruction tuning where the user turns aren't text you want the model to produce. "
+    "Leave it off to teach the model the whole conversation style, or when your data is mostly "
+    "assistant text anyway. Requires a chat template that marks assistant turns (checked at "
+    "submit on the `hf` backend)."
+)
 # Training backend -> the weight methods it supports.
 BACKENDS = {"hf": ("lora", "qlora", "full")}
 # Every algorithm's blocked settings: where outputs go, where they are logged, how they are
@@ -317,6 +331,13 @@ SMOKE_TEST_WEIGHT_CASES = {
         ({"algorithm": "sft", "method": "lora"}, {"algorithm": "dpo", "method": "full"}),
         "hf",
     ),
+}
+# With `sft` and `lora` chosen, one case per backend trains it with assistant-only loss, named
+# `sft-assistant-only-<backend>`; the Base Model's template is one TRL marks itself.
+SMOKE_TEST_ASSISTANT_ONLY_PHASE = {
+    "algorithm": "sft",
+    "method": "lora",
+    "settings": {"assistant_only_loss": True},
 }
 # Trains SMOKE_TEST_TRAINING in a step that stops after its first Checkpoint, as a cancel would,
 # then in a step that continues from that Checkpoint.

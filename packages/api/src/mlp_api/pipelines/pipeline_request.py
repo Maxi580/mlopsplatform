@@ -10,12 +10,15 @@ from mlp_api.endpoints.lifecycle import find_endpoint
 from mlp_api.models.mlflow import MLflow
 from mlp_api.models.registry import find_referenced_model_version, pin_full_weights
 from mlp_api.models.upload_checks import adapter_problems
+from mlp_api.pipelines.chat_template import assistant_mask_problem
 from mlp_api.pipelines.hugging_face import HuggingFace, find_base_model, pin_base_model
+from mlp_api.storage.object_store import ObjectStore
 from mlp_core import config
 from mlp_core.endpoint_spec import EndpointName, ServingOptions
 from mlp_core.pipeline_request.references import (
     dataset_reference,
     model_reference,
+    split_base_model_reference,
     split_dataset_reference,
     split_endpoint_reference,
 )
@@ -28,6 +31,7 @@ def validate_pipeline_request(
     hugging_face: HuggingFace,
     engine: Engine,
     model_registry: MLflow,
+    object_store: ObjectStore,
 ) -> tuple[PipelineRequest | None, list[dict]]:
     """The request with every Reference pinned, or None and every error with its path."""
     # 1. The schema: required values, types, no unknown fields.
@@ -45,6 +49,7 @@ def validate_pipeline_request(
 
     # 4. The starting model: the Base Model on Hugging Face, or a full-weight Model Version.
     finetune = request.finetune
+    starting_model_found = False
     try:
         if finetune and finetune.base_model:
             finetune.base_model = pin_base_model(
@@ -52,6 +57,7 @@ def validate_pipeline_request(
             )
         elif finetune:
             finetune.from_ = pin_full_weights(model_registry, finetune.from_)
+        starting_model_found = True
     except ValueError as reason:
         errors.append(
             error(["finetune", "base_model" if finetune.base_model else "from"], str(reason))
@@ -74,7 +80,13 @@ def validate_pipeline_request(
             except ValueError as reason:
                 errors.append(error(loc, str(reason)))
 
-    # 6. Each Phase's Teacher: a pinned Base Model or Model Version.
+    # 6. `assistant_only_loss` on messages rows, which the starting model's template can mask.
+    if finetune and starting_model_found:
+        errors += assistant_only_loss_errors(
+            request, secrets.get("hf_token"), hugging_face, engine, model_registry, object_store
+        )
+
+    # 7. Each Phase's Teacher: a pinned Base Model or Model Version.
     for index, phase in enumerate(finetune.phases if finetune else []):
         if phase.teacher:
             try:
@@ -84,7 +96,7 @@ def validate_pipeline_request(
             except ValueError as reason:
                 errors.append(error(["finetune", "phases", index, "teacher"], str(reason)))
 
-    # 7. The model `evaluate` runs on, pinned; `finetune`'s output unless named. BFCL scores its
+    # 8. The model `evaluate` runs on, pinned; `finetune`'s output unless named. BFCL scores its
     # tool calls as `serve` would parse them, with the parser of the model `finetune` starts from.
     evaluate = request.evaluate
     if evaluate:
@@ -106,7 +118,7 @@ def validate_pipeline_request(
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
 
-    # 8. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
+    # 9. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
     if request.serve:
         name = request.serve.name = request.serve.name or request.name
         if not is_endpoint_name(name):
@@ -277,6 +289,66 @@ def pin_distill(
         except ValueError as reason:
             errors.append(error(["distill", "tools"], str(reason)))
     return errors
+
+
+def assistant_only_loss_errors(
+    request: PipelineRequest,
+    token: str | None,
+    hugging_face: HuggingFace,
+    engine: Engine,
+    model_registry: MLflow,
+    object_store: ObjectStore,
+) -> list[dict]:
+    """An error for each Phase whose `assistant_only_loss` can't keep to the assistant's turns."""
+    finetune = request.finetune
+    # Every Phase renders with the starting model's template, so it is read at most once.
+    mask_problem = None
+    if finetune.backend == "hf" and any(p.settings.assistant_only_loss for p in finetune.phases):
+        read = model_file_reader(
+            finetune.starting_model, token, hugging_face, model_registry, object_store
+        )
+        mask_problem = assistant_mask_problem(finetune.starting_model, read)
+    errors = []
+    for index, phase in enumerate(finetune.phases):
+        if not phase.settings.assistant_only_loss:
+            continue
+        loc = ["finetune", "phases", index, "settings", "assistant_only_loss"]
+        # 1. Messages rows; prompt-completion rows keep TRL's completion-only loss (#24).
+        if phase.dataset == config.DISTILL_OUTPUT:
+            row_format = config.DISTILLATION_ROW_FORMAT
+        else:
+            pinned = find_dataset_version(engine, *split_dataset_reference(phase.dataset))
+            row_format = pinned and pinned.row_format
+        if row_format == "prompt_completion":
+            msg = "prompt_completion rows train only on the completion already; leave it out"
+            errors.append(error(loc, msg))
+        elif row_format and row_format != "messages":
+            errors.append(error(loc, f"is for messages rows, not {row_format} rows"))
+        # 2. On `hf`, a chat template TRL can mask.
+        elif mask_problem:
+            errors.append(error(loc, mask_problem))
+    return errors
+
+
+def model_file_reader(
+    model: str,
+    token: str | None,
+    hugging_face: HuggingFace,
+    model_registry: MLflow,
+    object_store: ObjectStore,
+):
+    """Reads one file of the pinned Base Model or Model Version, or None if it has none."""
+    if model.startswith("hf:"):
+        repo, commit = split_base_model_reference(model)
+        return lambda path: hugging_face.model_file(repo, commit, path, token)
+    found = find_referenced_model_version(model_registry, model)
+    bucket = model_registry.artifact_bucket
+    keys = {item["Key"] for item in object_store.list_objects(bucket, found.artifact_prefix)}
+    return lambda path: (
+        object_store.read(bucket, found.artifact_prefix + path)
+        if found.artifact_prefix + path in keys
+        else None
+    )
 
 
 def pin_dataset(engine: Engine, reference: str, row_formats, reader: str) -> str:
