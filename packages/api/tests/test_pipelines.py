@@ -370,7 +370,7 @@ def test_each_phase_trains_in_its_own_step_from_the_model_version_the_one_before
 
     pipeline, _ = submitted_pipeline(cluster)
     tasks = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"]
-    assert list(tasks) == ["fetch", "finetune", "finetune-2"]
+    assert set(tasks) == {"fetch", "finetune", "finetune-2"}
     sft, dpo = tasks["finetune"], tasks["finetune-2"]
     assert (sft["taskInfo"]["name"], dpo["taskInfo"]["name"]) == ("finetune-sft", "finetune-dpo")
     assert dpo["dependentTasks"] == ["finetune"]
