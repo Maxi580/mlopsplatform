@@ -5,8 +5,9 @@ import pytest
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.hugging_face import HubModel
 from mlp_api.pipelines.reconciler import reconcile_once
-from mlp_core import api_paths
+from mlp_core import api_paths, config
 
+from .test_endpoint_stats import IDLE, SERVED
 from .test_endpoints import register_adapter
 from .test_model_uploads import FULL_WEIGHTS
 from .test_models import models, register
@@ -630,19 +631,46 @@ def test_the_adapter_case_fails_with_its_finetune_case(logged_in_api, qwen_on_th
     assert f"{name}-serve-adapter" not in running_endpoints(logged_in_api)
 
 
-def test_a_serving_case_passes_once_vllm_is_ready_and_then_stops_its_endpoint(
+def test_a_serving_case_passes_once_its_endpoint_answered_a_chat_request_and_then_stops_it(
     logged_in_api, qwen_on_the_hub, cluster
 ):
     name = start(logged_in_api).json()["name"]
     reconcile(logged_in_api)
     cluster.endpoint_states[f"{name}-serve-base-model"] = "running"
+    cluster.metrics[f"{name}-serve-base-model"] = SERVED
     cluster.endpoint_states[f"{name}-serve-full-weights"] = "failed"
 
     reconcile(logged_in_api)
 
     cases = smoke_test(logged_in_api)["cases"]
     assert (cases["serve-base-model"], cases["serve-full-weights"]) == ("passed", "failed")
+    assert cluster.chat_requests == [(f"{name}-serve-base-model", config.SMOKE_TEST_CHAT_REQUEST)]
     assert cluster.endpoints == {}
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        # vLLM is ready but doesn't answer.
+        None,
+        # Its stats count no finished request.
+        IDLE,
+    ],
+    ids=["unreachable", "idle"],
+)
+def test_a_serving_case_fails_unless_its_stats_count_the_chat_request(
+    logged_in_api, qwen_on_the_hub, cluster, metrics
+):
+    name = start(logged_in_api, {"serving": True}).json()["name"]
+    reconcile(logged_in_api)
+    cluster.endpoint_states[f"{name}-serve-base-model"] = "running"
+    if metrics:
+        cluster.metrics[f"{name}-serve-base-model"] = metrics
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["serve-base-model"] == "failed"
+    assert f"{name}-serve-base-model" not in running_endpoints(logged_in_api)
 
 
 def test_a_smoke_test_finishes_once_its_serving_cases_did(
@@ -658,6 +686,7 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
     waiting = smoke_test(logged_in_api)["status"]
     for case in SERVING_CASES:
         cluster.endpoint_states[f"{name}-{case}"] = "running"
+        cluster.metrics[f"{name}-{case}"] = SERVED
     reconcile(logged_in_api)
     reconcile(logged_in_api)
 

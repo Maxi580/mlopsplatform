@@ -1,7 +1,8 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { fakeApi, renderApp } from "../testApi";
-import type { Endpoint } from "./endpoint";
+import type { Endpoint, EndpointStatsSummary } from "./endpoint";
 
 const schema = {
   type: "object",
@@ -24,6 +25,14 @@ const chat: Endpoint = {
   status: "running",
   url: "/endpoints/chat/v1",
   created_at: "2026-10-02T08:30:00+00:00",
+  stats: null,
+};
+const stats: EndpointStatsSummary = {
+  running: 3,
+  waiting: 1,
+  generation_tokens: 1000,
+  read_at: "2026-10-02T09:00:00+00:00",
+  time_to_first_token_p50: 0.123,
 };
 const routes: Parameters<typeof fakeApi>[0] = {
   "GET /schema": [200, schema],
@@ -41,7 +50,10 @@ test("Endpoints are listed with model, status and URL", async () => {
   for (const text of ["model:qwen-sft@2", "running"]) {
     expect(within(row).getByText(text)).toBeInTheDocument();
   }
-  expect(within(row).getByRole("link")).toHaveAttribute("href", "/endpoints/chat/v1");
+  expect(within(row).getByRole("link", { name: "/endpoints/chat/v1" })).toHaveAttribute(
+    "href",
+    "/endpoints/chat/v1",
+  );
   const stopped = screen.getByText("old").closest("tr")!;
   expect(within(stopped).queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
   expect(within(stopped).queryByRole("link")).not.toBeInTheDocument();
@@ -107,4 +119,42 @@ test("a start the API refuses outright shows its reason", async () => {
   await userEvent.click(await screen.findByRole("button", { name: /start/i }));
 
   expect(await screen.findByText("Endpoint chat is already running")).toBeInTheDocument();
+});
+
+test("an Endpoint's load and TTFT show in its row, and its name links to its stats", async () => {
+  fakeApi({ ...routes, "GET /endpoints": [200, [{ ...chat, stats }]] });
+  renderApp("/serving");
+
+  const name = await screen.findByRole("link", { name: "chat" });
+  const cells = within(name.closest("tr")!).getAllByRole("cell");
+  expect(cells.slice(3, 6).map((cell) => cell.textContent)).toEqual([
+    "3 running · 1 waiting",
+    // Tokens/s takes two readings.
+    "—",
+    "123 ms",
+  ]);
+  expect(name).toHaveAttribute("href", "/serving/chat");
+});
+
+test("an Endpoint without stats shows dashes", async () => {
+  fakeApi({ ...routes, "GET /endpoints": [200, [{ ...chat, status: "pending" }]] });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const cells = within(row).getAllByRole("cell");
+  expect(cells.slice(3, 6).map((cell) => cell.textContent)).toEqual(["—", "—", "—"]);
+});
+
+test("tokens/s is the generated tokens between two readings", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const readings = [stats, { ...stats, generation_tokens: 1500, read_at: "2026-10-02T09:00:10Z" }];
+  fakeApi({ ...routes, "GET /endpoints": () => [200, [{ ...chat, stats: readings.shift() }]] });
+  renderApp("/serving");
+  await screen.findByText("3 running · 1 waiting");
+
+  await act(() => vi.advanceTimersByTimeAsync(ENDPOINT_LIST_REFRESH_MS));
+
+  const row = screen.getByRole("link", { name: "chat" }).closest("tr")!;
+  expect(within(row).getAllByRole("cell")[4]).toHaveTextContent("50.0");
+  vi.useRealTimers();
 });

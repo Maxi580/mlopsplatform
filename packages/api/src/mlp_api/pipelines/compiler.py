@@ -206,7 +206,7 @@ def distill_step(
 
     # 1. Only a Base Model or Model Version Teacher runs here, on GPUs; the others have a URL.
     api_url = request.distill.api_url
-    teacher_url = api_url or endpoint_service_url(request.distill.teacher, steps)
+    teacher_url = api_url or endpoint_reference_url(request.distill.teacher, steps)
     gpus = 0 if teacher_url else gpus_per_stage
 
     # 2. The step, with the step token to register the replies and an API Teacher's key.
@@ -310,7 +310,7 @@ def evaluate_step(
         )
 
     # 1. An Endpoint already serves its model; any other gets a vLLM of its own, on GPUs.
-    endpoint_url = endpoint_service_url(request.evaluate.model, steps)
+    endpoint_url = endpoint_reference_url(request.evaluate.model, steps)
     gpus = 0 if endpoint_url else gpus_per_stage
 
     # 2. The step.
@@ -325,13 +325,18 @@ def evaluate_step(
     return task
 
 
-def endpoint_service_url(model: str, steps: StepEnvironment) -> str:
+def endpoint_reference_url(model: str, steps: StepEnvironment) -> str:
     """Where steps reach the `endpoint:` Reference's Service; empty for any other model."""
     if not model.startswith("endpoint:"):
         return ""
-    object_name = config.ENDPOINT_OBJECT_NAME.format(name=split_endpoint_reference(model))
+    return endpoint_service_url(split_endpoint_reference(model), steps.platform_namespace)
+
+
+def endpoint_service_url(name: str, namespace: str) -> str:
+    """Where the API and Pipeline steps reach the Endpoint's vLLM inside the cluster."""
+    object_name = config.ENDPOINT_OBJECT_NAME.format(name=name)
     return config.ENDPOINT_SERVICE_URL.format(
-        object_name=object_name, namespace=steps.platform_namespace, port=config.VLLM_PORT
+        object_name=object_name, namespace=namespace, port=config.VLLM_PORT
     )
 
 

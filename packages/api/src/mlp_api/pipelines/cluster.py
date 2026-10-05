@@ -9,7 +9,7 @@ from kubernetes import config as kubernetes_config
 from kubernetes.client.exceptions import ApiException
 
 from mlp_api.endpoints.environment import EndpointEnvironment
-from mlp_api.pipelines.compiler import StepEnvironment
+from mlp_api.pipelines.compiler import StepEnvironment, endpoint_service_url
 from mlp_core import config
 
 
@@ -155,3 +155,19 @@ class Cluster:
             if any(container.restart_count for container in containers):
                 return "failed"
         return "pending"
+
+    def endpoint_metrics(self, name: str) -> str:
+        """vLLM's Prometheus metrics of the Endpoint, read through its Service."""
+        timeout = config.ENDPOINT_METRICS_TIMEOUT.total_seconds()
+        url = f"{endpoint_service_url(name, self.endpoint_environment.namespace)}/metrics"
+        response = httpx.get(url, timeout=timeout)
+        response.raise_for_status()
+        return response.text
+
+    def send_chat_request(self, name: str, request: dict) -> None:
+        """Sends the Endpoint one chat completion request; raises unless vLLM answered it."""
+        url = (
+            f"{endpoint_service_url(name, self.endpoint_environment.namespace)}/v1/chat/completions"
+        )
+        timeout = config.SMOKE_TEST_CHAT_TIMEOUT.total_seconds()
+        httpx.post(url, json={"model": name, **request}, timeout=timeout).raise_for_status()

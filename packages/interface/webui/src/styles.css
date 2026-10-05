@@ -912,3 +912,74 @@ textarea[aria-invalid="true"] {
     grid-column: 2;
   }
 }
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.chart {
+  margin: 0;
+  min-width: 0;
+}
+
+.chart h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.chart-current {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 0 0 8px;
+}
+
+.chart-current dt {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.chart-current dd {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.stats-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.stats-section h2 {
+  margin-top: 0;
+}
+
+.stats-section dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.stats-value dt {
+  font-weight: 600;
+}
+
+.stats-value dd {
+  display: grid;
+  margin: 0;
+}
+
+.stats-value .muted {
+  font-size: 12px;
+}

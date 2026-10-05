@@ -27,3 +27,4 @@ export const ENDPOINTS = "/endpoints";
 export const stopEndpoint = (name: string) => `/endpoints/${name}/stop`;
 export const modelCacheEntry = (reference: string) =>
   `${MODEL_CACHE}?reference=${encodeURIComponent(reference)}`;
+export const endpointStats = (name: string) => `/endpoints/${name}/stats`;

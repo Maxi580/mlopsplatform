@@ -3,6 +3,7 @@ import logging
 from sqlalchemy import select
 
 from mlp_api.endpoints.lifecycle import list_endpoints, start_endpoint, stop_endpoint
+from mlp_api.endpoints.stats import curated_values, fetch_endpoint_stats
 from mlp_api.pipelines.lifecycle import pipeline, set_pipeline, unfinished
 from mlp_api.smoke_tests.lifecycle import is_smoke_test
 from mlp_core import config
@@ -54,9 +55,25 @@ def serving_case_result(state, name: str, serving: dict, cases: dict, endpoints:
             return "failed"
         return "pending"
 
-    # 3. Passed once vLLM is ready; either way, its Endpoint then stops.
+    # 3. Passed once vLLM is ready and its stats count a real chat request; then it stops.
     if endpoint["status"] == "pending":
         return "pending"
+    passed = endpoint["status"] == "running" and counts_a_chat_request(state.cluster, name)
     if endpoint["status"] != "stopped":
         stop_endpoint(state.engine, state.cluster, name)
-    return "passed" if endpoint["status"] == "running" else "failed"
+    return "passed" if passed else "failed"
+
+
+def counts_a_chat_request(cluster, name: str) -> bool:
+    """Whether the Endpoint answers a chat request, after which its stats show it finished."""
+    try:
+        cluster.send_chat_request(name, config.SMOKE_TEST_CHAT_REQUEST)
+    except Exception:
+        logger.exception("Smoke Test Endpoint %s did not answer a chat request", name)
+        return False
+    stats = fetch_endpoint_stats(cluster, [name])[name]
+    if stats is None:
+        return False
+    values = curated_values(stats)
+    finished = values.get("finished", {}).get("value") or 0
+    return finished >= 1 and (values.get("generation_tokens", {}).get("value") or 0) > 0

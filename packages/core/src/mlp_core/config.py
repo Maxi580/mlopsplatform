@@ -313,6 +313,111 @@ PLATFORM_OBJECT_STORE_SECRET_ENV_VARS = {
     "s3AccessKey": "AWS_ACCESS_KEY_ID",
     "s3SecretKey": "AWS_SECRET_ACCESS_KEY",
 }
+# How long the API waits for one Endpoint's `/metrics`; a stuck pod has no stats rather than
+# slowing the Endpoint list.
+ENDPOINT_METRICS_TIMEOUT = timedelta(seconds=2)
+# Section -> value -> its vLLM metric (a pair is a rate: the first divided by the second), label
+# and explanation. A histogram shows p50, p95 and mean since start; a metric vLLM doesn't export is
+# left out, and a section with none, such as speculative decoding when it is off.
+ENDPOINT_STATS_SECTIONS = {
+    "Requests": {
+        "running": (
+            "vllm:num_requests_running",
+            "Running",
+            "Requests the GPU is generating tokens for right now.",
+        ),
+        "waiting": (
+            "vllm:num_requests_waiting",
+            "Waiting",
+            "Requests queued until a running one finishes or memory frees up.",
+        ),
+        "finished": (
+            "vllm:request_success",
+            "Finished",
+            "Requests completed since the Endpoint started, whatever stopped them.",
+        ),
+        "preemptions": (
+            "vllm:num_preemptions",
+            "Preemptions",
+            "Times a running request was paused to free KV cache; many mean memory is too tight.",
+        ),
+    },
+    "Tokens": {
+        "prompt_tokens": (
+            "vllm:prompt_tokens",
+            "Prompt tokens",
+            "Tokens of all prompts read since start.",
+        ),
+        "generation_tokens": (
+            "vllm:generation_tokens",
+            "Generated tokens",
+            "Tokens written by the model since start.",
+        ),
+    },
+    "KV cache": {
+        "kv_cache_usage": (
+            "vllm:kv_cache_usage_perc",
+            "KV cache usage",
+            "How full the GPU memory reserved for in-flight requests is; not the hit rate.",
+        ),
+        "prefix_cache_hit_rate": (
+            ("vllm:prefix_cache_hits", "vllm:prefix_cache_queries"),
+            "Prefix-cache hit rate",
+            "Share of prompt tokens found already computed in the cache, since start.",
+        ),
+        "prefix_cache_queries": (
+            "vllm:prefix_cache_queries",
+            "Prefix-cache lookups",
+            "Prompt tokens looked up in the cache since start.",
+        ),
+        "prefix_cache_hits": (
+            "vllm:prefix_cache_hits",
+            "Prefix-cache hits",
+            "Prompt tokens found in the cache since start, so not computed again.",
+        ),
+    },
+    "Latency": {
+        "time_to_first_token": (
+            "vllm:time_to_first_token_seconds",
+            "Time to first token",
+            "Seconds from a request's arrival to its first generated token.",
+        ),
+        "time_per_output_token": (
+            "vllm:request_time_per_output_token_seconds",
+            "Time per output token",
+            "A request's mean seconds between two of its generated tokens.",
+        ),
+        "end_to_end": (
+            "vllm:e2e_request_latency_seconds",
+            "End-to-end latency",
+            "Seconds from a request's arrival to its last token.",
+        ),
+        "queue_time": (
+            "vllm:request_queue_time_seconds",
+            "Queue time",
+            "Seconds a request waited before the GPU started on it.",
+        ),
+    },
+    "Speculative decoding": {
+        "acceptance_rate": (
+            ("vllm:spec_decode_num_accepted_tokens", "vllm:spec_decode_num_draft_tokens"),
+            "Acceptance rate",
+            "Share of the Speculator's draft tokens the model accepted; higher means faster.",
+        ),
+        "draft_tokens": (
+            "vllm:spec_decode_num_draft_tokens",
+            "Draft tokens",
+            "Tokens the Speculator proposed since start.",
+        ),
+        "accepted_tokens": (
+            "vllm:spec_decode_num_accepted_tokens",
+            "Accepted tokens",
+            "Draft tokens the model kept since start.",
+        ),
+    },
+}
+# The quantiles every histogram shows, estimated from its buckets as Prometheus does.
+ENDPOINT_STATS_QUANTILES = {"p50": 0.5, "p95": 0.95}
 
 # Datasets
 # TRL's standard Dataset row formats -> required field -> its value; the first match wins.
@@ -424,6 +529,9 @@ SMOKE_TEST_SERVING_CASES = (
     "serve-adapter",
     "serve-merged",
 )
+# Each serving case's Endpoint answers one real chat request, which its stats must then count.
+SMOKE_TEST_CHAT_REQUEST = {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8}
+SMOKE_TEST_CHAT_TIMEOUT = timedelta(minutes=1)
 # Trains like the first finetune case, then its `serve` step starts an Endpoint; that Endpoint is
 # stopped once the case has a result, so it never holds a GPU the other cases wait for.
 SMOKE_TEST_SERVE_STAGE_CASE = "finetune-serve"

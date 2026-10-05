@@ -1,5 +1,6 @@
 import { CircleAlert, LoaderCircle, Play, Square } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
 import { ENDPOINTS, MODEL_CACHE, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
@@ -14,13 +15,14 @@ import {
 } from "../pipelines/pipelineForm";
 import StatusBadge from "../pipelines/StatusBadge";
 import type { ModelCache, RegisteredModel } from "../storage/storage";
-import type { Endpoint } from "./endpoint";
+import { type Endpoint, formatSeconds, ratePerSecond } from "./endpoint";
 
 type Notice = { text: string; failed: boolean };
 type PublishedSchema = { $defs: Record<string, Record<string, unknown>> };
 
 export default function ServingPage() {
   const endpoints = useApi<Endpoint[]>(ENDPOINTS, ENDPOINT_LIST_REFRESH_MS);
+  const tokensPerSecond = useTokensPerSecond(endpoints.data);
   const [notice, setNotice] = useState<Notice>();
 
   async function stop(name: string) {
@@ -63,7 +65,16 @@ export default function ServingPage() {
           <table>
             <thead>
               <tr>
-                {["Endpoint", "Model", "Status", "URL", "Started (UTC)"].map((column) => (
+                {[
+                  "Endpoint",
+                  "Model",
+                  "Status",
+                  "Load",
+                  "Tokens/s",
+                  "TTFT",
+                  "URL",
+                  "Started (UTC)",
+                ].map((column) => (
                   <th key={column}>{column}</th>
                 ))}
                 <th aria-label="Actions" />
@@ -75,6 +86,7 @@ export default function ServingPage() {
                   // A stopped Endpoint keeps its row, and its name may be running again.
                   key={`${endpoint.name}-${endpoint.created_at}`}
                   endpoint={endpoint}
+                  tokensPerSecond={tokensPerSecond[endpoint.name]}
                   onStop={stop}
                 />
               ))}
@@ -102,15 +114,53 @@ export default function ServingPage() {
   );
 }
 
-function EndpointRow({ endpoint, onStop }: { endpoint: Endpoint; onStop: (name: string) => void }) {
+/** Generated tokens per second of each Endpoint, between the list's last two readings. */
+function useTokensPerSecond(endpoints?: Endpoint[]): Record<string, number | null> {
+  type Readings = Record<string, { value: number; at: string }>;
+  const [readings, setReadings] = useState<{ earlier: Readings; later: Readings }>({
+    earlier: {},
+    later: {},
+  });
+  useEffect(() => {
+    if (!endpoints) return;
+    const later = Object.fromEntries(
+      endpoints.flatMap(({ name, stats }) =>
+        stats ? [[name, { value: stats.generation_tokens, at: stats.read_at }]] : [],
+      ),
+    );
+    setReadings((previous) => ({ earlier: previous.later, later }));
+  }, [endpoints]);
+  return Object.fromEntries(
+    Object.entries(readings.later).map(([name, reading]) => [
+      name,
+      ratePerSecond(readings.earlier[name], reading),
+    ]),
+  );
+}
+
+function EndpointRow({
+  endpoint,
+  tokensPerSecond,
+  onStop,
+}: {
+  endpoint: Endpoint;
+  tokensPerSecond?: number | null;
+  onStop: (name: string) => void;
+}) {
   const stopped = endpoint.status === "stopped";
+  const { stats } = endpoint;
   return (
     <tr>
-      <td className="pipeline-name">{endpoint.name}</td>
+      <td className="pipeline-name">
+        {stopped ? endpoint.name : <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>}
+      </td>
       <td className="mono">{endpoint.model}</td>
       <td>
         <StatusBadge status={endpoint.status} />
       </td>
+      <td>{stats ? `${stats.running} running · ${stats.waiting} waiting` : "—"}</td>
+      <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
+      <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
       <td className="mono">{stopped ? "" : <a href={endpoint.url}>{endpoint.url}</a>}</td>
       <td>{endpoint.created_at.slice(0, 16).replace("T", " ")}</td>
       <td className="actions">

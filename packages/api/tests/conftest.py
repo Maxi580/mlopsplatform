@@ -228,6 +228,9 @@ class FakeCluster:
         self.endpoints = {}
         self.endpoint_states = {}
         self.deleted_endpoints = []
+        # Endpoint name -> its vLLM's `/metrics` text; any other Endpoint is unreachable.
+        self.metrics = {}
+        self.chat_requests = []
 
     def create_secret(self, name, values):
         self.secrets[name] = values
@@ -264,6 +267,16 @@ class FakeCluster:
 
     def endpoint_state(self, name):
         return self.endpoint_states.get(name, "pending") if name in self.endpoints else None
+
+    def endpoint_metrics(self, name):
+        if name not in self.metrics:
+            raise ConnectionError(f"endpoint-{name} timed out")
+        return self.metrics[name]
+
+    def send_chat_request(self, name, request):
+        if name not in self.metrics:
+            raise ConnectionError(f"endpoint-{name} timed out")
+        self.chat_requests.append((name, request))
 
 
 @pytest.fixture
