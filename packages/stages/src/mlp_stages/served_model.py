@@ -26,19 +26,20 @@ def served_model(
     endpoint_url: str,
     gpus: int,
     scratch: Path,
-) -> Iterator[tuple[str, str]]:
-    """The URL and name the model or its Endpoint is served under, until the block ends."""
+) -> Iterator[tuple[str, str, VllmModel | None]]:
+    """The URL and name it is served under, and what vLLM loads (None for an Endpoint)."""
     # 1. A running Endpoint, under its name.
     if endpoint_url:
-        yield endpoint_url, split_endpoint_reference(model)
+        yield endpoint_url, split_endpoint_reference(model), None
         return
 
     # 2. Otherwise a vLLM of its own, with the serving options, from the Model Cache.
-    args = vllm_args(options or ServingOptions(), vllm_model(model, scratch), served_name, gpus)
+    loaded = vllm_model(model, scratch)
+    args = vllm_args(options or ServingOptions(), loaded, served_name, gpus)
     vllm = subprocess.Popen(["vllm", "serve", *args])
     try:
         wait_until_ready(vllm)
-        yield config.LOCAL_VLLM_URL, served_name
+        yield config.LOCAL_VLLM_URL, served_name, loaded
     finally:
         vllm.terminate()
         vllm.wait()

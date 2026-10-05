@@ -270,17 +270,20 @@ SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
     SMOKE_TEST_SERVE_STAGE_CASE,
     SMOKE_TEST_DISTILL_CASE,
 )
-# Evaluate case -> its benchmark, run on a few samples. The Base Model, and the Adapter of the first
-# finetune case, run a small benchmark that scores log-likelihoods, the harder path through vLLM;
-# the Base Model also runs a coding benchmark of each harness, scored in the Sandbox.
+# Evaluate case -> its `evaluate` block without the model: a benchmark on a few samples, or a short
+# performance run. The Base Model, and the Adapter of the first finetune case, run a small benchmark
+# that scores log-likelihoods, the harder path through vLLM; the Base Model also runs a coding
+# benchmark of each harness, scored in the Sandbox, and a GuideLLM run.
 SMOKE_TEST_EVALUATE_CASES = {
-    "evaluate-base-model": "lm_eval:truthfulqa_mc2",
-    "evaluate-adapter": "lm_eval:truthfulqa_mc2",
-    "evaluate-coding": "lm_eval:humaneval",
-    "evaluate-evalscope": "evalscope:mbpp_plus",
+    "evaluate-base-model": {"benchmarks": ["lm_eval:truthfulqa_mc2"], "limit": 5},
+    "evaluate-adapter": {"benchmarks": ["lm_eval:truthfulqa_mc2"], "limit": 5},
+    "evaluate-coding": {"benchmarks": ["lm_eval:humaneval"], "limit": 5},
+    "evaluate-evalscope": {"benchmarks": ["evalscope:mbpp_plus"], "limit": 5},
+    "evaluate-performance": {
+        "performance": {"prompt_tokens": 64, "output_tokens": 32, "concurrency": 2, "requests": 10}
+    },
 }
 SMOKE_TEST_ADAPTER_EVALUATE_CASE = "evaluate-adapter"
-SMOKE_TEST_EVALUATE_LIMIT = 5
 # One tiny Dataset per Phase algorithm, named after it, uploaded the normal way by each Smoke Test.
 SMOKE_TEST_DATASETS_DIRECTORY = Path(__file__).parent / "smoke_test_datasets"
 # Every finetune case trains a few steps; only that it runs matters, not what it learns.
@@ -415,3 +418,18 @@ DISTILL_DROPPED_SAMPLES = 5
 SANDBOX_PATH = "/snippets"
 # Each of a snippet's stdout and stderr; a snippet writing more is stopped.
 SANDBOX_OUTPUT_LIMIT_BYTES = 2**20
+# `performance` defaults: requests of this many prompt and output tokens, this many at once.
+PERFORMANCE_PROMPT_TOKENS = 256
+PERFORMANCE_OUTPUT_TOKENS = 128
+PERFORMANCE_CONCURRENCY = 1
+PERFORMANCE_REQUESTS = 100
+# Measures `performance`; prefixes its metric keys and tags the Run NA when it fails.
+PERFORMANCE_TOOL = "guidellm"
+# GuideLLM's metrics `evaluate` logs with `performance`, each as these statistics over the
+# successful requests.
+PERFORMANCE_METRICS = (
+    "time_to_first_token_ms",
+    "inter_token_latency_ms",
+    "output_tokens_per_second",
+)
+PERFORMANCE_STATISTICS = ("mean", "median", "p99")

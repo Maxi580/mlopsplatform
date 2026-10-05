@@ -8,11 +8,12 @@ from mlp_core import config
 from mlp_core.pipeline_request.references import model_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 from mlp_stages.evaluate.harness import mlflow_key, run_benchmark
+from mlp_stages.evaluate.performance import measure_performance
 from mlp_stages.served_model import served_model
 
 
 def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str) -> None:
-    """Runs each benchmark against the model and logs its metrics, or NA, into the step's Run."""
+    """Runs each benchmark, and any performance run, and logs its metrics or NA into the Run."""
     # 1. The `evaluate` block of the resolved request the compiler passed in.
     resolved = PipelineRequest.model_validate_json(request)
     evaluate = resolved.evaluate
@@ -27,15 +28,27 @@ def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str) -> No
         served = served_model(
             model, evaluate.serving, resolved.name, endpoint_url, int(gpus), Path(scratch)
         )
-        with served as (url, served_name):
+        with served as (url, served_name, loaded):
             # 3. Each benchmark in its own harness process, so a failing one fails alone.
             for benchmark in evaluate.benchmarks:
                 metrics = run_benchmark(benchmark, url, served_name, evaluate.limit, Path(scratch))
-                if metrics is None:
-                    client.set_tag(run_id, mlflow_key(benchmark), "NA")
-                    print(f"{benchmark} failed and is logged as NA; see its harness's log above")
-                for key, value in (metrics or {}).items():
-                    client.log_metric(run_id, key, value)
+                log_metrics(client, run_id, mlflow_key(benchmark), metrics)
+
+            # 4. Serving performance, only when asked for, as it takes a while.
+            if evaluate.performance:
+                metrics = measure_performance(
+                    evaluate.performance, url, served_name, loaded, Path(scratch)
+                )
+                log_metrics(client, run_id, config.PERFORMANCE_TOOL, metrics)
+
+
+def log_metrics(client, run_id: str, name: str, metrics: dict[str, float] | None) -> None:
+    """Logs the metrics into the Run, or tags `name` NA if its run failed."""
+    if metrics is None:
+        client.set_tag(run_id, name, "NA")
+        print(f"{name} failed and is logged as NA; see its log above")
+    for key, value in (metrics or {}).items():
+        client.log_metric(run_id, key, value)
 
 
 def pipeline_output(name: str, pipeline_id: str) -> str:

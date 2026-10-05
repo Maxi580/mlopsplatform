@@ -284,9 +284,13 @@ def pin_evaluated_model(
         if request.finetune is None:
             raise ValueError("`finetune` isn't enabled, so name the model to evaluate")
         return config.FINETUNE_OUTPUT
-    if model.startswith("endpoint:") and request.evaluate.serving:
+    if model.startswith("endpoint:"):
         name = split_endpoint_reference(model)
-        raise ValueError(f"Endpoint {name} serves with its own options; leave out `serving`")
+        if request.evaluate.serving:
+            raise ValueError(f"Endpoint {name} serves with its own options; leave out `serving`")
+        # Other users' requests to a shared Endpoint would skew the measurement.
+        if request.evaluate.performance:
+            raise ValueError(f"`performance` is measured on a vLLM of its own, not Endpoint {name}")
     return pin_served_model(model, token, hugging_face, engine, model_registry)
 
 

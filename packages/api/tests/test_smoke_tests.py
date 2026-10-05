@@ -22,6 +22,7 @@ EVALUATE_CASES = [
     "evaluate-adapter",
     "evaluate-coding",
     "evaluate-evalscope",
+    "evaluate-performance",
 ]
 
 
@@ -84,6 +85,7 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "evaluate-adapter",
         "evaluate-coding",
         "evaluate-evalscope",
+        "evaluate-performance",
         "finetune-serve-finetune",
         "finetune-serve",
     ]
@@ -114,7 +116,8 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
         ({"sandbox": True}, ["fetch", "sandbox"]),
         (
             {"evaluate": True},
-            ["fetch", "evaluate-base-model", "evaluate-coding", "evaluate-evalscope"],
+            ["fetch", "evaluate-base-model", "evaluate-coding", "evaluate-evalscope"]
+            + ["evaluate-performance"],
         ),
         ({"finetune": {"phases": ["sft"]}}, ["fetch", "sft-lora-hf"]),
         ({"finetune": {"phases": ["sft"], "methods": [], "backends": ["hf"]}}, ["fetch"]),
@@ -236,7 +239,7 @@ def test_the_evaluate_cases_run_a_few_samples_of_their_benchmark_on_the_base_mod
         f"hf:{QWEN}@{COMMIT},lm_eval:truthfulqa_mc2,lm_eval:humaneval,evalscope:mbpp_plus"
     )
     evaluated = {}
-    for case in EVALUATE_CASES:
+    for case in [case for case in EVALUATE_CASES if case != "evaluate-performance"]:
         parameters = node(cluster, case)["inputs"]["parameters"]
         request = json.loads(parameters["request"]["runtimeValue"]["constant"])
         assert request["evaluate"]["limit"] == 5
@@ -248,6 +251,18 @@ def test_the_evaluate_cases_run_a_few_samples_of_their_benchmark_on_the_base_mod
         "evaluate-coding": (base_model, "lm_eval:humaneval"),
         "evaluate-evalscope": (base_model, "evalscope:mbpp_plus"),
     }
+
+
+def test_the_performance_case_runs_one_short_guidellm_run_on_the_base_model(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api)
+
+    parameters = node(cluster, "evaluate-performance")["inputs"]["parameters"]
+    evaluate = json.loads(parameters["request"]["runtimeValue"]["constant"])["evaluate"]
+    assert evaluate["model"] == f"hf:{QWEN}@{COMMIT}"
+    assert evaluate["benchmarks"] == []
+    assert evaluate["performance"]["requests"] <= 10
 
 
 def test_only_one_smoke_test_runs_at_a_time(logged_in_api, qwen_on_the_hub, cluster):

@@ -123,6 +123,27 @@ def test_serving_options_are_for_evaluates_own_vllm_not_an_endpoint(logged_in_ap
     assert "serves with its own options" in error["msg"]
 
 
+def test_performance_is_measured_on_evaluates_own_vllm_not_a_shared_endpoint(
+    logged_in_api, cluster
+):
+    running_endpoint(logged_in_api, cluster)
+    performance = {"performance": {"concurrency": 4}}
+
+    assert validate(logged_in_api, evaluate_only(f"hf:{BASE_MODEL}", **performance)).is_success
+    [error] = errors(logged_in_api, evaluate_only("endpoint:chat", **performance))
+    assert error["loc"] == ["evaluate", "model"]
+    assert "performance" in error["msg"]
+
+
+def test_evaluate_runs_benchmarks_performance_or_both(logged_in_api):
+    request = evaluate_only(f"hf:{BASE_MODEL}", benchmarks=[], performance={})
+
+    assert validate(logged_in_api, request).status_code == 200
+    del request["evaluate"]["performance"]
+    [error] = errors(logged_in_api, request)
+    assert "`benchmarks`, `performance` or both" in error["msg"]
+
+
 def test_evaluate_without_finetune_needs_a_model(logged_in_api):
     request = evaluate_only("unused")
     del request["evaluate"]["model"]

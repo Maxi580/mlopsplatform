@@ -18,6 +18,16 @@ BASE_MODEL = f"hf:{REPO}@{COMMIT}"
 GSM8K_RESULTS = {
     "gsm8k": {"alias": "gsm8k", "exact_match,strict-match": 0.25, "exact_match_stderr,none": 0.1}
 }
+# GuideLLM's summary of each metric over the successful requests.
+GUIDELLM_METRICS = {
+    metric: {"successful": {"mean": mean, "median": mean - 1, "percentiles": {"p99": mean * 2}}}
+    for metric, mean in [
+        ("time_to_first_token_ms", 40.0),
+        ("inter_token_latency_ms", 8.0),
+        ("output_tokens_per_second", 900.0),
+        ("requests_per_second", 3.0),
+    ]
+}
 
 
 class FakeVllm:
@@ -56,12 +66,15 @@ class FakeHarnesses:
             "humaneval": {"humaneval": {"pass@1,create_test": 0.125}},
         }
         self.failing = set()
+        self.scenarios = []
 
-    def __call__(self, command, env):
+    def __call__(self, command, env=None):
         self.commands.append(command)
         self.environments.append(env)
         if "mlp_stages.evaluate.evalscope_harness" in command:
             return self.evalscope(json.loads(command[-1]))
+        if "guidellm" in command:
+            return self.guidellm(json.loads(Path(option(command, "--scenario")).read_text()))
         task = command[command.index("--tasks") + 1]
         if task in self.failing:
             return SimpleNamespace(returncode=1)
@@ -89,6 +102,17 @@ class FakeHarnesses:
             },
         ]
         (reports / f"{task}.json").write_text(json.dumps({"metrics": metrics}))
+        return SimpleNamespace(returncode=0)
+
+    def guidellm(self, scenario):
+        self.scenarios.append(scenario)
+        if "guidellm" in self.failing:
+            return SimpleNamespace(returncode=1)
+        [output] = scenario["spec"]["outputs"]
+        successful = 0 if "every guidellm request" in self.failing else 10
+        metrics = {**GUIDELLM_METRICS, "request_totals": {"successful": successful}}
+        report = {"benchmarks": [{"metrics": metrics}]}
+        Path(output["path"]).write_text(json.dumps(report))
         return SimpleNamespace(returncode=0)
 
 
@@ -261,3 +285,84 @@ def test_an_evalscope_benchmark_runs_against_chat_completions_from_the_model_cac
         "evalscope/mbpp_plus/accuracy/mean": 0.5,
         "evalscope/mbpp_plus/accuracy/pass_at_k/k1": 0.25,
     }
+
+
+def test_with_performance_settings_guidellm_measures_the_models_own_vllm(step):
+    performance = {"prompt_tokens": 64, "output_tokens": 32, "concurrency": 4, "requests": 20}
+
+    step.run(BASE_MODEL, serving={"max_model_len": 2048}, performance=performance)
+
+    [vllm] = step.vllm.commands
+    assert option(vllm, "--max-model-len") == "2048"
+    [scenario] = step.harnesses.scenarios
+    spec = scenario["spec"]
+    assert spec["backend"] == {
+        "kind": "openai_http",
+        "target": "http://localhost:8000",
+        "model": "qwen-sft",
+    }
+    assert spec["tokenizer"]["model"] == REPO
+    assert spec["tokenizer"]["load_kwargs"] == {"revision": COMMIT}
+    assert spec["profile"] == {"kind": "concurrent", "streams": 4}
+    assert spec["constraints"] == [{"kind": "max_requests", "count": 20}]
+    [data] = spec["data"]
+    assert (data["kind"], data["prompt_tokens"], data["output_tokens"]) == (
+        "synthetic_text",
+        64,
+        32,
+    )
+
+
+def test_ttft_inter_token_latency_and_tokens_per_second_are_logged(step):
+    step.run(BASE_MODEL, benchmarks=[], performance={})
+
+    assert step.mlflow.metrics == {
+        "guidellm/time_to_first_token_ms/mean": 40.0,
+        "guidellm/time_to_first_token_ms/median": 39.0,
+        "guidellm/time_to_first_token_ms/p99": 80.0,
+        "guidellm/inter_token_latency_ms/mean": 8.0,
+        "guidellm/inter_token_latency_ms/median": 7.0,
+        "guidellm/inter_token_latency_ms/p99": 16.0,
+        "guidellm/output_tokens_per_second/mean": 900.0,
+        "guidellm/output_tokens_per_second/median": 899.0,
+        "guidellm/output_tokens_per_second/p99": 1800.0,
+    }
+
+
+def test_without_performance_settings_no_performance_run_happens(step):
+    step.run(BASE_MODEL)
+
+    assert step.harnesses.scenarios == []
+    assert not any(key.startswith("guidellm/") for key in step.mlflow.metrics)
+
+
+def test_an_adapters_requests_are_tokenized_with_its_base_models_tokenizer(step):
+    tags = {"weights": "adapter", "base_model": BASE_MODEL, "pipeline": "7"}
+    step.mlflow.versions[("qwen-sft", 1)] = SimpleNamespace(version="1", tags=tags)
+
+    step.run("@finetune", benchmarks=[], performance={})
+
+    [scenario] = step.harnesses.scenarios
+    assert scenario["spec"]["backend"]["model"] == "qwen-sft"
+    assert scenario["spec"]["tokenizer"]["model"] == REPO
+
+
+def test_a_failing_performance_run_is_logged_as_na_after_the_benchmarks(step):
+    step.harnesses.failing.add("guidellm")
+
+    step.run(BASE_MODEL, performance={})
+
+    assert step.mlflow.tags == {"guidellm": "NA"}
+    assert step.mlflow.metrics == {
+        "lm_eval/gsm8k/exact_match/strict-match": 0.25,
+        "lm_eval/gsm8k/exact_match_stderr": 0.1,
+    }
+
+
+def test_a_performance_run_without_a_successful_request_is_logged_as_na(step):
+    step.harnesses.failing.add("every guidellm request")
+
+    step.run(BASE_MODEL, benchmarks=[], performance={})
+
+    assert step.mlflow.tags == {"guidellm": "NA"}
+    assert step.mlflow.metrics == {}

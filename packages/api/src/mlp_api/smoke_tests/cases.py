@@ -110,15 +110,9 @@ def evaluate_cases(selection: SmokeTestSelection, trainings: dict) -> dict[str, 
 
 
 def evaluate_case_request(case: str, smoke_test: str, model: str) -> dict:
-    """The Pipeline Request of one evaluate case: a few samples of its benchmark."""
-    return {
-        "name": f"{smoke_test}-{case}",
-        "evaluate": {
-            "model": model,
-            "benchmarks": [config.SMOKE_TEST_EVALUATE_CASES[case]],
-            "limit": config.SMOKE_TEST_EVALUATE_LIMIT,
-        },
-    }
+    """The Pipeline Request of one evaluate case: its benchmark or performance run on the model."""
+    evaluate = {"model": model, **config.SMOKE_TEST_EVALUATE_CASES[case]}
+    return {"name": f"{smoke_test}-{case}", "evaluate": evaluate}
 
 
 def run_order(sandbox: bool, trainings: dict, evaluations: dict) -> list[str]:

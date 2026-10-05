@@ -9,6 +9,10 @@ from mlp_core.config import (
     DISTILL_OUTPUT,
     FINETUNE_OUTPUT,
     MAX_LORA_RANK,
+    PERFORMANCE_CONCURRENCY,
+    PERFORMANCE_OUTPUT_TOKENS,
+    PERFORMANCE_PROMPT_TOKENS,
+    PERFORMANCE_REQUESTS,
 )
 from mlp_core.endpoint_spec import ENDPOINT_NAME_PATTERN, EndpointName, ServingOptions
 from mlp_core.pipeline_request.references import (
@@ -127,6 +131,15 @@ class Distill(Strict):
         return self
 
 
+class Performance(Strict):
+    """Serving performance by GuideLLM: synthetic chat requests, a fixed number at once."""
+
+    prompt_tokens: int = Field(PERFORMANCE_PROMPT_TOKENS, gt=0)
+    output_tokens: int = Field(PERFORMANCE_OUTPUT_TOKENS, gt=0)
+    concurrency: int = Field(PERFORMANCE_CONCURRENCY, gt=0)
+    requests: int = Field(PERFORMANCE_REQUESTS, gt=0)
+
+
 class Evaluate(Strict):
     """Benchmarks from the catalog, run against a model or a running Endpoint."""
 
@@ -134,11 +147,19 @@ class Evaluate(Strict):
     model: (
         BaseModelReference | ModelReference | EndpointReference | Literal[FINETUNE_OUTPUT] | None
     ) = None
-    benchmarks: list[Literal[tuple(BENCHMARKS)]] = Field(min_length=1)
+    benchmarks: list[Literal[tuple(BENCHMARKS)]] = []
     # Samples per task, for a quick look; scores on fewer samples don't compare with full runs.
     limit: int | None = Field(None, gt=0)
     # For the vLLM `evaluate` starts; an Endpoint serves with its own.
     serving: ServingOptions | None = None
+    # Measured only when set, so evaluations stay fast by default.
+    performance: Performance | None = None
+
+    @model_validator(mode="after")
+    def check_something_to_run(self) -> "Evaluate":
+        if not (self.benchmarks or self.performance):
+            raise ValueError("name `benchmarks`, `performance` or both")
+        return self
 
 
 class Serve(ServingOptions):

@@ -32,7 +32,7 @@ def teacher_replies(
     served = served_model(
         distill.teacher, distill.serving, request.name, teacher_url, gpus, scratch
     )
-    with served as (url, served_name):
+    with served as (url, served_name, _):
         return ask_teacher(f"{url}/v1", {}, {**body, "model": served_name}, prompts)
 
 
