@@ -84,12 +84,25 @@ def validate_pipeline_request(
             except ValueError as reason:
                 errors.append(error(["finetune", "phases", index, "teacher"], str(reason)))
 
-    # 7. The model `evaluate` runs on, pinned; `finetune`'s output unless named.
-    if request.evaluate:
+    # 7. The model `evaluate` runs on, pinned; `finetune`'s output unless named. BFCL scores its
+    # tool calls as `serve` would parse them, with the parser of the model `finetune` starts from.
+    evaluate = request.evaluate
+    if evaluate:
+        token = secrets.get("hf_token")
         try:
-            request.evaluate.model = pin_evaluated_model(
-                request, secrets.get("hf_token"), hugging_face, engine, model_registry
+            evaluate.model = pin_evaluated_model(
+                request, token, hugging_face, engine, model_registry
             )
+            if any(benchmark.startswith("bfcl:") for benchmark in evaluate.benchmarks):
+                model = evaluate.model
+                if model == config.FINETUNE_OUTPUT:
+                    model = finetune.starting_model
+                try:
+                    evaluate.serving = pin_tool_parser(
+                        model, evaluate.serving, token, hugging_face, engine, model_registry
+                    )
+                except ValueError as reason:
+                    errors.append(error(["evaluate", "benchmarks"], str(reason)))
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
 
@@ -254,19 +267,15 @@ def pin_distill(
         distill.teacher = pin_served_model(
             distill.teacher, token, hugging_face, engine, model_registry
         )
-        if tools:
-            parser = distill.serving and distill.serving.tool_parser
-            parser = parser or tool_parser_of(
-                distill.teacher, token, hugging_face, engine, model_registry
-            )
-            if parser is None:
-                msg = f"{distill.teacher} has no tool parser; name one in `serving.tool_parser`"
-                errors.append(error(["distill", "tools"], msg))
-            elif not distill.teacher.startswith("endpoint:"):
-                serving = distill.serving or ServingOptions()
-                distill.serving = serving.model_copy(update={"tool_parser": parser})
     except ValueError as reason:
-        errors.append(error(["distill", "teacher"], str(reason)))
+        return [*errors, error(["distill", "teacher"], str(reason))]
+    if tools:
+        try:
+            distill.serving = pin_tool_parser(
+                distill.teacher, distill.serving, token, hugging_face, engine, model_registry
+            )
+        except ValueError as reason:
+            errors.append(error(["distill", "tools"], str(reason)))
     return errors
 
 
@@ -297,6 +306,25 @@ def pin_served_model(
         return model
     found = find_referenced_model_version(model_registry, model)
     return model_reference(found.name, found.version)
+
+
+def pin_tool_parser(
+    model: str,
+    serving: ServingOptions | None,
+    token: str | None,
+    hugging_face: HuggingFace,
+    engine: Engine,
+    model_registry: MLflow,
+) -> ServingOptions | None:
+    """The serving options with the model's tool parser pinned; else ValueError."""
+    parser = serving and serving.tool_parser
+    parser = parser or tool_parser_of(model, token, hugging_face, engine, model_registry)
+    if parser is None:
+        raise ValueError(f"{model} has no tool parser; name one in `serving.tool_parser`")
+    # A running Endpoint serves with its own options.
+    if model.startswith("endpoint:"):
+        return serving
+    return (serving or ServingOptions()).model_copy(update={"tool_parser": parser})
 
 
 def tool_parser_of(

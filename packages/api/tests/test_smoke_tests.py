@@ -35,6 +35,7 @@ EVALUATE_CASES = [
     "evaluate-adapter",
     "evaluate-coding",
     "evaluate-evalscope",
+    "evaluate-tool-calling",
     "evaluate-performance",
 ]
 
@@ -103,6 +104,7 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "evaluate-adapter",
         "evaluate-coding",
         "evaluate-evalscope",
+        "evaluate-tool-calling",
         "evaluate-performance",
         "finetune-serve-finetune-sft",
         "finetune-serve",
@@ -135,7 +137,7 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
         (
             {"evaluate": True},
             ["fetch", "evaluate-base-model", "evaluate-coding", "evaluate-evalscope"]
-            + ["evaluate-performance"],
+            + ["evaluate-tool-calling", "evaluate-performance"],
         ),
         (
             {"finetune": {"phases": ["sft"]}},
@@ -358,7 +360,8 @@ def test_the_evaluate_cases_run_a_few_samples_of_their_benchmark_on_the_base_mod
 
     fetch = node(cluster, "fetch")["inputs"]["parameters"]["references"]["runtimeValue"]
     assert fetch["constant"] == (
-        f"hf:{QWEN}@{COMMIT},lm_eval:truthfulqa_mc2,lm_eval:humaneval,evalscope:mbpp_plus"
+        f"hf:{QWEN}@{COMMIT},lm_eval:truthfulqa_mc2,lm_eval:humaneval,evalscope:mbpp_plus,"
+        "bfcl:simple_python"
     )
     evaluated = {}
     for case in [case for case in EVALUATE_CASES if case != "evaluate-performance"]:
@@ -372,7 +375,18 @@ def test_the_evaluate_cases_run_a_few_samples_of_their_benchmark_on_the_base_mod
         "evaluate-adapter": (f"model:{name}-sft-lora-hf@1", "lm_eval:truthfulqa_mc2"),
         "evaluate-coding": (base_model, "lm_eval:humaneval"),
         "evaluate-evalscope": (base_model, "evalscope:mbpp_plus"),
+        "evaluate-tool-calling": (base_model, "bfcl:simple_python"),
     }
+
+
+def test_the_tool_calling_case_serves_the_base_model_with_its_tool_parser(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api)
+
+    parameters = node(cluster, "evaluate-tool-calling")["inputs"]["parameters"]
+    evaluate = json.loads(parameters["request"]["runtimeValue"]["constant"])["evaluate"]
+    assert evaluate["serving"]["tool_parser"] == "hermes"
 
 
 def test_the_performance_case_runs_one_short_guidellm_run_on_the_base_model(

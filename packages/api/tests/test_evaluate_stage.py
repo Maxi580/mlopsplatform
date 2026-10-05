@@ -3,6 +3,7 @@ import json
 import pytest
 
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
+from mlp_api.pipelines.hugging_face import HubModel
 from mlp_core import api_paths, config
 
 from .test_endpoints import register_adapter
@@ -17,6 +18,7 @@ pytestmark = pytest.mark.usefixtures("submittable")
 PINNED_BASE_MODEL = f"hf:{BASE_MODEL}@{COMMIT}"
 GSM8K = "lm_eval:gsm8k"
 GSM8K_BYTES = config.BENCHMARKS[GSM8K]["size_bytes"]
+BFCL = "bfcl:simple_python"
 
 
 def evaluating(**evaluate) -> dict:
@@ -267,3 +269,42 @@ def test_evaluate_and_fetch_reach_the_sandbox_that_scores_generated_code(logged_
     for step in ("fetch", "evaluate"):
         sandbox_url = {"name": "SANDBOX_URL", "value": "http://sandbox.mlp.test:8090"}
         assert sandbox_url in container(cluster, step)["env"]
+
+
+def test_bfcl_pins_the_tool_parser_serve_would_use(logged_in_api, hugging_face):
+    hugging_face.models[BASE_MODEL] = HubModel(COMMIT, needs_remote_code=False, model_type="qwen2")
+
+    for request in (
+        evaluate_only(f"hf:{BASE_MODEL}", benchmarks=[BFCL]),
+        evaluating(benchmarks=[BFCL]),
+    ):
+        response = validate(logged_in_api, request)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["request"]["evaluate"]["serving"]["tool_parser"] == "hermes"
+
+
+def test_bfcl_needs_a_model_with_a_tool_parser_or_an_override(logged_in_api, hugging_face):
+    hugging_face.models[BASE_MODEL] = HubModel(COMMIT, needs_remote_code=False, model_type="gpt2")
+    overridden = evaluate_only(
+        f"hf:{BASE_MODEL}", benchmarks=[BFCL], serving={"tool_parser": "pythonic"}
+    )
+
+    [error] = errors(logged_in_api, evaluate_only(f"hf:{BASE_MODEL}", benchmarks=[BFCL]))
+    response = validate(logged_in_api, overridden)
+
+    assert error["loc"] == ["evaluate", "benchmarks"]
+    assert "no tool parser" in error["msg"]
+    assert response.json()["request"]["evaluate"]["serving"]["tool_parser"] == "pythonic"
+
+
+def test_bfcl_on_an_endpoint_uses_the_endpoints_own_tool_parser(
+    logged_in_api, hugging_face, cluster
+):
+    hugging_face.models[BASE_MODEL] = HubModel(COMMIT, needs_remote_code=False, model_type="qwen2")
+    running_endpoint(logged_in_api, cluster)
+
+    response = validate(logged_in_api, evaluate_only("endpoint:chat", benchmarks=[BFCL]))
+
+    assert response.status_code == 200, response.text
+    assert response.json()["request"]["evaluate"]["serving"] is None

@@ -6,10 +6,14 @@ from pathlib import Path
 
 from mlp_core import config
 from mlp_core.pipeline_request.references import benchmark_directory, split_benchmark_reference
-from mlp_stages.evaluate import evalscope_harness, lm_eval_harness
+from mlp_stages.evaluate import bfcl_harness, evalscope_harness, lm_eval_harness
 
 # Each harness runs in its own process, which sends any code a benchmark generates to the Sandbox.
-HARNESSES = {"lm_eval": lm_eval_harness, "evalscope": evalscope_harness}
+HARNESSES = {
+    "lm_eval": lm_eval_harness,
+    "evalscope": evalscope_harness,
+    "bfcl": bfcl_harness,
+}
 
 
 def download_benchmark(benchmark: str) -> bool:

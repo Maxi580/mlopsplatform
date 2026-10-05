@@ -43,6 +43,9 @@ class FakeHarnesses:
         self.failing = set()
 
     def __call__(self, command, env):
+        if command[0] == config.BFCL_PYTHON:
+            self.runs.append((command, env))
+            return SimpleNamespace(returncode=0)
         if "mlp_stages.evaluate.evalscope_harness" in command:
             task_config = json.loads(command[-1])
             assert task_config["eval_type"] == "mock_llm"
@@ -209,3 +212,13 @@ def test_an_evalscope_benchmark_downloads_into_the_model_cache_through_modelscop
     assert env["MODELSCOPE_CACHE"] == str(benchmark / "modelscope")
     assert env["EVALSCOPE_CACHE"] == str(benchmark / "evalscope")
     assert (benchmark / "fetched").exists()
+
+
+def test_a_bfcl_benchmark_only_needs_bfcl_installed_as_its_datasets_ship_with_it(
+    monkeypatch, downloads, model_cache, harnesses
+):
+    mlp_stage(monkeypatch, "fetch", "100Gi", "bfcl:simple_python")
+
+    [(command, _)] = harnesses.runs
+    assert command == [config.BFCL_PYTHON, "-c", "import bfcl_eval"]
+    assert (model_cache.parent / "benchmarks" / "bfcl" / "simple_python" / "fetched").exists()

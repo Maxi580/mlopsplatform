@@ -29,6 +29,10 @@ def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str) -> No
             model, evaluate.serving, resolved.name, endpoint_url, int(gpus), Path(scratch)
         )
         with served as (url, served_name, loaded):
+            # Tells Runs apart that differ only by a `tool_parser` override.
+            if evaluate.serving and evaluate.serving.tool_parser:
+                client.set_tag(run_id, "tool_parser", evaluate.serving.tool_parser)
+
             # 3. Each benchmark in its own harness process, so a failing one fails alone.
             for benchmark in evaluate.benchmarks:
                 metrics = run_benchmark(benchmark, url, served_name, evaluate.limit, Path(scratch))

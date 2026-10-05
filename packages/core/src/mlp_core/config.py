@@ -367,12 +367,18 @@ SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
 # Evaluate case -> its `evaluate` block without the model: a benchmark on a few samples, or a short
 # performance run. The Base Model, and the Adapter of the first finetune case, run a small benchmark
 # that scores log-likelihoods, the harder path through vLLM; the Base Model also runs a coding
-# benchmark of each harness, scored in the Sandbox, and a GuideLLM run.
+# benchmark of each harness, scored in the Sandbox, BFCL, and a GuideLLM run. These requests skip
+# validation, so the BFCL case names the parser validation would pin for the Base Model.
 SMOKE_TEST_EVALUATE_CASES = {
     "evaluate-base-model": {"benchmarks": ["lm_eval:truthfulqa_mc2"], "limit": 5},
     "evaluate-adapter": {"benchmarks": ["lm_eval:truthfulqa_mc2"], "limit": 5},
     "evaluate-coding": {"benchmarks": ["lm_eval:humaneval"], "limit": 5},
     "evaluate-evalscope": {"benchmarks": ["evalscope:mbpp_plus"], "limit": 5},
+    "evaluate-tool-calling": {
+        "benchmarks": ["bfcl:simple_python"],
+        "limit": 5,
+        "serving": {"tool_parser": "hermes"},
+    },
     "evaluate-performance": {
         "performance": {"prompt_tokens": 64, "output_tokens": 32, "concurrency": 2, "requests": 10}
     },
@@ -483,7 +489,77 @@ BENCHMARKS = {
         "licence": "ODC-BY",
         "size_bytes": 64_001_903,
     },
+    # Run by BFCL, whose datasets ship inside its package, so fetch leaves nothing in the Model
+    # Cache. Its web search and memory categories need outside services, so they aren't listed.
+    "bfcl:simple_python": {
+        "category": "tool calling",
+        "description": "One call to the one Python function offered, with the right arguments.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:multiple": {
+        "category": "tool calling",
+        "description": "One call, choosing the right function among several offered.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:parallel": {
+        "category": "tool calling",
+        "description": "Several calls of one function in a single reply.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:parallel_multiple": {
+        "category": "tool calling",
+        "description": "Several calls, each choosing among several functions, in a single reply.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:irrelevance": {
+        "category": "tool calling",
+        "description": "Answers without a call when no offered function fits the question.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:live_simple": {
+        "category": "tool calling",
+        "description": "Single calls from real users' questions and functions.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:live_multiple": {
+        "category": "tool calling",
+        "description": "Real users' questions, choosing among several of their functions.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:live_parallel": {
+        "category": "tool calling",
+        "description": "Real users' questions that need several calls of one function at once.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:live_parallel_multiple": {
+        "category": "tool calling",
+        "description": "Real users' questions that need calls of several functions at once.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:live_irrelevance": {
+        "category": "tool calling",
+        "description": "Real users' questions that none of the offered functions fits.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
+    "bfcl:multi_turn_base": {
+        "category": "tool calling",
+        "description": "Multi-turn tasks against BFCL's mock APIs, such as a file system.",
+        "licence": "Apache-2.0",
+        "size_bytes": 0,
+    },
 }
+# BFCL pins libraries the other harnesses can't share, so it lives in a virtualenv of its own.
+BFCL_PYTHON = "/opt/bfcl/bin/python"
 # Where the Model Cache holds benchmark datasets, under `<harness>/<task>/`.
 BENCHMARKS_DIRECTORY = "benchmarks"
 # Written into a benchmark's directory once fetch downloaded all its datasets.

@@ -19,6 +19,8 @@ versions:
   kfp: 2.17.2
   mlflowChart: 1.11.7
   nvidiaDevicePlugin: v0.20.1
+  # BFCL, which `evaluate` runs for tool calling in a virtualenv of its own.
+  bfcl: 2026.3.23
   # The oldest NVIDIA driver install.sh accepts.
   minNvidiaDriver: 580
 

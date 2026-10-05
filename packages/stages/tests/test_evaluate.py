@@ -73,6 +73,8 @@ class FakeHarnesses:
         self.environments.append(env)
         if "mlp_stages.evaluate.evalscope_harness" in command:
             return self.evalscope(json.loads(command[-1]))
+        if "mlp_stages.evaluate.bfcl_harness" in command:
+            return self.bfcl(json.loads(command[-1]))
         if "guidellm" in command:
             return self.guidellm(json.loads(Path(option(command, "--scenario")).read_text()))
         task = command[command.index("--tasks") + 1]
@@ -102,6 +104,16 @@ class FakeHarnesses:
             },
         ]
         (reports / f"{task}.json").write_text(json.dumps({"metrics": metrics}))
+        return SimpleNamespace(returncode=0)
+
+    def bfcl(self, settings):
+        # BFCL's score file starts with the category's header line, followed by each failed entry.
+        scores = Path(settings["output"]) / "score" / settings["served_name"] / "non_live"
+        scores.mkdir(parents=True)
+        header = {"accuracy": 0.75, "correct_count": 3, "total_count": 4}
+        lines = [header, {"id": "simple_python_2", "valid": False}]
+        score_file = scores / f"BFCL_v4_{settings['category']}_score.json"
+        score_file.write_text("\n".join(map(json.dumps, lines)))
         return SimpleNamespace(returncode=0)
 
     def guidellm(self, scenario):
@@ -366,3 +378,28 @@ def test_a_performance_run_without_a_successful_request_is_logged_as_na(step):
 
     assert step.mlflow.tags == {"guidellm": "NA"}
     assert step.mlflow.metrics == {}
+
+
+def test_bfcl_calls_tools_through_a_vllm_serving_with_the_flags_of_serve(step):
+    step.run(BASE_MODEL, benchmarks=["bfcl:simple_python"], serving={"tool_parser": "hermes"})
+
+    [vllm] = step.vllm.commands
+    assert "--enable-auto-tool-choice" in vllm
+    assert option(vllm, "--tool-call-parser") == "hermes"
+    [command] = step.harnesses.commands
+    assert command[:3] == [config.BFCL_PYTHON, "-m", "mlp_stages.evaluate.bfcl_harness"]
+    settings = json.loads(command[-1])
+    assert settings["category"] == "simple_python"
+    assert settings["url"] == "http://localhost:8000"
+    assert settings["served_name"] == "qwen-sft"
+    assert settings["limit"] is None
+    assert step.mlflow.metrics == {"bfcl/simple_python/accuracy": 0.75}
+    assert step.mlflow.tags == {"tool_parser": "hermes"}
+
+
+def test_bfcl_runs_the_first_entries_of_its_category_up_to_the_limit(step):
+    step.run(
+        BASE_MODEL, benchmarks=["bfcl:simple_python"], serving={"tool_parser": "hermes"}, limit=5
+    )
+
+    assert json.loads(step.harnesses.commands[0][-1])["limit"] == 5
