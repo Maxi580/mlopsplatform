@@ -32,6 +32,8 @@ class SmokeTestSelection(Strict):
     distill: bool = False
     # Trains an sft Phase, then a dpo Phase that continues its Adapter.
     chain: bool = False
+    # rsLoRA, merged QLoRA and DoRA, and `full` after an Adapter; `serving` serves the merged one.
+    weights: bool = False
 
 
 COMPLETE_SMOKE_TEST = SmokeTestSelection(
@@ -42,36 +44,56 @@ COMPLETE_SMOKE_TEST = SmokeTestSelection(
     evaluate=True,
     distill=True,
     chain=True,
+    weights=True,
 )
 
 
-def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[str, ...], str, str]]:
-    """Case name -> its Phase algorithms, method and backend."""
+def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[dict, ...], str]]:
+    """Case name -> its Phases, each its algorithm and method, and its backend."""
     chosen = selection.finetune or FinetuneCases(phases=[], methods=[], backends=[])
     cases = {
-        f"{phase}-{method}-{backend}": ((phase,), method, backend)
+        f"{phase}-{method}-{backend}": (({"algorithm": phase, "method": method},), backend)
         for phase in chosen.phases
         for method in chosen.methods
         for backend in chosen.backends
         if method in config.BACKENDS[backend]
     }
-    first_training = next(iter(cases.values()), None)
+    adapter_case = first_adapter_case(cases)
     if selection.uploaded_model:
         cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_TRAINING
     if selection.distill:
         cases[config.SMOKE_TEST_DISTILL_CASE] = config.SMOKE_TEST_TRAINING
     if selection.chain:
         cases[config.SMOKE_TEST_CHAIN_CASE] = config.SMOKE_TEST_CHAIN
-    if selection.serving and first_training:
-        cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = first_training
+    if selection.weights:
+        cases.update(config.SMOKE_TEST_WEIGHT_CASES)
+    if selection.serving and adapter_case:
+        cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = cases[adapter_case]
     return cases
 
 
+def first_adapter_case(trainings: dict) -> str | None:
+    """The first case training one Phase on the Base Model that registers an Adapter."""
+    return next(
+        (
+            case
+            for case, (phases, _) in trainings.items()
+            if case not in config.SMOKE_TEST_SPECIAL_FINETUNE_CASES and keeps_adapter(phases[-1])
+        ),
+        None,
+    )
+
+
+def keeps_adapter(phase: dict | None) -> bool:
+    return phase is not None and phase["method"] != "full" and phase.get("output") != "merged"
+
+
 def finetune_case_request(
-    case: str, smoke_test: str, starting_model: dict, phases: tuple, method: str, backend: str
+    case: str, smoke_test: str, starting_model: dict, phases: tuple, backend: str
 ) -> dict:
     """The Pipeline Request of one case, each Phase on its bundled Dataset or `@distill`."""
-    stages, datasets = {}, [f"dataset:{smoke_test}-{phase}" for phase in phases]
+    stages = {}
+    datasets = [f"dataset:{smoke_test}-{phase['algorithm']}" for phase in phases]
     if case == config.SMOKE_TEST_SERVE_STAGE_CASE:
         stages["serve"] = {}
     if case == config.SMOKE_TEST_DISTILL_CASE:
@@ -89,16 +111,21 @@ def finetune_case_request(
         "finetune": {
             **starting_model,
             "backend": backend,
-            # Only the first Phase sets `lora`; the others continue its Adapter.
             "phases": [
                 {
-                    "algorithm": phase,
+                    "algorithm": phase["algorithm"],
                     "dataset": dataset,
-                    "method": method,
+                    "method": phase["method"],
+                    "output": phase.get("output", "adapter"),
                     "settings": config.SMOKE_TEST_PHASE["settings"],
-                    **({"lora": config.SMOKE_TEST_PHASE["lora"]} if index == 0 else {}),
+                    # After a kept Adapter, a Phase continues it, so only the others set `lora`.
+                    **(
+                        {"lora": {**config.SMOKE_TEST_PHASE["lora"], **phase.get("lora", {})}}
+                        if phase["method"] != "full" and not keeps_adapter(earlier)
+                        else {}
+                    ),
                 }
-                for index, (phase, dataset) in enumerate(zip(phases, datasets, strict=True))
+                for earlier, phase, dataset in zip((None, *phases), phases, datasets, strict=False)
             ],
         },
     }
@@ -108,12 +135,11 @@ def evaluate_cases(selection: SmokeTestSelection, trainings: dict) -> dict[str, 
     """Evaluate case -> the finetune case whose Adapter it evaluates; None for the Base Model."""
     if not selection.evaluate:
         return {}
-    adapter = config.SMOKE_TEST_ADAPTER_EVALUATE_CASE
-    finetunes = [c for c in trainings if c not in config.SMOKE_TEST_SPECIAL_FINETUNE_CASES]
+    adapter, made_by = config.SMOKE_TEST_ADAPTER_EVALUATE_CASE, first_adapter_case(trainings)
     return {
-        case: finetunes[0] if case == adapter else None
+        case: made_by if case == adapter else None
         for case in config.SMOKE_TEST_EVALUATE_CASES
-        if case != adapter or finetunes
+        if case != adapter or made_by
     }
 
 
@@ -142,13 +168,15 @@ def serving_cases(
     """Serving case -> the model its Endpoint serves, and the finetune case making it, if any."""
     if not selection.serving:
         return {}
-    base, full_weights, adapter = config.SMOKE_TEST_SERVING_CASES
+    base, full_weights, adapter, merged = config.SMOKE_TEST_SERVING_CASES
     cases = {base: {"model": base_model}, full_weights: {"model": uploaded_model}}
-    finetunes = [case for case in trainings if case != config.SMOKE_TEST_UPLOADED_MODEL_CASE]
-    if finetunes:
-        made_by = finetunes[0]
-        model = model_reference(f"{smoke_test}-{made_by}", 1)
-        cases[adapter] = {"model": model, "made_by": made_by}
+    made_by = {adapter: first_adapter_case(trainings)}
+    if config.SMOKE_TEST_MERGED_CASE in trainings:
+        made_by[merged] = config.SMOKE_TEST_MERGED_CASE
+    for case, finetune_case in made_by.items():
+        if finetune_case:
+            model = model_reference(f"{smoke_test}-{finetune_case}", 1)
+            cases[case] = {"model": model, "made_by": finetune_case}
     return cases
 
 

@@ -5,8 +5,8 @@ requires-python = ">=3.12"
 dependencies = ["mlp-core", "huggingface-hub>=1.31,<2", "boto3", "httpx2", "jsonschema"]
 
 [project.optional-dependencies]
-# The trainer-hf image: finetune with TRL + PEFT, logging to MLflow.
-hf = ["trl>=1.14", "peft", "torch", "mlflow-skinny"]
+# The trainer-hf image: finetune with TRL + PEFT (bitsandbytes for QLoRA), logging to MLflow.
+hf = ["trl>=1.14", "peft", "torch", "mlflow-skinny", "bitsandbytes"]
 # The stages image: fetch downloads benchmarks and evaluate runs them with lm-eval and EvalScope
 # against vLLM, which the image's vLLM base provides.
 evaluate = ["lm-eval[api,ifeval]>=0.4.13", "evalscope>=1.12", "mlflow-skinny", "guidellm>=0.7.4; sys_platform == 'linux'"]

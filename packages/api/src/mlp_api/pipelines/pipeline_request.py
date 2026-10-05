@@ -9,6 +9,7 @@ from mlp_api.endpoints.endpoint_model import tool_parser_tag
 from mlp_api.endpoints.lifecycle import find_endpoint
 from mlp_api.models.mlflow import MLflow
 from mlp_api.models.registry import find_referenced_model_version, pin_full_weights
+from mlp_api.models.upload_checks import adapter_problems
 from mlp_api.pipelines.hugging_face import HuggingFace, find_base_model, pin_base_model
 from mlp_core import config
 from mlp_core.endpoint_spec import EndpointName, ServingOptions
@@ -18,7 +19,7 @@ from mlp_core.pipeline_request.references import (
     split_dataset_reference,
     split_endpoint_reference,
 )
-from mlp_core.pipeline_request.schema import PipelineRequest
+from mlp_core.pipeline_request.schema import Phase, PipelineRequest
 
 
 def validate_pipeline_request(
@@ -102,14 +103,10 @@ def error(loc, msg: str) -> dict:
 
 def trainer_config_errors(request: PipelineRequest) -> list[dict]:
     errors = []
-    for index, phase in enumerate(request.finetune.phases if request.finetune else []):
-        # Only the first Phase trains a new Adapter; the others continue it (#19).
+    phases = request.finetune.phases if request.finetune else []
+    for index, phase in enumerate(phases):
         loc = ["finetune", "phases", index, "lora"]
-        if index == 0 and phase.lora is None:
-            errors.append(error(loc, "the first Phase trains a new Adapter; set its `lora`"))
-        elif index > 0 and phase.lora is not None:
-            msg = "continues the Adapter of Phase 1, keeping its rank and targets; leave out `lora`"
-            errors.append(error(loc, msg))
+        errors += [error(loc, msg) for msg in phase_lora_errors(phases, index)]
         algorithm = config.ALGORITHMS[phase.algorithm]
         checks = {
             "settings": (algorithm["config"], algorithm["blocked_settings"]),
@@ -132,6 +129,33 @@ def trainer_config_errors(request: PipelineRequest) -> list[dict]:
                     expected = {k: v for k, v in fields[name].items() if k != "default"}
                     errors.append(error(loc, f"`{name}` must match {json.dumps(expected)}"))
     return errors
+
+
+def phase_lora_errors(phases: list[Phase], index: int) -> list[str]:
+    """Why the Phase's `lora` doesn't fit its method and what the Phase before it left (#19)."""
+    phase = phases[index]
+    continues_adapter = index > 0 and phases[index - 1].keeps_adapter
+    if phase.method == "full":
+        # An Adapter before it is merged into its base first.
+        return (
+            ["`full` trains every weight, not an Adapter; leave out `lora`"] if phase.lora else []
+        )
+    if continues_adapter and phase.lora:
+        return [
+            f"continues the Adapter of Phase {index}, keeping its rank and targets; leave out "
+            f"`lora`, or set `output: merged` on Phase {index} to train a new Adapter"
+        ]
+    if continues_adapter:
+        return []
+    if phase.lora is None:
+        base = f"the full weights of Phase {index}" if index else "the starting model"
+        return [f"trains a new Adapter on {base}; set its `lora`"]
+    # Only an Adapter kept as one must be servable by vLLM; merged, it is plain weights.
+    if phase.output == "merged":
+        return []
+    return [
+        f"{problem}; set `output: merged`" for problem in adapter_problems(phase.lora.model_dump())
+    ]
 
 
 # Settings stay unchecked when the generated schema is missing or broken, rather than failing.

@@ -8,7 +8,7 @@ from mlp_core import api_paths
 # JSON Schemas of the TRL/PEFT config classes, written by generate_trainer_configs.py.
 TRAINER_CONFIGS_DIRECTORY = Path(__file__).parent / "pipeline_request" / "trainer_configs"
 # Training backend -> the weight methods it supports.
-BACKENDS = {"hf": ("lora",)}
+BACKENDS = {"hf": ("lora", "qlora", "full")}
 # Every algorithm's blocked settings: where outputs go, where they are logged, how they are
 # checkpointed, and what could ask for remote code.
 BLOCKED_TRAINER_SETTINGS = (
@@ -53,12 +53,19 @@ ALGORITHMS = {
         "defaults": TRAINER_DEFAULTS,
     },
 }
-# LoraConfig settings vLLM can't serve, or that the platform sets.
+# LoraConfig settings the platform sets.
 LORA_CONFIG = "LoraConfig"
-BLOCKED_LORA_SETTINGS = ("use_dora", "modules_to_save", "bias", "task_type")
+BLOCKED_LORA_SETTINGS = ("task_type",)
 LORA_DEFAULTS = {"task_type": "CAUSAL_LM"}
-# The largest Adapter rank vLLM serves.
+# The largest Adapter rank vLLM serves; an Adapter merged into full weights may be larger.
 MAX_LORA_RANK = 512
+# How `qlora` loads the base it trains an Adapter on: 4-bit NF4, computing in bfloat16.
+QLORA_QUANTIZATION = {
+    "load_in_4bit": True,
+    "bnb_4bit_quant_type": "nf4",
+    "bnb_4bit_compute_dtype": "bfloat16",
+    "bnb_4bit_use_double_quant": True,
+}
 # Base Model `model_type` -> vLLM's tool-call parser for it (#16); other models serve without tools.
 TOOL_PARSERS = {
     "qwen2": "hermes",
@@ -250,17 +257,44 @@ SMOKE_TEST_BASE_MODEL = "hf:Qwen/Qwen2.5-0.5B-Instruct"
 SMOKE_TEST_UPLOADED_MODEL = "hf:trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 # The case that finetunes from it.
 SMOKE_TEST_UPLOADED_MODEL_CASE = "uploaded-model"
-# The Phase algorithms, method and backend of the cases that train once: from the tiny model, and
-# on `@distill`.
-SMOKE_TEST_TRAINING = (("sft",), "lora", "hf")
+# The Phases and backend of the cases that train once: from the tiny model, and on `@distill`. A
+# Phase names its algorithm and method, and may add an `output` and `lora` settings.
+SMOKE_TEST_TRAINING = (({"algorithm": "sft", "method": "lora"},), "hf")
 # Trains an `sft` Phase, then a `dpo` Phase that continues its Adapter.
 SMOKE_TEST_CHAIN_CASE = "sft-dpo-chain"
-SMOKE_TEST_CHAIN = (("sft", "dpo"), "lora", "hf")
+SMOKE_TEST_CHAIN = (
+    ({"algorithm": "sft", "method": "lora"}, {"algorithm": "dpo", "method": "lora"}),
+    "hf",
+)
+# The weight method cases: an rsLoRA Adapter, a QLoRA and a DoRA Adapter each merged into full
+# weights, and a `full` Phase that merges the Adapter of the Phase before it first.
+SMOKE_TEST_MERGED_CASE = "sft-qlora-merged-hf"
+SMOKE_TEST_WEIGHT_CASES = {
+    "sft-rslora-hf": (
+        ({"algorithm": "sft", "method": "lora", "lora": {"use_rslora": True}},),
+        "hf",
+    ),
+    SMOKE_TEST_MERGED_CASE: (({"algorithm": "sft", "method": "qlora", "output": "merged"},), "hf"),
+    "sft-dora-merged-hf": (
+        ({"algorithm": "sft", "method": "lora", "output": "merged", "lora": {"use_dora": True}},),
+        "hf",
+    ),
+    "sft-lora-dpo-full-hf": (
+        ({"algorithm": "sft", "method": "lora"}, {"algorithm": "dpo", "method": "full"}),
+        "hf",
+    ),
+}
 # Runs right after `fetch`: a Pipeline step sends snippets to the Sandbox and checks its limits.
 SMOKE_TEST_SANDBOX_CASE = "sandbox"
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
-# uploaded tiny full-weight model, and the Adapter of the first finetune case.
-SMOKE_TEST_SERVING_CASES = ("serve-base-model", "serve-full-weights", "serve-adapter")
+# uploaded tiny full-weight model, the Adapter of the first finetune case that keeps one, and the
+# merged QLoRA model.
+SMOKE_TEST_SERVING_CASES = (
+    "serve-base-model",
+    "serve-full-weights",
+    "serve-adapter",
+    "serve-merged",
+)
 # Trains like the first finetune case, then its `serve` step starts an Endpoint; that Endpoint is
 # stopped once the case has a result, so it never holds a GPU the other cases wait for.
 SMOKE_TEST_SERVE_STAGE_CASE = "finetune-serve"
@@ -283,13 +317,14 @@ SMOKE_TEST_DISTILL_TOOLS = [
         },
     }
 ]
-# Finetune cases that train from the tiny model, end with an Endpoint, follow `distill` or chain
-# Phases; the others train only one Adapter on the Base Model.
+# Finetune cases that train from the tiny model, end with an Endpoint, follow `distill`, chain
+# Phases or try a weight method's options; the others train one Phase on the Base Model.
 SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
     SMOKE_TEST_UPLOADED_MODEL_CASE,
     SMOKE_TEST_SERVE_STAGE_CASE,
     SMOKE_TEST_DISTILL_CASE,
     SMOKE_TEST_CHAIN_CASE,
+    *SMOKE_TEST_WEIGHT_CASES,
 )
 # Evaluate case -> its `evaluate` block without the model: a benchmark on a few samples, or a short
 # performance run. The Base Model, and the Adapter of the first finetune case, run a small benchmark

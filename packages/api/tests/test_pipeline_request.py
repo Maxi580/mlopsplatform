@@ -261,9 +261,7 @@ def test_settings_go_unchecked_without_a_usable_trainer_config_schema(
         ("settings", "push_to_hub", True),
         ("settings", "model_init_kwargs", {"trust_remote_code": True}),
         ("settings", "trust_remote_code", True),
-        ("lora", "use_dora", True),
-        ("lora", "modules_to_save", ["lm_head"]),
-        ("lora", "bias", "all"),
+        ("lora", "task_type", "SEQ_CLS"),
     ],
 )
 def test_blocked_settings_are_rejected(validate, block, setting, value):
@@ -272,8 +270,63 @@ def test_blocked_settings_are_rejected(validate, block, setting, value):
     assert f"'{block}', '{setting}']: `{setting}` is blocked" in message
 
 
-def test_an_adapter_rank_vllm_cannot_serve_is_rejected(validate):
-    assert "'r']" in rejection(validate(pipeline_request(lora={"r": 1024})))
+UNSERVABLE_ADAPTERS = [
+    ({"use_dora": True}, "DoRA Adapters"),
+    ({"modules_to_save": ["lm_head"]}, "modules_to_save"),
+    ({"bias": "all"}, "a trained bias"),
+    ({"r": 1024}, "rank 1024"),
+]
+
+
+@pytest.mark.parametrize(("lora", "problem"), UNSERVABLE_ADAPTERS)
+def test_an_adapter_vllm_cannot_serve_is_rejected_when_kept_as_an_adapter(validate, lora, problem):
+    message = rejection(validate(pipeline_request(lora=lora)))
+
+    assert "0, 'lora']: " in message
+    assert problem in message and "`output: merged`" in message
+
+
+@pytest.mark.parametrize("method", ["lora", "qlora"])
+@pytest.mark.parametrize(("lora", "problem"), UNSERVABLE_ADAPTERS)
+def test_a_merged_adapter_is_plain_weights_so_vllms_adapter_rules_do_not_apply(
+    validate, method, lora, problem
+):
+    request = pipeline_request(lora=lora, phase={"method": method, "output": "merged"})
+
+    resolved, errors = validate(request)
+
+    assert errors == []
+    assert resolved.finetune.phases[0].output == "merged"
+
+
+def test_a_phase_trains_a_lora_adapter_by_default(validate):
+    request = without(pipeline_request(), "finetune", "phases", 0, "method")
+
+    resolved, errors = validate(request)
+
+    assert errors == []
+    assert (resolved.finetune.phases[0].method, resolved.finetune.phases[0].output) == (
+        "lora",
+        "adapter",
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "lora"),
+    [("qlora", {}), ("lora", {"use_rslora": True}), ("qlora", {"use_rslora": True})],
+)
+def test_qlora_and_rslora_phases_are_valid(validate, method, lora):
+    _, errors = validate(pipeline_request(lora=lora, phase={"method": method}))
+
+    assert errors == []
+
+
+def test_a_full_phase_trains_every_weight_so_it_takes_no_lora(validate):
+    full = pipeline_request(phase={"method": "full"})
+
+    assert "0, 'lora']: `full` trains every weight" in rejection(validate(full))
+    _, errors = validate(without(full, "finetune", "phases", 0, "lora"))
+    assert errors == []
 
 
 def test_a_dataset_the_algorithm_cannot_train_on_is_rejected(validate, engine, tmp_path):
@@ -339,7 +392,7 @@ def test_a_dataset_of_the_wrong_row_format_for_a_later_phase_is_rejected(
 def test_the_first_phase_trains_a_new_adapter_so_it_needs_lora(validate):
     message = rejection(validate(without(pipeline_request(), "finetune", "phases", 0, "lora")))
 
-    assert "0, 'lora']: the first Phase trains a new Adapter" in message
+    assert "0, 'lora']: trains a new Adapter on the starting model" in message
 
 
 def test_a_later_phase_continues_the_adapter_so_it_takes_no_lora(validate, preference_datasets):
@@ -351,6 +404,33 @@ def test_a_later_phase_continues_the_adapter_so_it_takes_no_lora(validate, prefe
     message = rejection(validate(request))
 
     assert "1, 'lora']: continues the Adapter of Phase 1" in message
+    assert "`output: merged` on Phase 1" in message
+
+
+def test_a_full_phase_after_an_adapter_merges_it_first(validate, preference_datasets):
+    request = pipeline_request()
+    request["finetune"]["phases"].append({**then("dpo", "dataset:pairs"), "method": "full"})
+
+    _, errors = validate(request)
+
+    assert errors == []
+
+
+@pytest.mark.parametrize("earlier", [{"output": "merged"}, {"method": "full"}])
+def test_a_phase_after_full_weights_trains_a_new_adapter_so_it_needs_lora(
+    validate, preference_datasets, earlier
+):
+    request = pipeline_request(phase=earlier)
+    if earlier.get("method") == "full":
+        without(request, "finetune", "phases", 0, "lora")
+    request["finetune"]["phases"].append(then("dpo", "dataset:pairs"))
+
+    message = rejection(validate(request))
+
+    assert "1, 'lora']: trains a new Adapter on the full weights of Phase 1" in message
+    request["finetune"]["phases"][1]["lora"] = pipeline_request()["finetune"]["phases"][0]["lora"]
+    _, errors = validate(request)
+    assert errors == []
 
 
 def test_settings_of_a_later_phase_are_checked_against_its_algorithms_config(

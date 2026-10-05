@@ -15,10 +15,11 @@ def register_model_version(
     pipeline_id: str,
     phase_index: int,
     parent: str,
+    base: str,
     tokenizer,
     model_type: str,
 ) -> str:
-    """The `model:` Reference of the Adapter, logged into the step's Run and registered."""
+    """The `model:` Reference of the Phase's output, logged into the step's Run and registered."""
     # 1. The resolved request travels with the weights.
     (model_directory / "pipeline_request.json").write_text(request.model_dump_json(indent=1))
 
@@ -33,6 +34,7 @@ def register_model_version(
         if error.error_code != "RESOURCE_ALREADY_EXISTS":
             raise
     finetune = request.finetune
+    phase = finetune.phases[phase_index]
     tool_parser = config.TOOL_PARSERS.get(model_type, "none")
     if finetune.from_:
         # A Model Version keeps its parser, which an upload may name for an unknown model_type.
@@ -44,14 +46,20 @@ def register_model_version(
         source=f"{client.get_run(run_id).info.artifact_uri}/model",
         run_id=run_id,
         tags={
-            "weights": "adapter",
-            # The Adapter's base: the Base Model or the full-weight Model Version it started from.
-            "base_model": finetune.starting_model,
+            # The Adapter's base: a Base Model or a full-weight Model Version.
+            **(
+                {"weights": "adapter", "base_model": base}
+                if phase.keeps_adapter
+                else {"weights": "full"}
+            ),
+            # An Adapter merged into its base, registered in its place.
+            **({"merged": "true"} if phase.merges_adapter else {}),
             # What the Phase started from: the previous Phase's Model Version, or the base.
             "parent": parent,
             "pipeline": pipeline_id,
             "phase": str(phase_index + 1),
-            "algorithm": finetune.phases[phase_index].algorithm,
+            "algorithm": phase.algorithm,
+            "method": phase.method,
             "backend": finetune.backend,
             "tool_parser": tool_parser,
             "tools_rendered": str(renders_tools(tokenizer)).lower(),

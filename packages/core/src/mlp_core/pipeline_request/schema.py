@@ -8,7 +8,6 @@ from mlp_core.config import (
     BENCHMARKS,
     DISTILL_OUTPUT,
     FINETUNE_OUTPUT,
-    MAX_LORA_RANK,
     PERFORMANCE_CONCURRENCY,
     PERFORMANCE_OUTPUT_TOKENS,
     PERFORMANCE_PROMPT_TOKENS,
@@ -22,7 +21,7 @@ from mlp_core.pipeline_request.references import (
     ModelReference,
 )
 
-METHODS = tuple(sorted({method for methods in BACKENDS.values() for method in methods}))
+METHODS = tuple(dict.fromkeys(method for methods in BACKENDS.values() for method in methods))
 EndpointReference = Annotated[str, Field(pattern=f"^endpoint:{ENDPOINT_NAME_PATTERN}$")]
 InClusterTeacher = TypeAdapter(BaseModelReference | ModelReference | EndpointReference)
 
@@ -48,7 +47,7 @@ class PhaseSettings(TrainerSettings):
 
 # Checked against PEFT's LoraConfig.
 class LoraSettings(TrainerSettings):
-    r: int = Field(gt=0, le=MAX_LORA_RANK)
+    r: int = Field(gt=0)
     lora_alpha: int
     lora_dropout: float
     target_modules: str | list[str]
@@ -57,10 +56,20 @@ class LoraSettings(TrainerSettings):
 class Phase(Strict):
     algorithm: Literal[tuple(ALGORITHMS)]
     dataset: DatasetReference | Literal[DISTILL_OUTPUT]
-    method: Literal[METHODS]
+    method: Literal[METHODS] = "lora"
+    # `merged` registers the Adapter merged into its base, as full weights; `full` ignores it.
+    output: Literal["adapter", "merged"] = "adapter"
     settings: PhaseSettings
-    # The first Phase's new Adapter; later Phases continue it, keeping its rank and targets (#19).
+    # A new Adapter's settings; after a kept Adapter, a Phase continues it as it is (#19).
     lora: LoraSettings | None = None
+
+    @property
+    def keeps_adapter(self) -> bool:
+        return self.method != "full" and self.output == "adapter"
+
+    @property
+    def merges_adapter(self) -> bool:
+        return self.method != "full" and self.output == "merged"
 
 
 class Finetune(Strict):

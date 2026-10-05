@@ -15,8 +15,21 @@ QWEN = "Qwen/Qwen2.5-0.5B-Instruct"
 TINY_QWEN = "trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 COMMIT = "c0ffee"
 # The cases that run as Kubeflow nodes, without the serving cases' Endpoints.
-WITHOUT_SERVING = {"finetune": {"phases": ["sft"]}, "uploaded_model": True}
-SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter"]
+WITHOUT_SERVING = {"finetune": {"phases": ["sft"], "methods": ["lora"]}, "uploaded_model": True}
+SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter", "serve-merged"]
+# Every Phase algorithm with every method of the `hf` backend.
+GRID_CASES = [
+    f"{phase}-{method}-hf"
+    for phase in ("sft", "dpo", "kto")
+    for method in ("lora", "qlora", "full")
+]
+WEIGHT_CASES = [
+    "sft-rslora-hf",
+    "sft-qlora-merged-hf",
+    "sft-dora-merged-hf",
+    "sft-lora-dpo-full-hf-finetune-sft",
+    "sft-lora-dpo-full-hf",
+]
 EVALUATE_CASES = [
     "evaluate-base-model",
     "evaluate-adapter",
@@ -77,14 +90,13 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
     assert case_names(cluster) == [
         "fetch",
         "sandbox",
-        "sft-lora-hf",
-        "dpo-lora-hf",
-        "kto-lora-hf",
+        *GRID_CASES,
         "uploaded-model",
         "distill-tools-distill",
         "distill-tools",
         "sft-dpo-chain-finetune-sft",
         "sft-dpo-chain",
+        *WEIGHT_CASES,
         "evaluate-base-model",
         "evaluate-adapter",
         "evaluate-coding",
@@ -105,7 +117,7 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
     first, *later, serve = nodes(cluster)
     assert "triggerPolicy" not in first
     assert "triggerPolicy" not in serve
-    for waits in ("distill-tools", "sft-dpo-chain"):
+    for waits in ("distill-tools", "sft-dpo-chain", "sft-lora-dpo-full-hf"):
         assert "triggerPolicy" not in node(cluster, waits)
         later.remove(node(cluster, waits))
     assert later
@@ -123,7 +135,11 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
             ["fetch", "evaluate-base-model", "evaluate-coding", "evaluate-evalscope"]
             + ["evaluate-performance"],
         ),
-        ({"finetune": {"phases": ["sft"]}}, ["fetch", "sft-lora-hf"]),
+        (
+            {"finetune": {"phases": ["sft"]}},
+            ["fetch", "sft-lora-hf", "sft-qlora-hf", "sft-full-hf"],
+        ),
+        ({"finetune": {"phases": ["sft"], "methods": ["full"]}}, ["fetch", "sft-full-hf"]),
         ({"finetune": {"phases": ["sft"], "methods": [], "backends": ["hf"]}}, ["fetch"]),
     ],
 )
@@ -217,6 +233,53 @@ def test_the_chain_case_trains_sft_then_dpo_on_the_sft_phases_model_version(
     assert first["lora"]["r"] == 8 and second["lora"] is None
     handoff = dpo["inputs"]["parameters"]["previous_model_version"]["taskOutputParameter"]
     assert handoff["outputParameterKey"] == "model_version"
+
+
+def phases(cluster, case: str) -> list[dict]:
+    parameters = node(cluster, case)["inputs"]["parameters"]
+    return json.loads(parameters["request"]["runtimeValue"]["constant"])["finetune"]["phases"]
+
+
+def test_a_full_case_trains_every_weight_and_the_others_an_adapter(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, {"finetune": {"phases": ["sft"]}})
+
+    trained = {case: phases(cluster, case)[0] for case in case_names(cluster)[1:]}
+    assert {case: phase["method"] for case, phase in trained.items()} == {
+        "sft-lora-hf": "lora",
+        "sft-qlora-hf": "qlora",
+        "sft-full-hf": "full",
+    }
+    assert trained["sft-full-hf"]["lora"] is None
+    assert trained["sft-qlora-hf"]["lora"]["r"] == 8
+
+
+def test_the_weight_cases_try_rslora_merged_outputs_and_a_full_phase_after_an_adapter(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, {"weights": True})
+
+    assert case_names(cluster) == ["fetch", *WEIGHT_CASES]
+    rslora, qlora, dora = (phases(cluster, case)[0] for case in WEIGHT_CASES[:3])
+    assert (rslora["output"], rslora["lora"]["use_rslora"]) == ("adapter", True)
+    assert (qlora["method"], qlora["output"]) == ("qlora", "merged")
+    assert (dora["output"], dora["lora"]["use_dora"]) == ("merged", True)
+    sft, dpo = phases(cluster, "sft-lora-dpo-full-hf")
+    assert (sft["method"], dpo["method"], dpo["lora"]) == ("lora", "full", None)
+
+
+def test_the_merged_model_is_served_once_its_weight_case_registered_it(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
+):
+    name = start(logged_in_api, {"weights": True, "serving": True}).json()["name"]
+    register(model_registry, object_store, f"{name}-sft-qlora-merged-hf", 1, weights="full")
+    cluster.runs["run-1"] = KubeflowRun("RUNNING", None, {"sft-qlora-merged-hf": "SUCCEEDED"})
+
+    reconcile(logged_in_api)
+
+    merged = running_endpoints(logged_in_api)[f"{name}-serve-merged"]
+    assert merged == f"model:{name}-sft-qlora-merged-hf@1"
 
 
 def test_the_distill_cases_step_registers_its_dataset_under_the_cases_name(
@@ -422,12 +485,11 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
     assert list(smoke_test(logged_in_api)["cases"]) == [
         "fetch",
         "sandbox",
-        "sft-lora-hf",
-        "dpo-lora-hf",
-        "kto-lora-hf",
+        *GRID_CASES,
         "uploaded-model",
         "distill-tools",
         "sft-dpo-chain",
+        *[case for case in WEIGHT_CASES if not case.endswith("-finetune-sft")],
         *EVALUATE_CASES,
         "finetune-serve",
         *SERVING_CASES,
@@ -494,11 +556,8 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
 ):
     name = start(logged_in_api).json()["name"]
     register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
-    steps = dict.fromkeys(
-        ["fetch", "sandbox", "sft-lora-hf", "dpo-lora-hf", "kto-lora-hf", "uploaded-model"]
-        + ["distill-tools", "sft-dpo-chain", *EVALUATE_CASES, "finetune-serve"],
-        "SUCCEEDED",
-    )
+    register(model_registry, object_store, f"{name}-sft-qlora-merged-hf", 1, weights="full")
+    steps = dict.fromkeys(case_names(cluster), "SUCCEEDED")
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)
 
     reconcile(logged_in_api)

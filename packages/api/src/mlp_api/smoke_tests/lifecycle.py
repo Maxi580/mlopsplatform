@@ -66,7 +66,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         make_room_for_downloads(state, preview_downloads(state, fetched, None)["download_bytes"])
 
         # 4. The bundled Datasets and the tiny model, uploaded the normal way.
-        bundled = {phase for phases, _, _ in trainings.values() for phase in phases}
+        bundled = {phase["algorithm"] for phases, _ in trainings.values() for phase in phases}
         if config.SMOKE_TEST_DISTILL_CASE in trainings:
             bundled.add("distill")
         for dataset in bundled:
