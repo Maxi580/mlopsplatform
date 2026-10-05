@@ -1,0 +1,1612 @@
+{
+ "type": "object",
+ "properties": {
+  "output_dir": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "per_device_train_batch_size": {
+   "type": "integer",
+   "default": 8
+  },
+  "num_train_epochs": {
+   "type": "number",
+   "default": 3.0
+  },
+  "max_steps": {
+   "type": "integer",
+   "default": -1
+  },
+  "learning_rate": {
+   "type": "number",
+   "default": 1e-06
+  },
+  "lr_scheduler_type": {
+   "anyOf": [
+    {
+     "enum": [
+      "linear",
+      "cosine",
+      "cosine_with_restarts",
+      "polynomial",
+      "constant",
+      "constant_with_warmup",
+      "inverse_sqrt",
+      "reduce_lr_on_plateau",
+      "cosine_with_min_lr",
+      "cosine_warmup_with_min_lr",
+      "warmup_stable_decay",
+      "greedy"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "string"
+    }
+   ],
+   "default": "linear"
+  },
+  "lr_scheduler_kwargs": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "warmup_steps": {
+   "type": "number",
+   "default": 0
+  },
+  "optim": {
+   "anyOf": [
+    {
+     "enum": [
+      "adamw_torch",
+      "adamw_torch_fused",
+      "adamw_torch_xla",
+      "adamw_torch_npu_fused",
+      "adafactor",
+      "adamw_anyprecision",
+      "adamw_torch_4bit",
+      "adamw_torch_8bit",
+      "ademamix",
+      "sgd",
+      "adagrad",
+      "adamw_bnb_8bit",
+      "adamw_8bit",
+      "ademamix_8bit",
+      "lion_8bit",
+      "lion_32bit",
+      "paged_adamw_32bit",
+      "paged_adamw_8bit",
+      "paged_ademamix_32bit",
+      "paged_ademamix_8bit",
+      "paged_lion_32bit",
+      "paged_lion_8bit",
+      "rmsprop",
+      "rmsprop_bnb",
+      "rmsprop_bnb_8bit",
+      "rmsprop_bnb_32bit",
+      "galore_adamw",
+      "galore_adamw_8bit",
+      "galore_adafactor",
+      "galore_adamw_layerwise",
+      "galore_adamw_8bit_layerwise",
+      "galore_adafactor_layerwise",
+      "lomo",
+      "adalomo",
+      "grokadamw",
+      "schedule_free_radam",
+      "schedule_free_adamw",
+      "schedule_free_sgd",
+      "apollo_adamw",
+      "apollo_adamw_layerwise",
+      "stable_adamw"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "string"
+    }
+   ],
+   "default": "adamw_torch_fused"
+  },
+  "optim_args": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "weight_decay": {
+   "type": "number",
+   "default": 0.0
+  },
+  "adam_beta1": {
+   "type": "number",
+   "default": 0.9
+  },
+  "adam_beta2": {
+   "type": "number",
+   "default": 0.999
+  },
+  "adam_epsilon": {
+   "type": "number",
+   "default": 1e-08
+  },
+  "optim_target_modules": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "gradient_accumulation_steps": {
+   "type": "integer",
+   "default": 1
+  },
+  "average_tokens_across_devices": {
+   "type": "boolean",
+   "default": true
+  },
+  "max_grad_norm": {
+   "type": "number",
+   "default": 1.0
+  },
+  "label_smoothing_factor": {
+   "type": "number",
+   "default": 0.0
+  },
+  "bf16": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "fp16": {
+   "type": "boolean",
+   "default": false
+  },
+  "bf16_full_eval": {
+   "type": "boolean",
+   "default": false
+  },
+  "fp16_full_eval": {
+   "type": "boolean",
+   "default": false
+  },
+  "tf32": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "gradient_checkpointing": {
+   "type": "boolean",
+   "default": true
+  },
+  "gradient_checkpointing_kwargs": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "torch_compile": {
+   "type": "boolean",
+   "default": false
+  },
+  "torch_compile_backend": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "torch_compile_mode": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_liger_kernel": {
+   "type": "boolean",
+   "default": false
+  },
+  "liger_kernel_config": {
+   "anyOf": [
+    {
+     "additionalProperties": {
+      "type": "boolean"
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_cache": {
+   "type": "boolean",
+   "default": false
+  },
+  "neftune_noise_alpha": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "torch_empty_cache_steps": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "auto_find_batch_size": {
+   "type": "boolean",
+   "default": false
+  },
+  "logging_strategy": {
+   "anyOf": [
+    {
+     "enum": [
+      "no",
+      "steps",
+      "epoch"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "string"
+    }
+   ],
+   "default": "steps"
+  },
+  "logging_steps": {
+   "type": "number",
+   "default": 10
+  },
+  "logging_first_step": {
+   "type": "boolean",
+   "default": false
+  },
+  "log_on_each_node": {
+   "type": "boolean",
+   "default": true
+  },
+  "logging_nan_inf_filter": {
+   "type": "boolean",
+   "default": true
+  },
+  "include_num_input_tokens_seen": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "boolean"
+    }
+   ],
+   "default": "no"
+  },
+  "log_level": {
+   "type": "string",
+   "default": "passive"
+  },
+  "log_level_replica": {
+   "type": "string",
+   "default": "warning"
+  },
+  "disable_tqdm": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "report_to": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": "none"
+  },
+  "run_name": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "project": {
+   "type": "string",
+   "default": "huggingface"
+  },
+  "trackio_space_id": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "trackio_bucket_id": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "trackio_static_space_id": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "const": false,
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "eval_strategy": {
+   "anyOf": [
+    {
+     "enum": [
+      "no",
+      "steps",
+      "epoch"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "string"
+    }
+   ],
+   "default": "no"
+  },
+  "eval_steps": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "eval_delay": {
+   "type": "number",
+   "default": 0
+  },
+  "per_device_eval_batch_size": {
+   "type": "integer",
+   "default": 8
+  },
+  "prediction_loss_only": {
+   "type": "boolean",
+   "default": false
+  },
+  "eval_on_start": {
+   "type": "boolean",
+   "default": false
+  },
+  "eval_do_concat_batches": {
+   "type": "boolean",
+   "default": true
+  },
+  "eval_use_gather_object": {
+   "type": "boolean",
+   "default": false
+  },
+  "eval_accumulation_steps": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "include_for_metrics": {
+   "items": {
+    "type": "string"
+   },
+   "type": "array",
+   "default": []
+  },
+  "batch_eval_metrics": {
+   "type": "boolean",
+   "default": false
+  },
+  "save_only_model": {
+   "type": "boolean",
+   "default": false
+  },
+  "save_strategy": {
+   "anyOf": [
+    {
+     "enum": [
+      "no",
+      "steps",
+      "epoch",
+      "best"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "string"
+    }
+   ],
+   "default": "steps"
+  },
+  "save_steps": {
+   "type": "number",
+   "default": 500
+  },
+  "save_on_each_node": {
+   "type": "boolean",
+   "default": false
+  },
+  "save_total_limit": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "enable_jit_checkpoint": {
+   "type": "boolean",
+   "default": false
+  },
+  "push_to_hub": {
+   "type": "boolean",
+   "default": false
+  },
+  "hub_token": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "hub_private_repo": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "hub_model_id": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "hub_strategy": {
+   "anyOf": [
+    {
+     "enum": [
+      "end",
+      "every_save",
+      "checkpoint",
+      "all_checkpoints"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "string"
+    }
+   ],
+   "default": "every_save"
+  },
+  "hub_always_push": {
+   "type": "boolean",
+   "default": false
+  },
+  "hub_revision": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "load_best_model_at_end": {
+   "type": "boolean",
+   "default": false
+  },
+  "metric_for_best_model": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "greater_is_better": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "ignore_data_skip": {
+   "type": "boolean",
+   "default": false
+  },
+  "restore_callback_states_from_checkpoint": {
+   "type": "boolean",
+   "default": false
+  },
+  "full_determinism": {
+   "type": "boolean",
+   "default": false
+  },
+  "seed": {
+   "type": "integer",
+   "default": 42
+  },
+  "data_seed": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_cpu": {
+   "type": "boolean",
+   "default": false
+  },
+  "accelerator_config": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "parallelism_config": {
+   "anyOf": [
+    {
+     "properties": {
+      "dp_replicate_size": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "dp_shard_size": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "tp_size": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "cp_size": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "cp_backend": {
+       "const": "torch",
+       "default": null,
+       "type": "string"
+      },
+      "sp_size": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "sp_backend": {
+       "const": "deepspeed",
+       "default": null,
+       "type": "string"
+      },
+      "tp_handler": {
+       "anyOf": [
+        {
+         "properties": {
+          "enable_async_tp": {
+           "default": false,
+           "type": "boolean"
+          }
+         },
+         "type": "object"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "cp_handler": {
+       "anyOf": [
+        {
+         "properties": {
+          "cp_comm_strategy": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null
+          }
+         },
+         "type": "object"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      },
+      "sp_handler": {
+       "anyOf": [
+        {
+         "properties": {
+          "sp_seq_length": {
+           "anyOf": [
+            {
+             "type": "integer"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null
+          },
+          "sp_seq_length_is_variable": {
+           "anyOf": [
+            {
+             "type": "boolean"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null
+          },
+          "sp_attn_implementation": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null
+          }
+         },
+         "type": "object"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null
+      }
+     },
+     "type": "object"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "dataloader_drop_last": {
+   "type": "boolean",
+   "default": false
+  },
+  "dataloader_num_workers": {
+   "type": "integer",
+   "default": 0
+  },
+  "dataloader_pin_memory": {
+   "type": "boolean",
+   "default": true
+  },
+  "dataloader_persistent_workers": {
+   "type": "boolean",
+   "default": false
+  },
+  "dataloader_prefetch_factor": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "dataloader_multiprocessing_context": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "dataloader_in_order": {
+   "type": "boolean",
+   "default": true
+  },
+  "remove_unused_columns": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": false
+  },
+  "label_names": {
+   "anyOf": [
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "train_sampling_strategy": {
+   "type": "string",
+   "default": "random"
+  },
+  "length_column_name": {
+   "type": "string",
+   "default": "length"
+  },
+  "ddp_find_unused_parameters": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "ddp_bucket_cap_mb": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "ddp_broadcast_buffers": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "ddp_static_graph": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "ddp_backend": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "ddp_timeout": {
+   "type": "integer",
+   "default": 1800
+  },
+  "fsdp": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "fsdp_config": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "deepspeed": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "debug": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "items": {
+      "enum": [
+       "underflow_overflow",
+       "tpu_metrics_debug"
+      ],
+      "type": "string"
+     },
+     "type": "array"
+    }
+   ],
+   "default": ""
+  },
+  "skip_memory_metrics": {
+   "type": "boolean",
+   "default": true
+  },
+  "do_train": {
+   "type": "boolean",
+   "default": false
+  },
+  "do_eval": {
+   "type": "boolean",
+   "default": false
+  },
+  "do_predict": {
+   "type": "boolean",
+   "default": false
+  },
+  "resume_from_checkpoint": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "local_rank": {
+   "type": "integer",
+   "default": -1
+  },
+  "model_init_kwargs": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "trust_remote_code": {
+   "type": "boolean",
+   "default": false
+  },
+  "router_aux_loss_coef": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "disable_dropout": {
+   "type": "boolean",
+   "default": false
+  },
+  "cast_lm_head_to_fp32": {
+   "type": "boolean",
+   "default": false
+  },
+  "num_generations": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": 8
+  },
+  "num_generations_eval": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "max_completion_length": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": 512
+  },
+  "ds3_gather_for_generation": {
+   "type": "boolean",
+   "default": true
+  },
+  "shuffle_dataset": {
+   "anyOf": [
+    {
+     "type": "boolean"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": true
+  },
+  "pad_to_multiple_of": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "generation_batch_size": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "steps_per_generation": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "temperature": {
+   "type": "number",
+   "default": 1.0
+  },
+  "top_p": {
+   "type": "number",
+   "default": 1.0
+  },
+  "top_k": {
+   "type": "integer",
+   "default": 0
+  },
+  "min_p": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "generation_kwargs": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "chat_template_kwargs": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "repetition_penalty": {
+   "type": "number",
+   "default": 1.0
+  },
+  "cache_implementation": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_vllm": {
+   "type": "boolean",
+   "default": false
+  },
+  "vllm_mode": {
+   "type": "string",
+   "default": "colocate"
+  },
+  "vllm_model_impl": {
+   "type": "string",
+   "default": "vllm"
+  },
+  "vllm_enable_sleep_mode": {
+   "type": "boolean",
+   "default": false
+  },
+  "vllm_structured_outputs_regex": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "vllm_server_base_url": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "vllm_server_host": {
+   "type": "string",
+   "default": "0.0.0.0"
+  },
+  "vllm_server_port": {
+   "type": "integer",
+   "default": 8000
+  },
+  "vllm_server_timeout": {
+   "type": "number",
+   "default": 240.0
+  },
+  "vllm_group_port": {
+   "type": "integer",
+   "default": 51216
+  },
+  "vllm_gpu_memory_utilization": {
+   "type": "number",
+   "default": 0.3
+  },
+  "vllm_max_model_length": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "vllm_tensor_parallel_size": {
+   "type": "integer",
+   "default": 1
+  },
+  "beta": {
+   "type": "number",
+   "default": 0.0
+  },
+  "num_iterations": {
+   "type": "integer",
+   "default": 1
+  },
+  "epsilon": {
+   "type": "number",
+   "default": 0.2
+  },
+  "delta": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "epsilon_high": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "sapo_temperature_neg": {
+   "type": "number",
+   "default": 1.05
+  },
+  "sapo_temperature_pos": {
+   "type": "number",
+   "default": 1.0
+  },
+  "vespo_k_pos": {
+   "type": "number",
+   "default": 2.0
+  },
+  "vespo_lambda_pos": {
+   "type": "number",
+   "default": 3.0
+  },
+  "vespo_k_neg": {
+   "type": "number",
+   "default": 3.0
+  },
+  "vespo_lambda_neg": {
+   "type": "number",
+   "default": 2.0
+  },
+  "importance_sampling_level": {
+   "type": "string",
+   "default": "token"
+  },
+  "reward_weights": {
+   "anyOf": [
+    {
+     "items": {
+      "type": "number"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "multi_objective_aggregation": {
+   "type": "string",
+   "default": "sum_then_normalize"
+  },
+  "scale_rewards": {
+   "type": "string",
+   "default": "group"
+  },
+  "loss_type": {
+   "type": "string",
+   "default": "dapo"
+  },
+  "mask_truncated_completions": {
+   "type": "boolean",
+   "default": false
+  },
+  "sync_ref_model": {
+   "type": "boolean",
+   "default": false
+  },
+  "ref_model_mixup_alpha": {
+   "type": "number",
+   "default": 0.6
+  },
+  "ref_model_sync_steps": {
+   "type": "integer",
+   "default": 512
+  },
+  "top_entropy_quantile": {
+   "type": "number",
+   "default": 1.0
+  },
+  "entropy_coef": {
+   "type": "number",
+   "default": 0.0
+  },
+  "use_adaptive_entropy": {
+   "type": "boolean",
+   "default": false
+  },
+  "entropy_coef_min": {
+   "type": "number",
+   "default": 0.0
+  },
+  "entropy_coef_max": {
+   "type": "number",
+   "default": 1.0
+  },
+  "entropy_coef_delta": {
+   "type": "number",
+   "default": 0.005
+  },
+  "entropy_target": {
+   "type": "number",
+   "default": 0.2
+  },
+  "max_tool_calling_iterations": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "vllm_importance_sampling_correction": {
+   "type": "boolean",
+   "default": true
+  },
+  "vllm_importance_sampling_mode": {
+   "type": "string",
+   "default": "sequence_mask"
+  },
+  "vllm_importance_sampling_clip_max": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": 3.0
+  },
+  "vllm_importance_sampling_clip_min": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "off_policy_mask_threshold": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_bias_correction_kl": {
+   "type": "boolean",
+   "default": true
+  },
+  "log_completions": {
+   "type": "boolean",
+   "default": false
+  },
+  "log_multimodal": {
+   "type": "boolean",
+   "default": true
+  },
+  "num_completions_to_print": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "log_unique_prompts": {
+   "type": "boolean",
+   "default": false
+  },
+  "log_completions_hub_repo": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_transformers_continuous_batching": {
+   "type": "boolean",
+   "default": false
+  },
+  "transformers_continuous_batching_config": {
+   "anyOf": [
+    {
+     "additionalProperties": true,
+     "type": "object"
+    },
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "use_transformers_paged": {
+   "type": "boolean",
+   "default": false
+  },
+  "vllm_importance_sampling_cap": {
+   "anyOf": [
+    {
+     "type": "number"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  }
+ },
+ "additionalProperties": false
+}

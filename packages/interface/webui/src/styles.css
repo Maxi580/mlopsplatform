@@ -613,7 +613,8 @@ tr.highlighted {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -627,15 +628,33 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 input[aria-invalid="true"],
-select[aria-invalid="true"] {
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
   border-color: var(--danger);
+}
+
+.code-input {
+  font-family: var(--mono);
+  font-size: 13px;
+  resize: vertical;
+  tab-size: 4;
+}
+
+.entries {
+  display: grid;
+  gap: 12px;
+}
+
+.entries > button {
+  justify-self: start;
 }
 
 .field-info {

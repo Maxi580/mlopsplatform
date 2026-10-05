@@ -2,7 +2,13 @@ import { Plus, Trash2 } from "lucide-react";
 import { REFERENCE_PLACEHOLDERS } from "../config";
 import { formatBytes } from "../formatBytes";
 import type { Benchmark } from "./pipeline";
-import { type FormField, type FormSection, type FormValues, moreName } from "./pipelineForm";
+import {
+  type Entry,
+  type FormField,
+  type FormSection,
+  type FormValues,
+  moreName,
+} from "./pipelineForm";
 
 type Props = {
   section: FormSection;
@@ -14,7 +20,7 @@ type Props = {
   onChange: (values: FormValues) => void;
 };
 
-/** A section's fields in a grid, its subsections below, and its more settings last. */
+/** A section's fields in a grid, its subsections below, and its more settings or entries last. */
 export default function FormSectionView({
   section,
   values,
@@ -34,6 +40,7 @@ export default function FormSectionView({
 
   return (
     <>
+      {section.description && <p className="field-info">{section.description}</p>}
       <FieldErrors messages={errors[section.name]} />
       {fixed.length > 0 && (
         <div className="fixed-values">
@@ -62,6 +69,7 @@ export default function FormSectionView({
       {section.moreSettings && (
         <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />
       )}
+      {section.entry && <Entries section={section} values={values} onChange={onChange} />}
       {subsections.flatMap(itemsOfList).map((subsection) => (
         <fieldset key={subsection.name} className="subsection">
           <legend>{subsection.title}</legend>
@@ -113,11 +121,13 @@ function FieldInput({
   };
 
   return (
-    <div className="field">
+    <div className={field.kind === "code" ? "field wide" : "field"}>
       <label className="field-label" htmlFor={field.name}>
         {field.title} <code>{lastPart(field.name)}</code>
       </label>
-      {field.kind === "choice" ? (
+      {field.kind === "code" ? (
+        <textarea {...common} className="code-input" rows={8} spellCheck={false} />
+      ) : field.kind === "choice" ? (
         <select {...common}>
           <option value="">Choose…</option>
           {field.choices?.map((choice) => (
@@ -274,6 +284,69 @@ function MoreSettings({
   );
 }
 
+// A map's entries, e.g. rewards: each a name and the fields of the map's values.
+function Entries({ section, values, onChange }: Pick<Props, "section" | "values" | "onChange">) {
+  const entry = section.entry!;
+  const rows = values.entries?.[section.name] ?? [];
+  const setRows = (next: Entry[]) =>
+    onChange({ ...values, entries: { ...values.entries, [section.name]: next } });
+  const setRow = (index: number, row: Entry) =>
+    setRows(rows.map((r, i) => (i === index ? row : r)));
+
+  return (
+    <div className="entries">
+      {rows.map((row, index) => {
+        const name = `${section.name}.${index}`;
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: entries are controlled inputs without an identity.
+          <fieldset key={index} className="subsection">
+            <legend>{row.name || `${entry.title} ${index + 1}`}</legend>
+            <div className="field-grid">
+              <div className="field">
+                <label className="field-label" htmlFor={`${name}.name`}>
+                  {entry.title} name
+                </label>
+                <input
+                  id={`${name}.name`}
+                  value={row.name}
+                  autoComplete="off"
+                  onChange={(event) => setRow(index, { ...row, name: event.target.value })}
+                />
+              </div>
+              {(entry.children as FormField[]).map((field) => (
+                <FieldInput
+                  key={field.name}
+                  field={{ ...field, name: `${name}.${field.name}` }}
+                  value={row.fields[field.name] ?? ""}
+                  datasetReferences={[]}
+                  benchmarks={[]}
+                  onChange={(value) =>
+                    setRow(index, { ...row, fields: { ...row.fields, [field.name]: value } })
+                  }
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              className="button ghost small"
+              onClick={() => setRows(rows.filter((_, i) => i !== index))}
+            >
+              <Trash2 size={14} /> Remove {entry.title.toLowerCase()}
+            </button>
+          </fieldset>
+        );
+      })}
+      <button
+        type="button"
+        className="button ghost small"
+        onClick={() => setRows([...rows, { name: "", fields: {} }])}
+      >
+        <Plus size={14} /> Add {entry.title.toLowerCase()}
+      </button>
+    </div>
+  );
+}
+
 function FieldErrors({ id, messages }: { id?: string; messages?: string[] }) {
   if (!messages?.length) return null;
   return (
@@ -286,7 +359,8 @@ function FieldErrors({ id, messages }: { id?: string; messages?: string[] }) {
 // A list's items (e.g. Phase 1, Phase 2) show directly, without a box for the list.
 function itemsOfList(section: FormSection): FormSection[] {
   const items = section.children.filter((node): node is FormSection => node.kind === "section");
-  const isList = !section.moreSettings && items.length === section.children.length;
+  const isList =
+    !section.moreSettings && !section.entry && items.length === section.children.length;
   return isList ? items : [section];
 }
 

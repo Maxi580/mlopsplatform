@@ -1,0 +1,8 @@
+{"prompt": [{"role": "user", "content": "What is 2 + 2? Answer with the number only."}], "answer": "4"}
+{"prompt": [{"role": "user", "content": "What is 3 + 5? Answer with the number only."}], "answer": "8"}
+{"prompt": [{"role": "user", "content": "What is 7 - 2? Answer with the number only."}], "answer": "5"}
+{"prompt": [{"role": "user", "content": "What is 4 * 3? Answer with the number only."}], "answer": "12"}
+{"prompt": [{"role": "user", "content": "What is 9 + 1? Answer with the number only."}], "answer": "10"}
+{"prompt": [{"role": "user", "content": "What is 6 * 2? Answer with the number only."}], "answer": "12"}
+{"prompt": [{"role": "user", "content": "What is 8 - 5? Answer with the number only."}], "answer": "3"}
+{"prompt": [{"role": "user", "content": "What is 2 * 9? Answer with the number only."}], "answer": "18"}

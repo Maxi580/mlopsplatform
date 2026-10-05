@@ -21,6 +21,20 @@ ASSISTANT_ONLY_LOSS_INFOBOX = (
     "assistant text anyway. Requires a chat template that marks assistant turns (checked at "
     "submit on the `hf` backend)."
 )
+# The README carries the same text.
+REWARDS_INFOBOX = (
+    "grpo and rloo only. Each reward has a name, a weight and Python `source` that defines "
+    "`def reward(sample, item)`, returning a float (higher is better) or None where it doesn't "
+    'apply. `sample["output_text"]` is the reply the model wrote and `sample["output_tools"]` the '
+    "tool calls in it; `item` is the Dataset row, so it can read extra columns such as `answer`. "
+    "For every prompt the model writes several completions, and every reward scores each one in "
+    "the Sandbox: the Python standard library only, no network, within the Sandbox's time and "
+    "memory limits. A reward that raises or times out scores 0.0 and counts towards "
+    "rewards/<name>/errors. The model learns from the sum of each reward times its weight. "
+    'Example: def reward(sample, item): return float(item["answer"] in sample["output_text"])'
+)
+# Caps a reward's `source`, which travels inside the Pipeline Request.
+REWARD_SOURCE_MAX_LENGTH = 2**16
 # Training backend -> the weight methods it supports.
 BACKENDS = {"hf": ("lora", "qlora", "full")}
 # Every algorithm's blocked settings: where outputs go, where they are logged, how they are
@@ -48,6 +62,19 @@ TRAINER_DEFAULTS = {
     "save_total_limit": 1,
     "disable_tqdm": True,
 }
+# Online RL generates its rollouts on vLLM in the Phase's own pod and GPUs (#19), and weighs its
+# rewards as the Phase's `rewards` say.
+RL_DEFAULTS = {**TRAINER_DEFAULTS, "use_vllm": True, "vllm_mode": "colocate"}
+RL_BLOCKED_SETTINGS = (
+    *BLOCKED_TRAINER_SETTINGS,
+    "vllm_mode",
+    "vllm_server_base_url",
+    "vllm_server_host",
+    "vllm_server_port",
+    "vllm_server_timeout",
+    "vllm_group_port",
+    "reward_weights",
+)
 # Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings.
 ALGORITHMS = {
     "sft": {
@@ -59,6 +86,7 @@ ALGORITHMS = {
         "blocked_settings": (*BLOCKED_TRAINER_SETTINGS, "chat_template_path"),
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": False,
+        "learns_from_rewards": False,
     },
     "dpo": {
         "trainer": "DPOTrainer",
@@ -68,6 +96,7 @@ ALGORITHMS = {
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": False,
+        "learns_from_rewards": False,
     },
     "kto": {
         "trainer": "KTOTrainer",
@@ -77,6 +106,7 @@ ALGORITHMS = {
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": False,
+        "learns_from_rewards": False,
     },
     # The Student generates its own completions to the prompts, which the Teacher scores.
     "distillation": {
@@ -94,6 +124,28 @@ ALGORITHMS = {
         ),
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": True,
+        "learns_from_rewards": False,
+    },
+    # Online RL: the model writes completions to each prompt, which the Phase's rewards score.
+    "grpo": {
+        "trainer": "GRPOTrainer",
+        "config": "GRPOConfig",
+        "row_formats": ("prompt_only",),
+        "length_setting": "max_completion_length",
+        "blocked_settings": RL_BLOCKED_SETTINGS,
+        "defaults": RL_DEFAULTS,
+        "learns_from_teacher": False,
+        "learns_from_rewards": True,
+    },
+    "rloo": {
+        "trainer": "RLOOTrainer",
+        "config": "RLOOConfig",
+        "row_formats": ("prompt_only",),
+        "length_setting": "max_completion_length",
+        "blocked_settings": RL_BLOCKED_SETTINGS,
+        "defaults": RL_DEFAULTS,
+        "learns_from_teacher": False,
+        "learns_from_rewards": True,
     },
 }
 # LoraConfig settings the platform sets.
@@ -418,6 +470,21 @@ SMOKE_TEST_PHASE = {
     },
     "length": 256,
     "lora": {"r": 8, "lora_alpha": 16, "lora_dropout": 0.0, "target_modules": "all-linear"},
+    # A step's batch must hold whole groups of completions to one prompt.
+    "rl_settings": {"num_generations": 2},
+    # Two weighted rewards on the bundled maths prompts, run in the Sandbox.
+    "rewards": {
+        "correct": {
+            "weight": 0.8,
+            "source": "def reward(sample, item):\n"
+            '    return float(item["answer"] in sample["output_text"])\n',
+        },
+        "short": {
+            "weight": 0.2,
+            "source": "def reward(sample, item):\n"
+            '    return 1.0 if len(sample["output_text"]) < 20 else 0.0\n',
+        },
+    },
 }
 # Kubeflow task state -> case result; other states are pending.
 SMOKE_TEST_CASE_RESULTS = {
@@ -609,6 +676,17 @@ DISTILL_DROPPED_SAMPLES = 5
 SANDBOX_PATH = "/snippets"
 # Each of a snippet's stdout and stderr; a snippet writing more is stopped.
 SANDBOX_OUTPUT_LIMIT_BYTES = 2**20
+# Scores one completion in the Sandbox: defines the reward from its {source}, then prints its
+# score of the sample and Dataset row on stdin as the last line, after anything the reward printed.
+REWARD_SNIPPET = """\
+import json, sys
+namespace = {{}}
+exec(compile({source!r}, "reward", "exec"), namespace)
+given = json.load(sys.stdin)
+print("\\n" + json.dumps(namespace["reward"](given["sample"], given["item"])))
+"""
+# Why a reward's snippet failed, by its status; an error says the exception it raised.
+REWARD_FAILURES = {"timeout": "timed out", "memory_limit": "ran out of memory"}
 # `performance` defaults: requests of this many prompt and output tokens, this many at once.
 PERFORMANCE_PROMPT_TOKENS = 256
 PERFORMANCE_OUTPUT_TOKENS = 128

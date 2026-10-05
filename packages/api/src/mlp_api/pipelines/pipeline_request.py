@@ -1,3 +1,4 @@
+import ast
 import json
 
 from jsonschema import Draft202012Validator, SchemaError
@@ -40,8 +41,9 @@ def validate_pipeline_request(
     except ValidationError as validation_error:
         return None, [error(e["loc"], e["msg"]) for e in validation_error.errors()]
 
-    # 2. The settings TRL/PEFT would receive, and no Secret value anywhere.
-    errors = trainer_config_errors(request) + secret_value_errors(request, secrets)
+    # 2. The settings TRL/PEFT would receive, rewards that can run, and no Secret value anywhere.
+    errors = trainer_config_errors(request) + reward_errors(request)
+    errors += secret_value_errors(request, secrets)
 
     # 3. What `distill` reads: its prompts, its Teacher and the tools the Teacher may call.
     if request.distill:
@@ -168,6 +170,32 @@ def trainer_config_errors(request: PipelineRequest) -> list[dict]:
                     expected = {k: v for k, v in fields[name].items() if k != "default"}
                     errors.append(error(loc, f"`{name}` must match {json.dumps(expected)}"))
     return errors
+
+
+def reward_errors(request: PipelineRequest) -> list[dict]:
+    """An error for each reward whose source can't define `reward(sample, item)`."""
+    errors = []
+    phases = request.finetune.phases if request.finetune else []
+    for index, phase in enumerate(phases):
+        for name, reward in (phase.rewards or {}).items():
+            loc = ["finetune", "phases", index, "rewards", name, "source"]
+            # Only parsed here, never run: reward code runs in the Sandbox alone.
+            try:
+                module = ast.parse(reward.source)
+            except SyntaxError as reason:
+                errors.append(
+                    error(loc, f"`source` is no Python: {reason.msg} (line {reason.lineno})")
+                )
+                continue
+            if not any(defines_reward(node) for node in module.body):
+                errors.append(error(loc, "`source` defines no `def reward(sample, item)`"))
+    return errors
+
+
+def defines_reward(node: ast.stmt) -> bool:
+    if not isinstance(node, ast.FunctionDef) or node.name != "reward":
+        return False
+    return len(node.args.posonlyargs + node.args.args) == 2
 
 
 def phase_lora_errors(phases: list[Phase], index: int) -> list[str]:

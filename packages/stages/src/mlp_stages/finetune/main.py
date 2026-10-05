@@ -92,7 +92,8 @@ def finetune(
             raise SystemExit(
                 f"Out of GPU memory: {error}\nTry a smaller per_device_train_batch_size or "
                 "length setting, more gradient_accumulation_steps, `qlora`, a smaller Base Model "
-                "or a smaller Teacher."
+                "or a smaller Teacher; for grpo and rloo, fewer num_generations or another "
+                "vllm_gpu_memory_utilization."
             ) from None
         # The Smoke Test's interrupted step leaves its Checkpoint and registers nothing.
         if stop_after_checkpoint:

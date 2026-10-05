@@ -131,12 +131,19 @@ def phase_request(earlier: dict | None, phase: dict, dataset: str) -> dict:
     """A case's Phase, after the `earlier` one, with the Smoke Test's settings for its algorithm."""
     algorithm = config.ALGORITHMS[phase["algorithm"]]
     length = {algorithm["length_setting"]: config.SMOKE_TEST_PHASE["length"]}
+    rl = algorithm["learns_from_rewards"]
+    settings = {
+        **config.SMOKE_TEST_PHASE["settings"],
+        **length,
+        **(config.SMOKE_TEST_PHASE["rl_settings"] if rl else {}),
+        **phase.get("settings", {}),
+    }
     return {
         "algorithm": phase["algorithm"],
         "dataset": dataset,
         "method": phase["method"],
         "output": phase.get("output", "adapter"),
-        "settings": {**config.SMOKE_TEST_PHASE["settings"], **length, **phase.get("settings", {})},
+        "settings": settings,
         # After a kept Adapter, a Phase continues it, so only the others set `lora`.
         **(
             {"lora": {**config.SMOKE_TEST_PHASE["lora"], **phase.get("lora", {})}}
@@ -144,6 +151,7 @@ def phase_request(earlier: dict | None, phase: dict, dataset: str) -> dict:
             else {}
         ),
         **({"teacher": config.SMOKE_TEST_BASE_MODEL} if algorithm["learns_from_teacher"] else {}),
+        **({"rewards": config.SMOKE_TEST_PHASE["rewards"]} if rl else {}),
     }
 
 

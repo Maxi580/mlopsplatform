@@ -6,6 +6,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from mlp_core import config
 from mlp_core.pipeline_request.schema import Phase
+from mlp_stages.finetune.rewards import reward_functions
 
 
 def load_tokenizer(model_directory: Path):
@@ -26,6 +27,11 @@ def build_trainer(
     algorithm = config.ALGORITHMS[phase.algorithm]
     # Only `distillation` has a Teacher: its base files, and its Adapter files to merge in, if any.
     trainer_kwargs = {"teacher_model": load_model(*teacher, "auto")} if teacher else {}
+    settings = {**algorithm["defaults"], **phase.settings.model_dump()}
+    # Only `grpo` and `rloo` have rewards, weighted in the order TRL is given them.
+    if phase.rewards:
+        trainer_kwargs["reward_funcs"] = reward_functions(phase.rewards)
+        settings["reward_weights"] = [reward.weight for reward in phase.rewards.values()]
     peft_config = None
     if phase.method == "full":
         # Trains every weight; an Adapter before it is merged into its base first (#19).
@@ -47,10 +53,7 @@ def build_trainer(
             peft_config = LoraConfig(**{**config.LORA_DEFAULTS, **phase.lora.model_dump()})
     return getattr(trl, algorithm["trainer"])(
         model=model,
-        args=getattr(trl, algorithm["config"])(
-            **{**algorithm["defaults"], **phase.settings.model_dump()},
-            output_dir=output_directory,
-        ),
+        args=getattr(trl, algorithm["config"])(**settings, output_dir=output_directory),
         train_dataset=dataset,
         processing_class=tokenizer,
         # With an Adapter, TRL freezes the base's weights and trains only the Adapter.

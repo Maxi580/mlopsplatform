@@ -21,6 +21,8 @@ from mlp_core.config import (
     PERFORMANCE_OUTPUT_TOKENS,
     PERFORMANCE_PROMPT_TOKENS,
     PERFORMANCE_REQUESTS,
+    REWARD_SOURCE_MAX_LENGTH,
+    REWARDS_INFOBOX,
 )
 from mlp_core.endpoint_spec import ENDPOINT_NAME_PATTERN, EndpointName, ServingOptions
 from mlp_core.pipeline_request.references import (
@@ -74,6 +76,16 @@ class LoraSettings(TrainerSettings):
     target_modules: str | list[str]
 
 
+class Reward(Strict):
+    weight: float
+    # Defines `def reward(sample, item)`; runs only in the Sandbox (#19).
+    source: str = Field(max_length=REWARD_SOURCE_MAX_LENGTH, json_schema_extra={"format": "python"})
+
+
+# Names its rewards/<name>/… metrics.
+RewardName = Annotated[str, Field(pattern=r"^[\w-]{1,64}$")]
+
+
 class Phase(Strict):
     algorithm: Literal[tuple(ALGORITHMS)]
     dataset: DatasetReference | Literal[DISTILL_OUTPUT]
@@ -85,6 +97,16 @@ class Phase(Strict):
     lora: LoraSettings | None = None
     # The Base Model or Model Version a `distillation` Phase learns the token probabilities of.
     teacher: str | None = None
+    rewards: dict[RewardName, Reward] | None = Field(None, description=REWARDS_INFOBOX)
+
+    @model_validator(mode="after")
+    def check_rewards(self) -> "Phase":
+        if not ALGORITHMS[self.algorithm]["learns_from_rewards"]:
+            if self.rewards is not None:
+                raise ValueError(f"a {self.algorithm} Phase has no `rewards`")
+        elif not self.rewards:
+            raise ValueError(f"a {self.algorithm} Phase learns from `rewards`; name at least one")
+        return self
 
     @model_validator(mode="after")
     def check_teacher(self) -> "Phase":

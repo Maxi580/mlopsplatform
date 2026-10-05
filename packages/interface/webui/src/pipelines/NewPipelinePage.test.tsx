@@ -240,3 +240,51 @@ test("a setting with a description shows it as an infobox next to the setting", 
   const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
   expect(submitted.request.finetune.settings).toEqual({ assistant_only_loss: true });
 });
+
+test("rewards are named entries with Python source, explained by an infobox", async () => {
+  const infobox = "Each reward defines def reward(sample, item).";
+  const rewards = {
+    anyOf: [
+      { type: "object", patternProperties: { "^[w-]{1,64}$": { $ref: "#/$defs/Reward" } } },
+      { type: "null" },
+    ],
+    default: null,
+    title: "Rewards",
+    description: infobox,
+  };
+  const withRewards = {
+    type: "object",
+    properties: { finetune: { type: "object", title: "Finetune", properties: { rewards } } },
+    $defs: {
+      Reward: {
+        type: "object",
+        properties: {
+          weight: { type: "number", title: "Weight" },
+          source: { type: "string", format: "python", title: "Source" },
+        },
+      },
+    },
+  };
+  const calls = fakeApi({
+    "GET /schema": [200, withRewards],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 8 }],
+  });
+  renderApp("/pipelines/new");
+
+  expect(await screen.findByText(infobox)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /add reward/i }));
+  await userEvent.type(screen.getByLabelText(/^Reward name/), "correct");
+  await userEvent.type(screen.getByLabelText(/^Weight/), "0.8");
+  const source = screen.getByLabelText(/^Source/);
+  expect(source.tagName).toBe("TEXTAREA");
+  await userEvent.type(source, "def reward(sample, item):{Enter}    return 1.0");
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+  await screen.findByText(/Submitted Pipeline 8/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.finetune.rewards).toEqual({
+    correct: { weight: 0.8, source: "def reward(sample, item):\n    return 1.0" },
+  });
+});

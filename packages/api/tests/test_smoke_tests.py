@@ -20,7 +20,7 @@ SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter", "ser
 # Every Phase algorithm with every method of the `hf` backend.
 GRID_CASES = [
     f"{phase}-{method}-hf"
-    for phase in ("sft", "dpo", "kto", "distillation")
+    for phase in ("sft", "dpo", "kto", "distillation", "grpo", "rloo")
     for method in ("lora", "qlora", "full")
 ]
 WEIGHT_CASES = [
@@ -186,7 +186,7 @@ def test_a_finetune_case_trains_the_pinned_base_model_on_its_uploaded_bundled_da
     [phase] = request["finetune"]["phases"]
     assert phase["dataset"] == f"dataset:{name}-sft@1"
     datasets = logged_in_api.get(api_paths.DATASETS).json()
-    bundled = ("distill", "distillation", "dpo", "kto", "sft")
+    bundled = ("distill", "distillation", "dpo", "grpo", "kto", "rloo", "sft")
     assert [d["name"] for d in datasets] == [f"{name}-{dataset}" for dataset in bundled]
 
 
@@ -201,6 +201,21 @@ def test_a_distillation_case_learns_from_the_base_model_as_teacher_on_bundled_pr
     assert phase["dataset"] == f"dataset:{name}-distillation@1"
     assert phase["settings"]["max_completion_length"] == 256
     assert "max_length" not in phase["settings"]
+
+
+@pytest.mark.parametrize("algorithm", ["grpo", "rloo"])
+def test_an_rl_case_learns_from_two_weighted_rewards_on_bundled_prompts(
+    logged_in_api, qwen_on_the_hub, cluster, algorithm
+):
+    name = start(logged_in_api, {"finetune": {"phases": [algorithm], "methods": ["lora"]}})
+    name = name.json()["name"]
+
+    [phase] = phases(cluster, f"{algorithm}-lora-hf")
+    assert phase["dataset"] == f"dataset:{name}-{algorithm}@1"
+    assert [reward["weight"] for reward in phase["rewards"].values()] == [0.8, 0.2]
+    # Each step's batch holds whole groups of completions to one prompt.
+    assert phase["settings"]["num_generations"] == 2
+    assert phase["settings"]["max_completion_length"] == 256
 
 
 def test_the_uploaded_model_case_finetunes_a_tiny_model_uploaded_the_normal_way(
@@ -494,7 +509,7 @@ def test_its_datasets_stay_while_it_runs(logged_in_api, qwen_on_the_hub, cluster
 
     reconcile(logged_in_api)
 
-    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 5
+    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 7
 
 
 def test_a_smoke_test_that_could_not_start_is_failed_and_cleaned_up(

@@ -1,6 +1,14 @@
 import { MORE_SETTINGS, SWITCHED_ON } from "../config";
 
-export type FieldKind = "fixed" | "choice" | "choices" | "text" | "list" | "integer" | "number";
+export type FieldKind =
+  | "fixed"
+  | "choice"
+  | "choices"
+  | "text"
+  | "code"
+  | "list"
+  | "integer"
+  | "number";
 
 export type FormSection = {
   kind: "section";
@@ -11,6 +19,10 @@ export type FormSection = {
   moreSettings: boolean;
   // Whether the request may leave it out, e.g. a Stage; it is in once switched on.
   optional: boolean;
+  // Shown under its title, e.g. how rewards work.
+  description?: string;
+  // A map's entries, each a name and these fields, e.g. a Phase's rewards; in once one is named.
+  entry?: FormSection;
 };
 
 export type FormField = {
@@ -26,8 +38,13 @@ export type FormField = {
 
 export type FormNode = FormSection | FormField;
 export type MoreSetting = { key: string; value: string };
-// Field values by dotted name, and more settings by section name.
-export type FormValues = { fields: Record<string, string>; more: Record<string, MoreSetting[]> };
+export type Entry = { name: string; fields: Record<string, string> };
+// Field values by dotted name, more settings and a map's entries by section name.
+export type FormValues = {
+  fields: Record<string, string>;
+  more: Record<string, MoreSetting[]>;
+  entries?: Record<string, Entry[]>;
+};
 // An error of the Pipeline Request at its path, as the API reports it.
 export type FieldError = { loc: (string | number)[]; msg: string };
 
@@ -45,7 +62,15 @@ export function pipelineRequestFromForm(
 ): Record<string, unknown> {
   const tree: Record<string, any> = {};
   for (const node of nodesOf(form, values)) {
-    if (node.kind === "section") {
+    if (node.kind === "section" && node.entry) {
+      for (const entry of namedEntries(node, values)) {
+        for (const field of node.entry.children as FormField[]) {
+          const value = (entry.fields[field.name] ?? "").trim();
+          const path = [...parts(node.name), entry.name.trim(), field.name];
+          if (value) put(tree, path, readValue(field, value));
+        }
+      }
+    } else if (node.kind === "section") {
       if (node.name) put(tree, parts(node.name), get(tree, parts(node.name)) ?? {});
       for (const { key, value } of values.more[node.name] ?? []) {
         if (key.trim()) put(tree, [...parts(node.name), key.trim()], readSetting(value));
@@ -80,7 +105,12 @@ export function placeErrors(form: FormSection, errors: FieldError[]) {
 }
 
 export function isSwitchedOn(section: FormSection, values: FormValues): boolean {
+  if (section.entry) return namedEntries(section, values).length > 0;
   return !section.optional || values.fields[section.name] === SWITCHED_ON;
+}
+
+export function namedEntries(section: FormSection, values: FormValues): Entry[] {
+  return (values.entries?.[section.name] ?? []).filter((entry) => entry.name.trim());
 }
 
 export function moreName(section: string): string {
@@ -97,6 +127,26 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
   title = schema.title ?? humanize(title);
   const child = (key: string) => (name ? `${name}.${key}` : key);
   if ("const" in node) return { kind: "fixed", name, title, fixed: node.const };
+  const description = schema.description ?? node.description;
+  // A map of objects, e.g. rewards by name: entries of the value's fields. Pydantic writes a
+  // map with a key pattern as patternProperties.
+  const values =
+    typeof node.additionalProperties === "object"
+      ? node.additionalProperties
+      : Object.values(node.patternProperties ?? {})[0];
+  if (types.has("object") && values) {
+    const entry = nodeOf(values as Schema, defs, "", title.replace(/s$/, ""));
+    return {
+      kind: "section",
+      name,
+      title,
+      children: [],
+      moreSettings: false,
+      optional,
+      entry: entry as FormSection,
+      ...(description && { description }),
+    };
+  }
   if (types.has("object")) {
     const children = Object.entries(node.properties ?? {}).map(([key, value]) =>
       nodeOf(value as Schema, defs, child(key), key),
@@ -116,7 +166,6 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
     );
     return { kind: "section", name, title, children, moreSettings: false, optional };
   }
-  const description = schema.description ?? node.description;
   return { ...fieldOf(node, defs, types), name, title, ...(description && { description }) };
 }
 
@@ -129,6 +178,7 @@ function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {
   if (types.has("array")) return { kind: "list" as const };
   if (types.has("integer")) return { kind: "integer" as const };
   if (types.has("number")) return { kind: "number" as const };
+  if (node.format === "python") return { kind: "code" as const };
   // An optional value's pattern sits on its non-null option.
   const pattern = node.pattern ?? node.anyOf?.find((option: Schema) => option.pattern)?.pattern;
   return { kind: "text" as const, pattern };

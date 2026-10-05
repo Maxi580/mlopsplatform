@@ -284,6 +284,8 @@ def finetune_steps(
         task.set_accelerator_type(config.GPU_RESOURCE)
         task.set_accelerator_limit(settings.gpus_per_stage)
         use_object_store(task, steps)
+        # `grpo` and `rloo` score their completions with the Phase's rewards there.
+        task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
         tasks.append(task)
         previous_model_version = task.outputs["model_version"]
     return tasks

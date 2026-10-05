@@ -49,6 +49,23 @@ const schema = {
       properties: {
         algorithm: { const: "sft", type: "string", title: "Algorithm" },
         settings: { $ref: "#/$defs/SftSettings" },
+        rewards: {
+          anyOf: [
+            { type: "object", patternProperties: { "^[\\w-]{1,64}$": { $ref: "#/$defs/Reward" } } },
+            { type: "null" },
+          ],
+          default: null,
+          title: "Rewards",
+          description: "How rewards work.",
+        },
+      },
+    },
+    Reward: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        weight: { type: "number", title: "Weight" },
+        source: { type: "string", format: "python", maxLength: 65536, title: "Source" },
       },
     },
     SftSettings: {
@@ -179,4 +196,47 @@ test("booleans and optional choices are choices, read back as their values", () 
   const values = { fields: { serve: "on", "serve.prefix_caching": "false" }, more: {} };
 
   expect(pipelineRequestFromForm(form, values).serve).toEqual({ prefix_caching: false });
+});
+
+test("a map of objects is a section of named entries; Python source is code", () => {
+  expect(byName["finetune.phases.0.rewards"]).toMatchObject({
+    kind: "section",
+    title: "Rewards",
+    description: "How rewards work.",
+    entry: {
+      title: "Reward",
+      children: [
+        { kind: "number", name: "weight" },
+        { kind: "code", name: "source" },
+      ],
+    },
+  });
+});
+
+test("named entries become the map; unnamed ones and an empty map are left out", () => {
+  const source = "def reward(sample, item):\n    return 1.0";
+  const entries = {
+    "finetune.phases.0.rewards": [
+      { name: " correct ", fields: { weight: "0.8", source } },
+      { name: "", fields: { weight: "1" } },
+    ],
+  };
+
+  const phase = (values: object) =>
+    (
+      pipelineRequestFromForm(form, { fields: {}, more: {}, ...values }).finetune as {
+        phases: Record<string, unknown>[];
+      }
+    ).phases[0];
+
+  expect(phase({ entries }).rewards).toEqual({ correct: { weight: 0.8, source } });
+  expect(phase({})).not.toHaveProperty("rewards");
+});
+
+test("an entry's error goes to its map with the entry's name", () => {
+  const placed = placeErrors(form, [
+    { loc: ["finetune", "phases", 0, "rewards", "correct", "source"], msg: "is no Python" },
+  ]);
+
+  expect(placed.byName).toEqual({ "finetune.phases.0.rewards": ["correct.source: is no Python"] });
 });
