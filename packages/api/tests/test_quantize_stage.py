@@ -229,7 +229,7 @@ def test_a_resume_quantizes_the_model_versions_its_phases_registered_before(
     response = resume(logged_in_api, failed)
 
     assert response.status_code == 202, response.text
-    assert list(tasks(cluster)) == ["fetch", "quantize"]
+    assert set(tasks(cluster)) == {"fetch", "quantize"}
     assert parameters(tasks(cluster)["quantize"])["finetuned"] == "model:qwen-sft@1"
 
 

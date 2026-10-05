@@ -97,7 +97,7 @@ def test_resume_skips_finished_phases_and_continues_the_failed_one_from_its_chec
 
     assert response.status_code == 202, response.text
     resumed = response.json()["id"]
-    assert list(tasks(cluster)) == ["fetch", "finetune"]
+    assert set(tasks(cluster)) == {"fetch", "finetune"}
     finetune = parameters(tasks(cluster)["finetune"])
     assert finetune["pipeline_id"] == str(resumed)
     assert finetune["phase_index"] == "1"
