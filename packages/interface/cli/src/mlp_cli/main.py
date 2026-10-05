@@ -12,7 +12,14 @@ app.add_typer(datasets.app, name="datasets")
 app.add_typer(models.app, name="models")
 app.add_typer(cache.app, name="cache")
 app.add_typer(endpoints.app, name="endpoints")
-for command in (pipelines.validate, pipelines.run, pipelines.rerun, pipelines.ls, pipelines.cancel):
+for command in (
+    pipelines.validate,
+    pipelines.run,
+    pipelines.rerun,
+    pipelines.resume,
+    pipelines.ls,
+    pipelines.cancel,
+):
     app.command()(command)
 app.command("smoke-test")(smoke_test)
 

@@ -2,6 +2,8 @@ import { CircleAlert, Download, HardDrive } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { callApi, errorMessage, useApi } from "../api";
 import {
+  CHECKPOINTS,
+  checkpoint,
   DATASETS,
   datasetDownload,
   datasetVersion,
@@ -15,22 +17,31 @@ import {
 import { BUCKET_CONTENTS, CACHE_ENTRY_KINDS, STORAGE_WARNING_PERCENT } from "../config";
 import { formatBytes } from "../formatBytes";
 import ModelUploadForm from "./ModelUploadForm";
-import type { Dataset, ModelCache, ModelVersionFile, RegisteredModel, Storage } from "./storage";
+import type {
+  Checkpoint,
+  Dataset,
+  ModelCache,
+  ModelVersionFile,
+  RegisteredModel,
+  Storage,
+} from "./storage";
 
 export default function StoragePage() {
   const datasets = useApi<Dataset[]>(DATASETS);
   const models = useApi<RegisteredModel[]>(MODELS);
   const storage = useApi<Storage>(STORAGE);
   const cache = useApi<ModelCache>(MODEL_CACHE);
+  const checkpoints = useApi<Checkpoint[]>(CHECKPOINTS);
   const [notice, setNotice] = useState<{ text: string; failed: boolean }>();
   const [modelFiles, setModelFiles] = useState<{ label: string; files: ModelVersionFile[] }>();
-  const error = datasets.error ?? models.error ?? storage.error ?? cache.error;
+  const error = datasets.error ?? models.error ?? storage.error ?? cache.error ?? checkpoints.error;
 
   function reload() {
     datasets.reload();
     models.reload();
     storage.reload();
     cache.reload();
+    checkpoints.reload();
   }
 
   async function remove(path: string, label: string) {
@@ -74,7 +85,8 @@ export default function StoragePage() {
         <div>
           <h1>Storage</h1>
           <p className="muted">
-            Datasets, Registered Models, model uploads, the Model Cache and how full they are.
+            Datasets, Registered Models, model uploads, Checkpoints, the Model Cache and how full
+            they are.
           </p>
         </div>
       </header>
@@ -133,6 +145,19 @@ export default function StoragePage() {
         )}
       />
       {modelFiles && <ModelFilesCard {...modelFiles} />}
+
+      <VersionTable
+        title="Checkpoints"
+        note="Kept for failed or cancelled Pipelines, so `mlp resume` can continue their Phase."
+        columns={["Checkpoint", "Size"]}
+        empty="No Checkpoints kept; a Phase deletes its own once it succeeds."
+        onDelete={remove}
+        rows={checkpoints.data?.map((kept) => ({
+          label: `${kept.pipeline_name ?? "Pipeline"} (#${kept.pipeline_id}), Phase ${kept.phase_index + 1}`,
+          cells: [formatBytes(kept.size_bytes)],
+          path: checkpoint(kept.pipeline_id, kept.phase_index),
+        }))}
+      />
 
       <VersionTable
         title="Model Cache"

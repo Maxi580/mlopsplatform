@@ -97,6 +97,8 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "sft-dpo-chain-finetune-sft",
         "sft-dpo-chain",
         *WEIGHT_CASES,
+        "resume-interrupted",
+        "resume",
         "evaluate-base-model",
         "evaluate-adapter",
         "evaluate-coding",
@@ -117,7 +119,7 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
     first, *later, serve = nodes(cluster)
     assert "triggerPolicy" not in first
     assert "triggerPolicy" not in serve
-    for waits in ("distill-tools", "sft-dpo-chain", "sft-lora-dpo-full-hf"):
+    for waits in ("distill-tools", "sft-dpo-chain", "sft-lora-dpo-full-hf", "resume"):
         assert "triggerPolicy" not in node(cluster, waits)
         later.remove(node(cluster, waits))
     assert later
@@ -246,6 +248,28 @@ def test_the_chain_case_trains_sft_then_dpo_on_the_sft_phases_model_version(
     assert first["lora"]["r"] == 8 and second["lora"] is None
     handoff = dpo["inputs"]["parameters"]["previous_model_version"]["taskOutputParameter"]
     assert handoff["outputParameterKey"] == "model_version"
+
+
+def test_the_resume_case_stops_a_phase_after_its_first_checkpoint_then_continues_it(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    smoke_test_id = start(logged_in_api, {"resume": True}).json()["id"]
+
+    assert case_names(cluster) == ["fetch", "resume-interrupted", "resume"]
+    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "resume"]
+    interrupted, resumed = (
+        {
+            name: p["runtimeValue"]["constant"]
+            for name, p in node(cluster, case)["inputs"]["parameters"].items()
+        }
+        for case in ("resume-interrupted", "resume")
+    )
+    assert interrupted["checkpoint_minutes"] == "0"
+    assert interrupted["stop_after_checkpoint"] == "true"
+    assert interrupted["resume_checkpoint"] == ""
+    assert resumed["checkpoint_minutes"] == "30"
+    assert resumed["stop_after_checkpoint"] == ""
+    assert resumed["resume_checkpoint"] == f"checkpoints/{smoke_test_id}/0/"
 
 
 def phases(cluster, case: str) -> list[dict]:
@@ -426,6 +450,7 @@ def test_afterwards_only_its_kubeflow_run_remains(
     smoke_test_id = smoke_test(logged_in_api)["id"]
     register(model_registry, object_store, f"{name}-sft-lora-hf", 1, pipeline_id=smoke_test_id)
     register(model_registry, object_store, "qwen-sft", 1)
+    object_store.objects[f"checkpoints/{smoke_test_id}/0/checkpoint-1/trainer_state.json"] = b"{}"
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, {"fetch": "SUCCEEDED"})
 
     reconcile(logged_in_api)
@@ -503,6 +528,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "distill-tools",
         "sft-dpo-chain",
         *[case for case in WEIGHT_CASES if not case.endswith("-finetune-sft")],
+        "resume",
         *EVALUATE_CASES,
         "finetune-serve",
         *SERVING_CASES,

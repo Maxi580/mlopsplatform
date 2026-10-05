@@ -14,13 +14,15 @@ def refuse_while_in_use(engine: Engine, reference: str, produced_by: str | None 
 
 
 def users_of(engine: Engine, reference: str, produced_by: str | None = None) -> list[str]:
-    """Unfinished Pipelines naming or making the Reference, and Endpoints serving from it."""
+    """Unfinished Pipelines naming, reusing or making the Reference, and Endpoints serving it."""
     with engine.connect() as connection:
         pipelines = connection.execute(select(pipeline).where(unfinished)).all()
         endpoints = connection.execute(select(endpoint).where(not_stopped)).all()
-    # A resolved request pins every Reference, so it holds the exact string as one JSON value.
+    # A resolved request pins every Reference, so it holds the exact string as one JSON value;
+    # a resume names the Model Versions, Dataset Version and Checkpoint it reuses the same way.
     return [
         f"Pipeline {row.name} (#{row.id})"
         for row in pipelines
-        if str(row.id) == produced_by or json.dumps(reference) in json.dumps(row.request)
+        if str(row.id) == produced_by
+        or json.dumps(reference) in json.dumps([row.request, row.resume])
     ] + [f"Endpoint {row.name}" for row in endpoints if reference in row.uses]

@@ -34,6 +34,8 @@ class SmokeTestSelection(Strict):
     chain: bool = False
     # rsLoRA, merged QLoRA and DoRA, and `full` after an Adapter; `serving` serves the merged one.
     weights: bool = False
+    # Stops an sft Phase after its first Checkpoint, then continues it from there.
+    resume: bool = False
 
 
 COMPLETE_SMOKE_TEST = SmokeTestSelection(
@@ -45,6 +47,7 @@ COMPLETE_SMOKE_TEST = SmokeTestSelection(
     distill=True,
     chain=True,
     weights=True,
+    resume=True,
 )
 
 
@@ -67,6 +70,8 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[dict,
         cases[config.SMOKE_TEST_CHAIN_CASE] = config.SMOKE_TEST_CHAIN
     if selection.weights:
         cases.update(config.SMOKE_TEST_WEIGHT_CASES)
+    if selection.resume:
+        cases[config.SMOKE_TEST_RESUME_CASE] = config.SMOKE_TEST_TRAINING
     if selection.serving and adapter_case:
         cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = cases[adapter_case]
     return cases

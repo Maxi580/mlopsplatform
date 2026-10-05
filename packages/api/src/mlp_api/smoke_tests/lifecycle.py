@@ -52,7 +52,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     trainings = finetune_cases(selection)
     evaluations = evaluate_cases(selection, trainings)
     cases = dict.fromkeys(run_order(selection.sandbox, trainings, evaluations), "pending")
-    pipeline_id = create_pipeline(engine, name, {}, cases)
+    pipeline_id = create_pipeline(engine, name, {}, cases=cases)
 
     try:
         # 3. The Base Model, pinned to a commit, and the benchmarks, with room in the Model Cache.
@@ -169,7 +169,10 @@ def clean_up_smoke_tests(state) -> None:
         for name in sorted(names):
             model_registry.delete_registered_model(name)
 
-        # 4. Marked, as set_pipeline only changes unfinished Pipelines.
+        # 4. The Checkpoints its failed or interrupted Phases kept.
+        object_store.delete_all(object_store.bucket, f"{config.CHECKPOINTS_PREFIX}{row.id}/")
+
+        # 5. Marked, as set_pipeline only changes unfinished Pipelines.
         with engine.begin() as connection:
             connection.execute(
                 update(pipeline).where(pipeline.c.id == row.id).values(cleaned_up=True)

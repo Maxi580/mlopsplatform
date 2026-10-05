@@ -96,6 +96,8 @@ class FakeObjectStore:
     A multipart upload's parts arrive through `receive_part`, as a client's PUT to a part URL.
     """
 
+    bucket = "platform"
+
     def __init__(self):
         self.objects = {}
         self.buckets = {"platform": self.objects, "mlflow": {}, "mlpipeline": {}}

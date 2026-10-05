@@ -1,12 +1,12 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import pairwise
 
 from google.protobuf import json_format
 from kfp import dsl, kubernetes
 
 from mlp_core import config
-from mlp_core.pipeline_request.references import split_endpoint_reference
+from mlp_core.pipeline_request.references import checkpoint_prefix, split_endpoint_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 from mlp_core.settings import Settings
 
@@ -41,14 +41,28 @@ class StepEnvironment:
         )
 
 
+@dataclass(frozen=True)
+class Resume:
+    """What a resumed Pipeline reuses from the Pipelines it continues; stored with it."""
+
+    # The Model Versions its first Phases registered, in Phase order; those Phases are skipped.
+    model_versions: list[str] = field(default_factory=list)
+    # The Dataset Version its `distill` Stage registered; `distill` is then skipped.
+    distilled_dataset: str | None = None
+    # Where the first unfinished Phase's Checkpoint lies, which that Phase continues from.
+    checkpoint: str | None = None
+
+
 def compile_pipeline(
     pipeline_id: int,
     request: PipelineRequest,
     fetched: list[str],
     steps: StepEnvironment,
     settings: Settings,
+    resume: Resume | None = None,
 ) -> dict:
     """The Kubeflow pipeline spec for a resolved request, in the form KFP's run API takes."""
+    resume = resume or Resume()
 
     @dsl.container_component
     def cleanup():
@@ -71,15 +85,15 @@ def compile_pipeline(
                 )
 
             # 2. The Stages, one after another in their fixed order; `@distill` is distill's output.
-            stages, distilled = [], ""
-            if request.distill:
+            stages, distilled = [], resume.distilled_dataset or ""
+            if request.distill and not distilled:
                 stages.append(distill_step(pipeline_id, request, steps, settings.gpus_per_stage))
                 distilled = stages[-1].outputs["dataset"]
             if request.finetune:
-                gpus = settings.gpus_per_stage
-                stages += finetune_steps(pipeline_id, request, steps, gpus, distilled)
+                stages += finetune_steps(pipeline_id, request, steps, settings, distilled, resume)
             if request.evaluate:
-                stages.append(evaluate_step(pipeline_id, request, steps, settings.gpus_per_stage))
+                evaluated = evaluated_request(request, resume)
+                stages.append(evaluate_step(pipeline_id, evaluated, steps, settings.gpus_per_stage))
             if request.serve:
                 stages.append(serve_step(pipeline_id, steps))
             for stage in stages:
@@ -88,6 +102,15 @@ def compile_pipeline(
                 previous = stage
 
     return pipeline_run_spec(pipeline)
+
+
+def evaluated_request(request: PipelineRequest, resume: Resume) -> PipelineRequest:
+    """The request with `@finetune` as the last reused Model Version if every Phase finished."""
+    finished = request.finetune and len(resume.model_versions) == len(request.finetune.phases)
+    if not finished or request.evaluate.model != config.FINETUNE_OUTPUT:
+        return request
+    evaluate = request.evaluate.model_copy(update={"model": resume.model_versions[-1]})
+    return request.model_copy(update={"evaluate": evaluate})
 
 
 def compile_smoke_test(
@@ -121,9 +144,17 @@ def compile_smoke_test(
             if request.distill:
                 case_steps.append(("distill", distill_step(pipeline_id, request, steps, gpus)))
                 distilled = case_steps[-1][1].outputs["dataset"]
-            if request.finetune:
+            if request.finetune and case == config.SMOKE_TEST_RESUME_CASE:
+                # The first step stops after a Checkpoint, as a cancel would; the next continues it.
+                [interrupted] = finetune_steps(
+                    pipeline_id, request, steps, settings, distilled, interrupt=True
+                )
+                resume = Resume(checkpoint=checkpoint_prefix(pipeline_id, 0))
+                [resumed] = finetune_steps(pipeline_id, request, steps, settings, distilled, resume)
+                case_steps += [("interrupted", interrupted), ("finetune", resumed)]
+            elif request.finetune:
                 names = [f"finetune-{phase.algorithm}" for phase in request.finetune.phases]
-                tasks = finetune_steps(pipeline_id, request, steps, gpus, distilled)
+                tasks = finetune_steps(pipeline_id, request, steps, settings, distilled)
                 case_steps += zip(names, tasks, strict=True)
             if request.evaluate:
                 case_steps.append(("evaluate", evaluate_step(pipeline_id, request, steps, gpus)))
@@ -195,10 +226,12 @@ def finetune_steps(
     pipeline_id: int,
     request: PipelineRequest,
     steps: StepEnvironment,
-    gpus_per_stage: int,
+    settings: Settings,
     distilled_dataset="",
+    resume: Resume | None = None,
+    interrupt: bool = False,
 ) -> list:
-    """One step per Phase, each handed the Model Version the step before it registered."""
+    """One step per unfinished Phase, each handed the Model Version the one before registered."""
     trainer_image = steps.trainer_images[request.finetune.backend]
 
     @dsl.container_component
@@ -208,6 +241,9 @@ def finetune_steps(
         request: str,
         distilled_dataset: str,
         previous_model_version: str,
+        checkpoint_minutes: str,
+        resume_checkpoint: str,
+        stop_after_checkpoint: str,
         model_version: dsl.OutputPath(str),
     ):
         return dsl.ContainerSpec(
@@ -219,12 +255,18 @@ def finetune_steps(
                 request,
                 distilled_dataset,
                 previous_model_version,
+                checkpoint_minutes,
+                resume_checkpoint,
+                stop_after_checkpoint,
                 model_version,
             ],
         )
 
-    tasks, previous_model_version = [], ""
-    for index, phase in enumerate(request.finetune.phases):
+    # A resume skips the Phases that registered a Model Version and continues the next one.
+    resume = resume or Resume()
+    finished = len(resume.model_versions)
+    tasks, previous_model_version = [], (resume.model_versions or [""])[-1]
+    for index, phase in list(enumerate(request.finetune.phases))[finished:]:
         # The request holds no Secret value, so it can be a parameter.
         task = finetune(
             pipeline_id=str(pipeline_id),
@@ -232,11 +274,15 @@ def finetune_steps(
             request=request.model_dump_json(),
             distilled_dataset=distilled_dataset,
             previous_model_version=previous_model_version,
+            # The Smoke Test's interrupted step saves at its first step.
+            checkpoint_minutes="0" if interrupt else str(settings.checkpoint_minutes),
+            resume_checkpoint=(index == finished and resume.checkpoint) or "",
+            stop_after_checkpoint="true" if interrupt else "",
         ).set_display_name(f"finetune-{phase.algorithm}")
         use_model_cache(task, steps)
         task.set_env_variable("HF_HUB_OFFLINE", "1")
         task.set_accelerator_type(config.GPU_RESOURCE)
-        task.set_accelerator_limit(gpus_per_stage)
+        task.set_accelerator_limit(settings.gpus_per_stage)
         use_object_store(task, steps)
         tasks.append(task)
         previous_model_version = task.outputs["model_version"]

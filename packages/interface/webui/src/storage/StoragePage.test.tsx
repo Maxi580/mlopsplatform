@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { fakeApi, renderApp } from "../testApi";
-import type { Dataset, ModelCache, RegisteredModel, Storage } from "./storage";
+import type { Checkpoint, Dataset, ModelCache, RegisteredModel, Storage } from "./storage";
 
 const datasets: Dataset[] = [
   { name: "chat", versions: [{ version: 1, size_bytes: 2048, row_format: "messages" }] },
@@ -42,7 +42,11 @@ const modelCache: ModelCache = {
   ],
   capacity_bytes: 200 * 2 ** 30,
 };
+const checkpoints: Checkpoint[] = [
+  { pipeline_id: 7, pipeline_name: "qwen-sft", phase_index: 1, size_bytes: 3 * 2 ** 30 },
+];
 const routes: Parameters<typeof fakeApi>[0] = {
+  "GET /checkpoints": [200, checkpoints],
   "GET /datasets": [200, datasets],
   "GET /models": [200, models],
   "GET /storage": [200, storage],
@@ -72,6 +76,29 @@ test("Datasets and Registered Models are listed with versions, sizes and lineage
   for (const text of ["adapter", "hf:Qwen/Qwen3@abc", "#7", "5.0 MB"]) {
     expect(within(model).getByText(text)).toBeInTheDocument();
   }
+});
+
+test("kept Checkpoints are listed with their Pipeline, Phase and size, and deletable", async () => {
+  let current = checkpoints;
+  const calls = fakeApi({
+    ...routes,
+    "GET /checkpoints": () => [200, current],
+    "DELETE /checkpoints/7/1": () => {
+      current = [];
+      return [204, null];
+    },
+  });
+  renderApp("/storage");
+
+  const label = "qwen-sft (#7), Phase 2";
+  const row = (await screen.findByText(label)).closest("tr")!;
+  expect(within(row).getByText("3.0 GB")).toBeInTheDocument();
+  await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
+  await userEvent.click(within(row).getByRole("button", { name: `Delete ${label}` }));
+
+  expect(await screen.findByText(`Deleted ${label}`)).toBeInTheDocument();
+  expect(screen.queryByText(label)).not.toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain("DELETE /checkpoints/7/1");
 });
 
 test("a Dataset Version downloads from its presigned URL", async () => {

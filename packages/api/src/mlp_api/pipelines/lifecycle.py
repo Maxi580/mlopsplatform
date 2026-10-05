@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 from sqlalchemy import (
@@ -16,7 +17,7 @@ from sqlalchemy import (
 
 from mlp_api.auth.session import issue_step_token
 from mlp_api.pipelines.cluster import Cluster
-from mlp_api.pipelines.compiler import compile_pipeline
+from mlp_api.pipelines.compiler import Resume, compile_pipeline
 from mlp_api.smoke_tests.cases import case_results
 from mlp_api.storage.database import metadata
 from mlp_core import config
@@ -38,24 +39,39 @@ pipeline = Table(
     Column("cases", JSON(none_as_null=True)),
     # Set once a finished Smoke Test's Datasets and Model Versions are deleted.
     Column("cleaned_up", Boolean, nullable=False, default=False),
+    # The failed or cancelled Pipeline this one resumes, and what it reuses from it.
+    Column("resumed_from", Integer),
+    Column("resume", JSON(none_as_null=True)),
 )
 unfinished = pipeline.c.status.not_in(config.FINISHED_STATUSES)
 
 
 def submit_pipeline(
-    state, request: PipelineRequest, secrets: dict[str, str], fetched: list[str]
+    state,
+    request: PipelineRequest,
+    secrets: dict[str, str],
+    fetched: list[str],
+    resumed_from: int | None = None,
+    resume: Resume | None = None,
 ) -> int:
     """The new Pipeline's ID, once its Kubeflow run is submitted; RuntimeError if that failed."""
     # 1. The Pipeline, whose ID names its Secret and its step token.
     engine, cluster = state.engine, state.cluster
-    pipeline_id = create_pipeline(engine, request.name, request.model_dump(mode="json"))
+    pipeline_id = create_pipeline(
+        engine,
+        request.name,
+        request.model_dump(mode="json"),
+        resumed_from=resumed_from,
+        resume=resume and asdict(resume),
+    )
 
     # 2. The Secret and the run; a failure leaves the Secret to the reconciler.
     try:
         if request.distill or request.serve:
             secrets = {**secrets, "step_token": issue_step_token(state.jwt_secret, pipeline_id)}
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
-        spec = compile_pipeline(pipeline_id, request, fetched, cluster.steps, state.settings)
+        settings = state.settings
+        spec = compile_pipeline(pipeline_id, request, fetched, cluster.steps, settings, resume)
         run_id = cluster.submit_run(f"{request.name}-{pipeline_id}", spec)
     except Exception as error:
         set_pipeline(engine, pipeline_id, status="failed")
@@ -64,7 +80,7 @@ def submit_pipeline(
     return pipeline_id
 
 
-def create_pipeline(engine: Engine, name: str, request: dict, cases: dict | None = None) -> int:
+def create_pipeline(engine: Engine, name: str, request: dict, **values) -> int:
     with engine.begin() as connection:
         return connection.execute(
             insert(pipeline).values(
@@ -73,7 +89,7 @@ def create_pipeline(engine: Engine, name: str, request: dict, cases: dict | None
                 request=request,
                 status="pending",
                 created_at=datetime.now(UTC),
-                cases=cases,
+                **values,
             )
         ).inserted_primary_key[0]
 
@@ -116,6 +132,7 @@ def pipeline_summary(row) -> dict:
         "kubeflow_run_url": row.kubeflow_run_id and kubeflow_run_url(row.kubeflow_run_id),
         "mlflow_run_url": row.mlflow_run_url,
         "cases": row.cases,
+        "resumed_from": row.resumed_from,
     }
 
 

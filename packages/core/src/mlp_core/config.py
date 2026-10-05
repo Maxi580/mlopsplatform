@@ -27,7 +27,13 @@ BLOCKED_TRAINER_SETTINGS = (
     "model_init_kwargs",
     "trust_remote_code",
 )
-TRAINER_DEFAULTS = {"report_to": ["mlflow"], "save_strategy": "no", "disable_tqdm": True}
+# The platform saves Checkpoints itself, every checkpoint_minutes, keeping only the newest on disk.
+TRAINER_DEFAULTS = {
+    "report_to": ["mlflow"],
+    "save_strategy": "no",
+    "save_total_limit": 1,
+    "disable_tqdm": True,
+}
 # Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings.
 ALGORITHMS = {
     "sft": {
@@ -190,6 +196,11 @@ PIPELINE_STATUSES = {
     "CANCELED": "cancelled",
 }
 FINISHED_STATUSES = ("succeeded", "failed", "cancelled")
+RESUMABLE_STATUSES = ("failed", "cancelled")
+# Where each Phase keeps its newest Checkpoint in the platform bucket, by Pipeline and Phase index.
+CHECKPOINTS_PREFIX = "checkpoints/"
+# Uploaded last, so a Checkpoint holding it arrived whole.
+CHECKPOINT_COMPLETE_FILE = "trainer_state.json"
 WAITING_FOR_GPU = "waiting for GPU"
 RECONCILE_INTERVAL = timedelta(seconds=10)
 # Backstop for Secrets the reconciler missed, e.g. while the API was down.
@@ -307,6 +318,9 @@ SMOKE_TEST_WEIGHT_CASES = {
         "hf",
     ),
 }
+# Trains SMOKE_TEST_TRAINING in a step that stops after its first Checkpoint, as a cancel would,
+# then in a step that continues from that Checkpoint.
+SMOKE_TEST_RESUME_CASE = "resume"
 # Runs right after `fetch`: a Pipeline step sends snippets to the Sandbox and checks its limits.
 SMOKE_TEST_SANDBOX_CASE = "sandbox"
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
@@ -341,13 +355,14 @@ SMOKE_TEST_DISTILL_TOOLS = [
     }
 ]
 # Finetune cases that train from the tiny model, end with an Endpoint, follow `distill`, chain
-# Phases or try a weight method's options; the others train one Phase on the Base Model.
+# Phases, try a weight method's options or resume; the others train one Phase on the Base Model.
 SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
     SMOKE_TEST_UPLOADED_MODEL_CASE,
     SMOKE_TEST_SERVE_STAGE_CASE,
     SMOKE_TEST_DISTILL_CASE,
     SMOKE_TEST_CHAIN_CASE,
     *SMOKE_TEST_WEIGHT_CASES,
+    SMOKE_TEST_RESUME_CASE,
 )
 # Evaluate case -> its `evaluate` block without the model: a benchmark on a few samples, or a short
 # performance run. The Base Model, and the Adapter of the first finetune case, run a small benchmark

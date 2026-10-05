@@ -10,6 +10,7 @@ from huggingface_hub import snapshot_download
 
 from mlp_core import config
 from mlp_core.pipeline_request.references import (
+    checkpoint_prefix,
     split_base_model_reference,
     split_model_reference,
 )
@@ -24,6 +25,9 @@ def finetune(
     request: str,
     distilled_dataset: str,
     previous_model_version: str,
+    checkpoint_minutes: str,
+    resume_checkpoint: str,
+    stop_after_checkpoint: str,
     model_version: str,
 ) -> None:
     """Trains one Phase and registers its output as a Model Version, written to `model_version`."""
@@ -42,6 +46,8 @@ def finetune(
     # Only backends import transformers, TRL and PEFT; each has load_tokenizer, build_trainer and
     # save_model_version.
     backend = importlib.import_module(f"mlp_stages.finetune.backends.{resolved.finetune.backend}")
+    # Imports transformers, so only after the backend.
+    from mlp_stages.finetune import checkpoints
 
     with tempfile.TemporaryDirectory() as output_directory:
         # 3. What the Phase starts from (#19), and the Teacher a `distillation` Phase loads too.
@@ -69,15 +75,29 @@ def finetune(
             base_directory, phase, tokenizer, dataset, output_directory, adapter_directory, teacher
         )
 
-        # 6. Training, logged into the Run; with no size limits, out of memory must read plainly.
+        # 6. Training, logged into the Run, from the Checkpoint a resume hands over; a Checkpoint is
+        # uploaded every checkpoint_minutes. With no size limits, out of memory must read plainly.
+        checkpoint = None
+        if resume_checkpoint:
+            checkpoint = checkpoints.download_checkpoint(resume_checkpoint, scratch / "resume")
+        own_checkpoints = checkpoint_prefix(pipeline_id, index)
+        trainer.add_callback(
+            checkpoints.CheckpointUploads(
+                own_checkpoints, int(checkpoint_minutes), bool(stop_after_checkpoint)
+            )
+        )
         try:
-            trainer.train()
+            trainer.train(resume_from_checkpoint=checkpoint and str(checkpoint))
         except torch.OutOfMemoryError as error:
             raise SystemExit(
                 f"Out of GPU memory: {error}\nTry a smaller per_device_train_batch_size or "
                 "length setting, more gradient_accumulation_steps, `qlora`, a smaller Base Model "
                 "or a smaller Teacher."
             ) from None
+        # The Smoke Test's interrupted step leaves its Checkpoint and registers nothing.
+        if stop_after_checkpoint:
+            Path(model_version).write_text("")
+            return
 
         # 7. The output with the tokenizer and chat template, registered as the next Model Version,
         # which the next Phase starts from.
@@ -97,6 +117,9 @@ def finetune(
             model_type,
         )
         Path(model_version).write_text(registered)
+
+        # 8. The Phase succeeded, so its Checkpoints are no longer needed.
+        checkpoints.delete_checkpoints(own_checkpoints)
 
 
 def model_with_adapter(reference: str, scratch: Path) -> tuple[str, Path, Path | None]:

@@ -147,6 +147,21 @@ def test_rerun_submits_the_stored_request_with_fresh_secrets(
     assert "Pipeline 7" in result.output
 
 
+def test_resume_sends_fresh_secrets_and_prints_the_new_pipeline(
+    logged_in, home, fake_api, platform_ca
+):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE_WITHOUT_SECRETS)
+    path = api_paths.RESUME_PIPELINE.format(id=3)
+    fake_api.answers[path] = (202, {"id": 8})
+
+    result = mlp("resume", "3", input=f"{OTHER_TOKEN}\n")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received == [(path, {"secrets": {"hf_token": OTHER_TOKEN}})]
+    assert "Pipeline 8" in result.output
+    assert "resumes Pipeline 3" in result.output
+
+
 def test_run_dry_run_prints_the_downloads_without_submitting(
     logged_in, home, fake_api, platform_ca
 ):

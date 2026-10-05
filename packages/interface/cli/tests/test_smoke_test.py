@@ -120,6 +120,15 @@ def test_a_custom_smoke_test_can_run_the_distill_case(started, fake_api):
     assert fake_api.received[0] == (api_paths.SMOKE_TEST_CUSTOM, {"distill": True})
 
 
+def test_a_custom_smoke_test_can_run_the_resume_case(started, fake_api):
+    fake_api.answers[api_paths.PIPELINES] = (200, [smoke_test("succeeded", {"fetch": "passed"})])
+
+    result = mlp("smoke-test", "--resume")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received[0] == (api_paths.SMOKE_TEST_CUSTOM, {"resume": True})
+
+
 def test_a_custom_smoke_test_can_run_the_chain_case(started, fake_api):
     fake_api.answers[api_paths.PIPELINES] = (200, [smoke_test("succeeded", {"fetch": "passed"})])
 

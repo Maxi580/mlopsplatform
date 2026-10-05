@@ -31,11 +31,13 @@ dataset_version = Table(
     Column("size_bytes", BigInteger, nullable=False),
     # Deleted versions keep their row, so their number is never handed out again.
     Column("deleted", Boolean, nullable=False, default=False),
+    # The Pipeline whose `distill` Stage registered it, which a resume reuses it for.
+    Column("pipeline", Integer),
 )
 
 
 def upload_dataset_version(
-    engine: Engine, object_store: ObjectStore, name: str, path: Path
+    engine: Engine, object_store: ObjectStore, name: str, path: Path, pipeline_id: int | None = None
 ) -> dict:
     """The new Dataset Version holding the JSONL file; ValueError naming the first bad row."""
     # 1. Every row in one supported row format.
@@ -51,7 +53,9 @@ def upload_dataset_version(
             "row_format": row_format,
         }
         try:
-            connection.execute(insert(dataset_version).values(name=name, **new_version))
+            connection.execute(
+                insert(dataset_version).values(name=name, pipeline=pipeline_id, **new_version)
+            )
         except IntegrityError:
             raise ValueError("another upload took the same version number; upload again") from None
         # 3. The file, inside the transaction so a failed upload leaves no version behind.

@@ -20,6 +20,9 @@ export const MODEL_UPLOADS = "/models/uploads";
 export const modelUploadComplete = (id: string) => `/models/uploads/${id}/complete`;
 export const STORAGE = "/storage";
 export const MODEL_CACHE = "/cache";
+export const CHECKPOINTS = "/checkpoints";
+export const checkpoint = (pipelineId: number, phaseIndex: number) =>
+  `${CHECKPOINTS}/${pipelineId}/${phaseIndex}`;
 export const ENDPOINTS = "/endpoints";
 export const stopEndpoint = (name: string) => `/endpoints/${name}/stop`;
 export const modelCacheEntry = (reference: string) =>

@@ -55,6 +55,18 @@ def rerun(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) 
     typer.echo(f"Submitted Pipeline {pipeline['id']}; follow it with `mlp ls`")
 
 
+def resume(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:
+    """Continue a failed or cancelled Pipeline as a new one, reusing what it finished."""
+    submission = {"secrets": collect_secrets(load_profile())}
+    with api_client() as client:
+        response = client.post(api_paths.RESUME_PIPELINE.format(id=pipeline_id), json=submission)
+    pipeline = exit_on_error(response).json()
+    typer.echo(
+        f"Submitted Pipeline {pipeline['id']}, which resumes Pipeline {pipeline_id}; "
+        "follow it with `mlp ls`"
+    )
+
+
 def ls() -> None:
     """List Pipelines with their Owner, status, Stages and links."""
     profile = load_profile()

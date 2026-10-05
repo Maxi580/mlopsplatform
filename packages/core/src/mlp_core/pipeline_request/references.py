@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from mlp_core.config import BENCHMARKS_DIRECTORY
+from mlp_core.config import BENCHMARKS_DIRECTORY, CHECKPOINTS_PREFIX
 
 # Starts alphanumeric, so names like `..` never become storage paths.
 DATASET_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
@@ -47,6 +47,11 @@ def model_reference(name: str, version: int) -> str:
 def dataset_key(name: str, version: int) -> str:
     """Where a Dataset Version's JSONL file lives in the platform bucket."""
     return f"datasets/{name}/{version}/data.jsonl"
+
+
+def checkpoint_prefix(pipeline_id: int | str, phase_index: int | str) -> str:
+    """Where a Phase's newest Checkpoint lies in the platform bucket."""
+    return f"{CHECKPOINTS_PREFIX}{pipeline_id}/{phase_index}/"
 
 
 def split_benchmark_reference(benchmark: str) -> tuple[str, str]:
