@@ -1,6 +1,8 @@
 import json
 import sys
 
+import mlflow
+
 from mlp_core import config
 from mlp_core.pipeline_request.schema import Reward
 from mlp_stages.sandbox import run_in_sandbox
@@ -15,7 +17,13 @@ def reward_function(name: str, source: str):
     code = config.REWARD_SNIPPET.format(source=source)
 
     def score(
-        prompts, completions, completion_ids, trainer_state, log_extra, log_metric, **columns
+        prompts,
+        completions,
+        completion_ids,
+        trainer_state,
+        log_extra=None,
+        log_metric=None,
+        **columns,
     ) -> list[float | None]:
         """Each completion's reward; one that fails scores 0.0 and is counted and reported."""
         # 1. The whole batch at once, each completion with its Dataset row.
@@ -32,7 +40,12 @@ def reward_function(name: str, source: str):
             scores.append(reward)
             if failure:
                 failures.append(failure)
-        log_metric(f"rewards/{name}/errors", len(failures))
+        metric = f"rewards/{name}/errors"
+        if log_metric is not None:
+            log_metric(metric, len(failures))
+        else:
+            # TRL before 1.0, which Unsloth trains with, has none; the trainer's Run is active.
+            mlflow.log_metric(metric, len(failures), step=trainer_state.global_step)
         if failures:
             print(
                 f"Reward `{name}` failed on {len(failures)} of {len(results)} completions; "

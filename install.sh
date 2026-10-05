@@ -131,6 +131,7 @@ build_images() {
   build_image stages "$ROOT" "$ROOT/packages/stages/Dockerfile"     --build-arg PYTHON_IMAGE="$(value .images.vllm)" --build-arg STAGES_EXTRA=evaluate \
     --build-arg BFCL_VERSION="$(value .versions.bfcl)"
   build_image trainerHf "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=hf
+  build_image trainerUnsloth "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=unsloth
   build_image webui "$ROOT/packages/interface/webui" "$ROOT/packages/interface/webui/Dockerfile"
 }
 

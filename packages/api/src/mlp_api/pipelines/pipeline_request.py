@@ -41,8 +41,9 @@ def validate_pipeline_request(
     except ValidationError as validation_error:
         return None, [error(e["loc"], e["msg"]) for e in validation_error.errors()]
 
-    # 2. The settings TRL/PEFT would receive, rewards that can run, and no Secret value anywhere.
-    errors = trainer_config_errors(request) + reward_errors(request)
+    # 2. Phases the backend can train, the settings TRL/PEFT would receive, rewards that can run,
+    # and no Secret value anywhere.
+    errors = backend_errors(request) + trainer_config_errors(request) + reward_errors(request)
     errors += secret_value_errors(request, secrets)
 
     # 3. What `distill` reads: its prompts, its Teacher and the tools the Teacher may call.
@@ -136,6 +137,25 @@ def validate_pipeline_request(
 
 def error(loc, msg: str) -> dict:
     return {"loc": list(loc), "msg": msg}
+
+
+def backend_errors(request: PipelineRequest) -> list[dict]:
+    """An error for each Phase whose algorithm or method its backend doesn't train."""
+    finetune = request.finetune
+    if finetune is None:
+        return []
+    backend, errors = finetune.backend, []
+    for index, phase in enumerate(finetune.phases):
+        methods = config.BACKENDS[backend].get(phase.algorithm)
+        loc = ["finetune", "phases", index]
+        if methods is None:
+            msg = f"{backend} doesn't train {phase.algorithm} Phases; use backend `hf`"
+            errors.append(error([*loc, "algorithm"], msg))
+        elif phase.method not in methods:
+            supported = ", ".join(methods)
+            msg = f"{backend} trains {phase.algorithm} Phases with {supported}, not {phase.method}"
+            errors.append(error([*loc, "method"], f"{msg}; use backend `hf`"))
+    return errors
 
 
 def trainer_config_errors(request: PipelineRequest) -> list[dict]:

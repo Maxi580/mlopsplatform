@@ -31,7 +31,10 @@ class StepEnvironment:
     def from_environment(cls) -> "StepEnvironment":
         return cls(
             stages_image=os.environ["STAGES_IMAGE"],
-            trainer_images={"hf": os.environ["TRAINER_HF_IMAGE"]},
+            trainer_images={
+                "hf": os.environ["TRAINER_HF_IMAGE"],
+                "unsloth": os.environ["TRAINER_UNSLOTH_IMAGE"],
+            },
             model_cache_pvc=os.environ["MODEL_CACHE_PVC"],
             object_store_url=os.environ["S3_ENDPOINT_URL"],
             object_store_bucket=os.environ["S3_BUCKET"],
@@ -232,7 +235,9 @@ def finetune_steps(
     interrupt: bool = False,
 ) -> list:
     """One step per unfinished Phase, each handed the Model Version the one before registered."""
-    trainer_image = steps.trainer_images[request.finetune.backend]
+    backend = request.finetune.backend
+    trainer_image = steps.trainer_images[backend]
+    gpus = 1 if backend in config.SINGLE_GPU_BACKENDS else settings.gpus_per_stage
 
     @dsl.container_component
     def finetune(
@@ -282,7 +287,7 @@ def finetune_steps(
         use_model_cache(task, steps)
         task.set_env_variable("HF_HUB_OFFLINE", "1")
         task.set_accelerator_type(config.GPU_RESOURCE)
-        task.set_accelerator_limit(settings.gpus_per_stage)
+        task.set_accelerator_limit(gpus)
         use_object_store(task, steps)
         # `grpo` and `rloo` score their completions with the Phase's rewards there.
         task.set_env_variable("SANDBOX_URL", steps.sandbox_url)

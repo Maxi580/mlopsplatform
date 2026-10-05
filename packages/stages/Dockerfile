@@ -4,7 +4,7 @@ ARG PYTHON_IMAGE
 FROM ${UV_IMAGE} AS uv
 
 FROM ${PYTHON_IMAGE}
-# Set to a mlp-stages extra: hf for a trainer image, evaluate for the stages image.
+# Set to a mlp-stages extra: hf or unsloth for a trainer image, evaluate for the stages image.
 ARG STAGES_EXTRA=""
 # Set for the stages image only: the bfcl-eval release `evaluate` runs.
 ARG BFCL_VERSION=""
@@ -21,5 +21,7 @@ RUN if [ -n "$BFCL_VERSION" ]; then \
       && uv pip install --python /opt/bfcl/bin/python --no-deps ./packages/core ./packages/stages; \
     fi
 ENV PATH="/app/.venv/bin:$PATH"
+# Unsloth reports usage statistics unless told not to.
+ENV UNSLOTH_DISABLE_STATISTICS=1
 # Lets fetch download with Xet at full speed.
 ENV HF_XET_HIGH_PERFORMANCE=1

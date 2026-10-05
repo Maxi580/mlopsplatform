@@ -30,6 +30,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("KUBEFLOW_NAMESPACE", "kubeflow")
     monkeypatch.setenv("STAGES_IMAGE", "mlp-stages:real")
     monkeypatch.setenv("TRAINER_HF_IMAGE", "mlp-trainer-hf:real")
+    monkeypatch.setenv("TRAINER_UNSLOTH_IMAGE", "mlp-trainer-unsloth:real")
     monkeypatch.setenv("MODEL_CACHE_PVC", "model-cache")
     monkeypatch.setenv("API_URL", "http://api.mlp.test:8000")
     monkeypatch.setenv("SANDBOX_URL", "http://sandbox.mlp.test:8090")
@@ -200,7 +201,7 @@ class FakeCluster:
 
     steps = StepEnvironment(
         stages_image="mlp-stages:test",
-        trainer_images={"hf": "mlp-trainer-hf:test"},
+        trainer_images={"hf": "mlp-trainer-hf:test", "unsloth": "mlp-trainer-unsloth:test"},
         model_cache_pvc="model-cache",
         object_store_url="http://seaweedfs.test:8333",
         object_store_bucket="platform",

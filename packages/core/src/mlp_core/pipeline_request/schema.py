@@ -23,6 +23,7 @@ from mlp_core.config import (
     PERFORMANCE_REQUESTS,
     REWARD_SOURCE_MAX_LENGTH,
     REWARDS_INFOBOX,
+    WEIGHT_METHODS,
 )
 from mlp_core.endpoint_spec import ENDPOINT_NAME_PATTERN, EndpointName, ServingOptions
 from mlp_core.pipeline_request.references import (
@@ -32,7 +33,6 @@ from mlp_core.pipeline_request.references import (
     ModelReference,
 )
 
-METHODS = tuple(dict.fromkeys(method for methods in BACKENDS.values() for method in methods))
 EndpointReference = Annotated[str, Field(pattern=f"^endpoint:{ENDPOINT_NAME_PATTERN}$")]
 InClusterTeacher = TypeAdapter(BaseModelReference | ModelReference | EndpointReference)
 JobTeacher = TypeAdapter(BaseModelReference | ModelReference)
@@ -89,7 +89,7 @@ RewardName = Annotated[str, Field(pattern=r"^[\w-]{1,64}$")]
 class Phase(Strict):
     algorithm: Literal[tuple(ALGORITHMS)]
     dataset: DatasetReference | Literal[DISTILL_OUTPUT]
-    method: Literal[METHODS] = "lora"
+    method: Literal[WEIGHT_METHODS] = "lora"
     # `merged` registers the Adapter merged into its base, as full weights; `full` ignores it.
     output: Literal["adapter", "merged"] = "adapter"
     settings: PhaseSettings
@@ -141,7 +141,7 @@ class Finetune(Strict):
     # The first Phase starts from a Base Model or from a full-weight Model Version.
     base_model: BaseModelReference | None = None
     from_: ModelReference | None = Field(None, alias="from", title="From Model Version")
-    backend: Literal[tuple(BACKENDS)]
+    backend: Literal[tuple(BACKENDS)] = "hf"
     # Run in order, each starting from the Model Version the one before it registered.
     phases: list[Phase] = Field(min_length=1)
 

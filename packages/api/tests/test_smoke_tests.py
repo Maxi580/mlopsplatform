@@ -15,13 +15,19 @@ QWEN = "Qwen/Qwen2.5-0.5B-Instruct"
 TINY_QWEN = "trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 COMMIT = "c0ffee"
 # The cases that run as Kubeflow nodes, without the serving cases' Endpoints.
-WITHOUT_SERVING = {"finetune": {"phases": ["sft"], "methods": ["lora"]}, "uploaded_model": True}
+WITHOUT_SERVING = {
+    "finetune": {"phases": ["sft"], "methods": ["lora"], "backends": ["hf"]},
+    "uploaded_model": True,
+}
 SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter", "serve-merged"]
-# Every Phase algorithm with every method of the `hf` backend.
+# Every Phase algorithm with every method of the `hf` backend, and those `unsloth` trains.
+UNSLOTH = {"sft", "dpo", "kto", "grpo-lora", "grpo-qlora", "rloo-lora", "rloo-qlora"}
 GRID_CASES = [
-    f"{phase}-{method}-hf"
+    f"{phase}-{method}-{backend}"
     for phase in ("sft", "dpo", "kto", "distillation", "grpo", "rloo")
     for method in ("lora", "qlora", "full")
+    for backend in ("hf", "unsloth")
+    if backend == "hf" or {phase, f"{phase}-{method}"} & UNSLOTH
 ]
 WEIGHT_CASES = [
     "sft-rslora-hf",
@@ -29,6 +35,7 @@ WEIGHT_CASES = [
     "sft-dora-merged-hf",
     "sft-lora-dpo-full-hf-finetune-sft",
     "sft-lora-dpo-full-hf",
+    "sft-lora-merged-unsloth",
 ]
 EVALUATE_CASES = [
     "evaluate-base-model",
@@ -95,6 +102,7 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "sandbox",
         *GRID_CASES,
         "sft-assistant-only-hf",
+        "sft-assistant-only-unsloth",
         "uploaded-model",
         "distill-tools-distill",
         "distill-tools",
@@ -143,10 +151,17 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
             + ["evaluate-tool-calling", "evaluate-performance"],
         ),
         (
-            {"finetune": {"phases": ["sft"]}},
+            {"finetune": {"phases": ["sft"], "backends": ["hf"]}},
             ["fetch", "sft-lora-hf", "sft-qlora-hf", "sft-full-hf", "sft-assistant-only-hf"],
         ),
-        ({"finetune": {"phases": ["sft"], "methods": ["full"]}}, ["fetch", "sft-full-hf"]),
+        (
+            {"finetune": {"phases": ["sft"], "methods": ["full"]}},
+            ["fetch", "sft-full-hf", "sft-full-unsloth"],
+        ),
+        (
+            {"finetune": {"phases": ["grpo", "distillation"], "backends": ["unsloth"]}},
+            ["fetch", "grpo-lora-unsloth", "grpo-qlora-unsloth"],
+        ),
         ({"finetune": {"phases": ["sft"], "methods": [], "backends": ["hf"]}}, ["fetch"]),
     ],
 )
@@ -300,7 +315,7 @@ def phases(cluster, case: str) -> list[dict]:
 def test_a_full_case_trains_every_weight_the_others_an_adapter_one_assistant_only(
     logged_in_api, qwen_on_the_hub, cluster
 ):
-    start(logged_in_api, {"finetune": {"phases": ["sft"]}})
+    start(logged_in_api, {"finetune": {"phases": ["sft"], "backends": ["hf"]}})
 
     trained = {case: phases(cluster, case)[0] for case in case_names(cluster)[1:]}
     assert {case: phase["method"] for case, phase in trained.items()} == {
@@ -563,6 +578,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "sandbox",
         *GRID_CASES,
         "sft-assistant-only-hf",
+        "sft-assistant-only-unsloth",
         "uploaded-model",
         "distill-tools",
         "sft-dpo-chain",

@@ -25,13 +25,10 @@ def build_trainer(
 ):
     """The catalog row's TRL trainer for the Phase's weight method, on the base with the Adapter."""
     algorithm = config.ALGORITHMS[phase.algorithm]
+    settings, trainer_kwargs = trainer_settings(phase)
     # Only `distillation` has a Teacher: its base files, and its Adapter files to merge in, if any.
-    trainer_kwargs = {"teacher_model": load_model(*teacher, "auto")} if teacher else {}
-    settings = {**algorithm["defaults"], **phase.settings.model_dump()}
-    # Only `grpo` and `rloo` have rewards, weighted in the order TRL is given them.
-    if phase.rewards:
-        trainer_kwargs["reward_funcs"] = reward_functions(phase.rewards)
-        settings["reward_weights"] = [reward.weight for reward in phase.rewards.values()]
+    if teacher:
+        trainer_kwargs["teacher_model"] = load_model(*teacher, "auto")
     peft_config = None
     if phase.method == "full":
         # Trains every weight; an Adapter before it is merged into its base first (#19).
@@ -60,6 +57,16 @@ def build_trainer(
         peft_config=peft_config,
         **trainer_kwargs,
     )
+
+
+def trainer_settings(phase: Phase) -> tuple[dict, dict]:
+    """The Phase's settings over its algorithm's defaults, and the trainer's reward functions."""
+    settings = {**config.ALGORITHMS[phase.algorithm]["defaults"], **phase.settings.model_dump()}
+    # Only `grpo` and `rloo` have rewards, weighted in the order TRL is given them.
+    if not phase.rewards:
+        return settings, {}
+    settings["reward_weights"] = [reward.weight for reward in phase.rewards.values()]
+    return settings, {"reward_funcs": reward_functions(phase.rewards)}
 
 
 def load_model(model_directory: Path, adapter_directory: Path | None, dtype: str):

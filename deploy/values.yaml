@@ -38,6 +38,8 @@ images:
   stages: mlp-stages
   # Runs finetune on the hf backend: the stages image plus TRL, PEFT and CUDA-enabled torch.
   trainerHf: mlp-trainer-hf
+  # Runs finetune on the unsloth backend: Unsloth with the TRL and Transformers it supports.
+  trainerUnsloth: mlp-trainer-unsloth
   # Builds the Web UI with node and serves its static files with nginx.
   webui: mlp-webui
   # Endpoints run the upstream vLLM image as is.

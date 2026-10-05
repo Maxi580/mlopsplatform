@@ -189,7 +189,6 @@ def test_unknown_fields_are_rejected(validate, request_):
 @pytest.mark.parametrize(
     "path",
     [
-        ("finetune", "backend"),
         ("finetune", "phases", 0, "dataset"),
         ("finetune", "phases", 0, "settings", "learning_rate"),
         ("finetune", "phases", 0, "settings", "num_train_epochs"),
@@ -592,3 +591,49 @@ def test_a_phase_leaving_assistant_only_loss_out_passes_trl_no_value_for_it(vali
 
     assert errors == []
     assert "assistant_only_loss" not in request.finetune.phases[0].settings.model_dump()
+
+
+def test_finetune_trains_on_the_hf_backend_by_default(validate):
+    request, errors = validate(without(pipeline_request(), "finetune", "backend"))
+
+    assert errors == []
+    assert request.finetune.backend == "hf"
+
+
+@pytest.mark.parametrize("method", ["lora", "qlora", "full"])
+def test_sft_trains_with_every_method_on_unsloth(validate, method):
+    phase = {"method": method, **({"lora": None} if method == "full" else {})}
+    request = pipeline_request(phase=phase, backend="unsloth")
+
+    assert validate(request)[1] == []
+
+
+REWARDS = {"exact": {"weight": 1.0, "source": "def reward(sample, item):\n    return 1.0\n"}}
+
+
+@pytest.mark.parametrize(
+    ("phase", "message"),
+    [
+        (
+            {"algorithm": "distillation", "teacher": f"hf:{BASE_MODEL}"},
+            "unsloth doesn't train distillation Phases; use backend `hf`",
+        ),
+        (
+            {"algorithm": "grpo", "method": "full", "lora": None, "rewards": REWARDS},
+            "unsloth trains grpo Phases with lora, qlora, not full; use backend `hf`",
+        ),
+    ],
+)
+def test_an_algorithm_or_method_the_backend_lacks_is_rejected(validate, phase, message):
+    request = pipeline_request(phase=phase, backend="unsloth")
+
+    assert message in rejection(validate(request))
+
+
+def test_assistant_only_loss_on_unsloth_needs_no_generation_markers(validate, hugging_face):
+    # Unsloth finds the assistant's turns from the rendered template itself.
+    hugging_face.files[BASE_MODEL] = {"chat_template.jinja": UNMARKED_TEMPLATE.encode()}
+
+    _, errors = validate(pipeline_request(settings=ASSISTANT_ONLY, backend="unsloth"))
+
+    assert errors == []

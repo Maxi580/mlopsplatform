@@ -3,14 +3,14 @@ from typing import Literal
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_core import config
 from mlp_core.pipeline_request.references import model_reference
-from mlp_core.pipeline_request.schema import METHODS, Strict
+from mlp_core.pipeline_request.schema import Strict
 
 
 class FinetuneCases(Strict):
     """Every combination of these that a backend supports is one case; unnamed means all."""
 
     phases: list[Literal[tuple(config.ALGORITHMS)]] = list(config.ALGORITHMS)
-    methods: list[Literal[METHODS]] = list(METHODS)
+    methods: list[Literal[config.WEIGHT_METHODS]] = list(config.WEIGHT_METHODS)
     backends: list[Literal[tuple(config.BACKENDS)]] = list(config.BACKENDS)
 
 
@@ -59,7 +59,7 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[dict,
         for phase in chosen.phases
         for method in chosen.methods
         for backend in chosen.backends
-        if method in config.BACKENDS[backend]
+        if method in config.BACKENDS[backend].get(phase, ())
     }
     adapter_case = first_adapter_case(cases)
     if "sft" in chosen.phases and "lora" in chosen.methods:

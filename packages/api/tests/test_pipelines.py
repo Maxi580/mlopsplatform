@@ -39,10 +39,13 @@ def test_validate_returns_the_resolved_request(logged_in_api, hugging_face):
 
 
 def test_validate_rejects_with_paths_inside_the_pipeline_request(logged_in_api):
-    response = validate(logged_in_api, without(pipeline_request(), "finetune", "backend"))
+    response = validate(
+        logged_in_api, without(pipeline_request(), "finetune", "phases", 0, "dataset")
+    )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == [{"loc": ["finetune", "backend"], "msg": "Field required"}]
+    loc = ["finetune", "phases", 0, "dataset"]
+    assert response.json()["detail"] == [{"loc": loc, "msg": "Field required"}]
 
 
 def test_validation_requires_login(api, hugging_face):
@@ -357,6 +360,20 @@ def test_finetune_trains_after_fetch_on_the_backends_trainer_image_with_the_plat
     request = json.loads(inputs["request"])
     assert request["finetune"]["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
     assert request["finetune"]["phases"][0]["dataset"] == "dataset:chat@1"
+
+
+def test_an_unsloth_phase_trains_on_its_trainer_image_with_one_gpu(
+    logged_in_api, submittable, cluster
+):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpus_per_stage": 2})
+
+    assert submit(logged_in_api, pipeline_request(backend="unsloth")).status_code == 202
+
+    pipeline, _ = submitted_pipeline(cluster)
+    container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
+    assert container["image"] == "mlp-trainer-unsloth:test"
+    assert container["resources"]["accelerator"]["resourceCount"] == "1"
 
 
 def test_each_phase_trains_in_its_own_step_from_the_model_version_the_one_before_registered(

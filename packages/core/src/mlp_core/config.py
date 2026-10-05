@@ -35,8 +35,6 @@ REWARDS_INFOBOX = (
 )
 # Caps a reward's `source`, which travels inside the Pipeline Request.
 REWARD_SOURCE_MAX_LENGTH = 2**16
-# Training backend -> the weight methods it supports.
-BACKENDS = {"hf": ("lora", "qlora", "full")}
 # Every algorithm's blocked settings: where outputs go, where they are logged, how they are
 # checkpointed, and what could ask for remote code.
 BLOCKED_TRAINER_SETTINGS = (
@@ -148,6 +146,22 @@ ALGORITHMS = {
         "learns_from_rewards": True,
     },
 }
+# Training backend -> Phase algorithm -> the weight methods it trains it with; validation rejects
+# every other combination, with no fallback to another backend (#23).
+WEIGHT_METHODS = ("lora", "qlora", "full")
+BACKENDS = {
+    "hf": dict.fromkeys(ALGORITHMS, WEIGHT_METHODS),
+    # Its vLLM shares weights with LoRA Adapters only, and it loads no Teacher.
+    "unsloth": {
+        "sft": WEIGHT_METHODS,
+        "dpo": WEIGHT_METHODS,
+        "kto": WEIGHT_METHODS,
+        "grpo": ("lora", "qlora"),
+        "rloo": ("lora", "qlora"),
+    },
+}
+# Its open-source version trains on one GPU only (#23).
+SINGLE_GPU_BACKENDS = ("unsloth",)
 # LoraConfig settings the platform sets.
 LORA_CONFIG = "LoraConfig"
 BLOCKED_LORA_SETTINGS = ("task_type",)
@@ -367,7 +381,8 @@ SMOKE_TEST_CHAIN = (
     "hf",
 )
 # The weight method cases: an rsLoRA Adapter, a QLoRA and a DoRA Adapter each merged into full
-# weights, and a `full` Phase that merges the Adapter of the Phase before it first.
+# weights, a `full` Phase that merges the Adapter of the Phase before it first, and an Adapter
+# Unsloth merges.
 SMOKE_TEST_MERGED_CASE = "sft-qlora-merged-hf"
 SMOKE_TEST_WEIGHT_CASES = {
     "sft-rslora-hf": (
@@ -382,6 +397,10 @@ SMOKE_TEST_WEIGHT_CASES = {
     "sft-lora-dpo-full-hf": (
         ({"algorithm": "sft", "method": "lora"}, {"algorithm": "dpo", "method": "full"}),
         "hf",
+    ),
+    "sft-lora-merged-unsloth": (
+        ({"algorithm": "sft", "method": "lora", "output": "merged"},),
+        "unsloth",
     ),
 }
 # With `sft` and `lora` chosen, one case per backend trains it with assistant-only loss, named

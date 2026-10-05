@@ -147,3 +147,23 @@ def test_each_function_is_named_after_its_reward_for_trls_metrics(local_sandbox)
     }
 
     assert [function.__name__ for function in reward_functions(rewards)] == ["correct", "short"]
+
+
+def test_on_trl_before_1_0_errors_are_logged_into_the_active_run(local_sandbox, monkeypatch):
+    # Unsloth trains on TRL 0.24, which hands reward functions no log_metric.
+    import mlflow
+
+    logged = []
+    monkeypatch.setattr(mlflow, "log_metric", lambda *args, **kwargs: logged.append((args, kwargs)))
+    [function] = reward_functions({"correct": Reward(weight=1.0, source=CORRECT)})
+
+    rewards = function(
+        prompts=["What is 2 + 2?"],
+        completions=["It is 5."],
+        completion_ids=[[1]],
+        trainer_state=type("TrainerState", (), {"global_step": 7})(),
+        answer=["4"],
+    )
+
+    assert rewards == [0.0]
+    assert logged == [(("rewards/correct/errors", 0), {"step": 7})]
