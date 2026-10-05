@@ -46,6 +46,24 @@ test("each Pipeline shows its Owner, status, Stages and links", async () => {
   ]);
 });
 
+test("a Pipeline that swept shows the best parameters it found", async () => {
+  const swept: Pipeline = {
+    ...running,
+    stages: ["sweep"],
+    sweep: {
+      parameters: { settings: { learning_rate: 0.0003 }, lora: { r: 16 } },
+      objective: 0.42,
+    },
+  };
+  fakeApi({ "GET /pipelines": [200, [swept]], "GET /settings": [200, { gpu_count: 1 }] });
+  renderApp("/");
+
+  const row = (await screen.findByText("qwen-sft")).closest("tr")!;
+  expect(
+    within(row).getByText("Best: learning_rate=0.0003, r=16 (objective 0.42)"),
+  ).toBeInTheDocument();
+});
+
 test("the list updates live", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   let status = "running";

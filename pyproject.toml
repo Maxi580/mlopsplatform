@@ -19,7 +19,7 @@ conflicts = [
 ]
 
 [dependency-groups]
-dev = ["pytest", "pyyaml", "httpx2", "ruff", "trustme"]
+dev = ["pytest", "pyyaml", "httpx2", "ruff", "trustme", "optuna"]
 
 [tool.ruff]
 line-length = 100

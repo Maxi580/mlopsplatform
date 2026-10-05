@@ -38,6 +38,8 @@ def plan_resume(state, pipeline_id: int) -> Resume:
         candidates.append(earlier.checkpoint)
     checkpoint = next((c for c in candidates if any(store.list_objects(store.bucket, c))), None)
 
-    # 4. The Distillation Dataset its `distill` Stage registered.
+    # 4. The Distillation Dataset its `distill` Stage registered, and the best parameters its
+    # `sweep` Stage found; a failed Sweep runs again from its first Trial.
     distilled = earlier.distilled_dataset or find_distillation_dataset(state.engine, pipeline_id)
-    return Resume(model_versions, distilled, checkpoint)
+    swept = earlier.swept_parameters or (row.sweep and row.sweep["parameters"])
+    return Resume(model_versions, distilled, checkpoint, swept)

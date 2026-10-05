@@ -128,6 +128,8 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "uploaded-model",
         "distill-tools-distill",
         "distill-tools",
+        "sft-sweep-sweep",
+        "sft-sweep",
         "sft-dpo-chain-finetune-sft",
         "sft-dpo-chain",
         *WEIGHT_CASES,
@@ -157,7 +159,8 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
     first, *later, serve = nodes(cluster)
     assert "triggerPolicy" not in first
     assert "triggerPolicy" not in serve
-    for waits in ("distill-tools", "sft-dpo-chain", "sft-lora-dpo-full-hf", "resume"):
+    waiting = ("distill-tools", "sft-sweep", "sft-dpo-chain", "sft-lora-dpo-full-hf", "resume")
+    for waits in waiting:
         assert "triggerPolicy" not in node(cluster, waits)
         later.remove(node(cluster, waits))
     assert later
@@ -298,6 +301,40 @@ def test_the_distill_case_distills_with_the_base_model_and_a_tool_then_trains_on
     handoff = finetune["inputs"]["parameters"]["distilled_dataset"]["taskOutputParameter"]
     assert handoff["outputParameterKey"] == "dataset"
     assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"step_token"}
+
+
+def test_the_sweep_case_sweeps_two_trials_then_trains_with_the_best_parameters(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    started = start(logged_in_api, {"sweep": True}).json()
+    name = started["name"]
+
+    assert case_names(cluster) == ["fetch", "sft-sweep-sweep", "sft-sweep"]
+    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "sft-sweep"]
+    sweep, finetune = node(cluster, "sft-sweep-sweep"), node(cluster, "sft-sweep")
+    request = json.loads(sweep["inputs"]["parameters"]["request"]["runtimeValue"]["constant"])
+    assert request["sweep"]["model"] == f"hf:{QWEN}@{COMMIT}"
+    assert request["sweep"]["dataset"] == f"dataset:{name}-sft@1"
+    assert request["sweep"]["trials"] == 2
+    assert request["finetune"]["phases"][0]["params_from"] == "@sweep"
+    handoff = finetune["inputs"]["parameters"]["swept_parameters"]["taskOutputParameter"]
+    assert handoff["outputParameterKey"] == "best_parameters"
+    assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"step_token"}
+
+
+def test_the_sweep_cases_step_reports_its_best_parameters(logged_in_api, qwen_on_the_hub, cluster):
+    started = start(logged_in_api, {"sweep": True}).json()
+    token = cluster.secrets[f"pipeline-{started['id']}"]["step_token"]
+    best = {"parameters": {"settings": {"learning_rate": 1e-4}}, "objective": 1.5}
+
+    response = logged_in_api.post(
+        api_paths.SWEEP_PIPELINE.format(id=started["id"]),
+        json=best,
+        headers={"authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 201, response.text
+    assert smoke_test(logged_in_api)["sweep"] == best
 
 
 def test_the_chain_case_trains_sft_then_dpo_on_the_sft_phases_model_version(
@@ -657,6 +694,7 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "sft-assistant-only-unsloth",
         "uploaded-model",
         "distill-tools",
+        "sft-sweep",
         "sft-dpo-chain",
         *[case for case in WEIGHT_CASES if not case.endswith("-finetune-sft")],
         "resume",

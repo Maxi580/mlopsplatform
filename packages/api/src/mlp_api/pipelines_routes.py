@@ -14,6 +14,7 @@ from mlp_api.pipelines.lifecycle import (
 )
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.pipelines.resume import plan_resume
+from mlp_api.pipelines.sweep_output import record_sweep_output
 from mlp_core import api_paths, config
 from mlp_core.pipeline_request.schema import PipelineRequest
 
@@ -33,6 +34,14 @@ class ResumeSubmission(BaseModel):
 
     # Read afresh, as a Pipeline's own are never kept.
     secrets: dict[str, str] = {}
+
+
+class SweepOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The best Trial's values, as `{settings: …, lora: …}`.
+    parameters: dict[str, dict[str, Any]]
+    objective: float
 
 
 @router.get(api_paths.SCHEMA)
@@ -94,6 +103,18 @@ def start(
     except RuntimeError as error:
         raise HTTPException(502, str(error)) from None
     return {"id": pipeline_id, **downloads}
+
+
+# The Pipeline's `sweep` step; require_login lets only that Pipeline's step token through.
+@router.post(api_paths.SWEEP_PIPELINE, status_code=201)
+def sweep(id: int, best: SweepOutput, request: Request) -> dict:
+    try:
+        record_sweep_output(request.app.state.engine, id, best.model_dump())
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return best.model_dump()
 
 
 @router.get(api_paths.PIPELINES)

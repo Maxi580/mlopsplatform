@@ -13,6 +13,7 @@ STEPS = {
     # An Endpoint's init container: the Model Version files vLLM loads.
     "download": "mlp_stages.operations.download:download",
     "distill": "mlp_stages.distill.main:distill",
+    "sweep": "mlp_stages.sweep.main:sweep",
     "finetune": "mlp_stages.finetune.main:finetune",
     "quantize": "mlp_stages.quantize.main:quantize",
     "speculate": "mlp_stages.speculate.main:speculate",

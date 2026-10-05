@@ -73,7 +73,9 @@ RL_BLOCKED_SETTINGS = (
     "vllm_group_port",
     "reward_weights",
 )
-# Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings.
+# Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings, and
+# the metrics a Sweep may optimize: `eval_` ones are measured on its held-out rows after training,
+# the others are the last value training logged.
 ALGORITHMS = {
     "sft": {
         "trainer": "SFTTrainer",
@@ -85,6 +87,7 @@ ALGORITHMS = {
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
+        "objectives": ("eval_loss", "eval_mean_token_accuracy"),
     },
     "dpo": {
         "trainer": "DPOTrainer",
@@ -95,6 +98,7 @@ ALGORITHMS = {
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
+        "objectives": ("eval_loss", "eval_rewards/accuracies", "eval_rewards/margins"),
     },
     "kto": {
         "trainer": "KTOTrainer",
@@ -105,6 +109,7 @@ ALGORITHMS = {
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
+        "objectives": ("eval_loss",),
     },
     # The Student generates its own completions to the prompts, which the Teacher scores.
     "distillation": {
@@ -123,6 +128,7 @@ ALGORITHMS = {
         "defaults": TRAINER_DEFAULTS,
         "learns_from_teacher": True,
         "learns_from_rewards": False,
+        "objectives": ("eval_loss",),
     },
     # Online RL: the model writes completions to each prompt, which the Phase's rewards score.
     "grpo": {
@@ -134,6 +140,7 @@ ALGORITHMS = {
         "defaults": RL_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": True,
+        "objectives": ("reward", "eval_reward"),
     },
     "rloo": {
         "trainer": "RLOOTrainer",
@@ -144,6 +151,7 @@ ALGORITHMS = {
         "defaults": RL_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": True,
+        "objectives": ("reward", "eval_reward"),
     },
 }
 # Training backend -> Phase algorithm -> the weight methods it trains it with; validation rejects
@@ -214,6 +222,13 @@ VLLM_TOOL_PARSERS = (
 VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 # Always run in this order.
 STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
+# Names the best parameters the Pipeline's `sweep` step found.
+SWEEP_OUTPUT = "@sweep"
+# `sweep` holds out this share of the Dataset's rows to measure its objective on, unless it names
+# an `eval_dataset`; the split and the samplers are seeded, so a rerun tries the same Trials.
+SWEEP_EVAL_SPLIT = 0.1
+SWEEP_SEED = 42
+SWEEP_SAMPLERS = ("tpe", "random", "grid")
 # Names the Model Version the Pipeline's last Phase registers.
 FINETUNE_OUTPUT = "@finetune"
 # Names the Distillation Dataset Version the Pipeline's `distill` step registers.
@@ -645,12 +660,23 @@ SMOKE_TEST_DISTILL_TOOLS = [
         },
     }
 ]
-# Finetune cases that train from the tiny model, end with an Endpoint, follow `distill`, chain
-# Phases, try a weight method's options or resume; the others train one Phase on the Base Model.
+# Sweeps the learning rate of SMOKE_TEST_TRAINING's Phase in two Trials, holding out 2 of the 8
+# bundled rows, then trains that Phase with `params_from: @sweep`.
+SMOKE_TEST_SWEEP_CASE = "sft-sweep"
+SMOKE_TEST_SWEEP = {
+    "parameters": {"settings": {"learning_rate": {"min": 1e-5, "max": 1e-3, "scale": "log"}}},
+    "objective": {"metric": "eval_loss", "goal": "minimize"},
+    "trials": 2,
+    "eval_split": 0.25,
+}
+# Finetune cases that train from the tiny model, end with an Endpoint, follow `distill` or
+# `sweep`, chain Phases, try a weight method's options or resume; the others train one Phase on
+# the Base Model.
 SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
     SMOKE_TEST_UPLOADED_MODEL_CASE,
     SMOKE_TEST_SERVE_STAGE_CASE,
     SMOKE_TEST_DISTILL_CASE,
+    SMOKE_TEST_SWEEP_CASE,
     SMOKE_TEST_CHAIN_CASE,
     *SMOKE_TEST_WEIGHT_CASES,
     SMOKE_TEST_RESUME_CASE,

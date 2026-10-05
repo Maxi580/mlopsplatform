@@ -162,6 +162,18 @@ def test_speculate_adds_the_profiles_speculate_block(home, fake_api, platform_ca
     assert request["speculate"] == speculate
 
 
+def test_sweep_adds_the_profiles_sweep_block_before_finetune(home, fake_api, platform_ca):
+    sweep = {"algorithm": "sft", "trials": 4}
+    write_profile(home, fake_api.url, platform_ca, **{**PROFILE, "sweep": sweep})
+    fake_api.answers[api_paths.VALIDATE_PIPELINE] = (200, {"request": {}})
+
+    mlp_validate("--finetune", "sft", "--sweep")
+
+    request = sent_submission(fake_api)["request"]
+    assert list(request) == ["name", "sweep", "finetune"]
+    assert request["sweep"] == sweep
+
+
 def test_quantize_adds_the_profiles_quantize_block_after_finetune(home, fake_api, platform_ca):
     quantize = {"scheme": "w4a16-gptq", "calibration": {}}
     write_profile(home, fake_api.url, platform_ca, **{**PROFILE, "quantize": quantize})

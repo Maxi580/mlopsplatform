@@ -6,11 +6,12 @@ dependencies = ["mlp-core", "huggingface-hub>=1.31,<2", "boto3", "httpx2", "json
 
 [project.optional-dependencies]
 # The trainer-hf image: finetune with TRL + PEFT (bitsandbytes for QLoRA), logging to MLflow;
-# grpo and rloo generate on vLLM in the same process, the version TRL supports and Endpoints run.
-hf = ["trl>=1.14", "peft", "torch", "mlflow-skinny", "bitsandbytes", "vllm==0.30.0; sys_platform == 'linux'"]
+# grpo and rloo generate on vLLM in the same process, the version TRL supports and Endpoints run;
+# sweep searches with Optuna.
+hf = ["trl>=1.14", "peft", "torch", "mlflow-skinny", "bitsandbytes", "optuna", "vllm==0.30.0; sys_platform == 'linux'"]
 # The trainer-unsloth image: Unsloth patches TRL and Transformers, so it pins the releases it
 # supports; grpo and rloo generate on its own vLLM, the newest that runs with them.
-unsloth = ["unsloth>=2026.9", "mlflow-skinny", "bitsandbytes", "vllm>=0.11; sys_platform == 'linux'"]
+unsloth = ["unsloth>=2026.9", "mlflow-skinny", "bitsandbytes", "optuna", "vllm>=0.11; sys_platform == 'linux'"]
 # The stages image: fetch downloads benchmarks and evaluate runs them with lm-eval and EvalScope
 # against vLLM, which the image's vLLM base provides; quantize merges Adapters with PEFT and
 # quantizes with llm-compressor; speculate trains Speculators with speculators.

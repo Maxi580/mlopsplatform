@@ -42,6 +42,8 @@ pipeline = Table(
     # The failed or cancelled Pipeline this one resumes, and what it reuses from it.
     Column("resumed_from", Integer),
     Column("resume", JSON(none_as_null=True)),
+    # The best parameters its `sweep` step found, `{settings: …, lora: …}`, and their objective.
+    Column("sweep", JSON(none_as_null=True)),
 )
 unfinished = pipeline.c.status.not_in(config.FINISHED_STATUSES)
 
@@ -67,7 +69,7 @@ def submit_pipeline(
 
     # 2. The Secret and the run; a failure leaves the Secret to the reconciler.
     try:
-        if request.distill or request.serve:
+        if request.distill or request.sweep or request.serve:
             secrets = {**secrets, "step_token": issue_step_token(state.jwt_secret, pipeline_id)}
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
         settings = state.settings
@@ -133,6 +135,7 @@ def pipeline_summary(row) -> dict:
         "mlflow_run_url": row.mlflow_run_url,
         "cases": row.cases,
         "resumed_from": row.resumed_from,
+        "sweep": row.sweep,
     }
 
 

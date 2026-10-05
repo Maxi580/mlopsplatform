@@ -23,6 +23,7 @@ def build_trainer(
     output_directory: str,
     adapter_directory: Path | None,
     teacher: list[Path | None] | None,
+    eval_dataset=None,
 ):
     """The catalog row's TRL trainer, patched by Unsloth, for the Phase's weight method."""
     # 1. The settings; Unsloth masks the user's turns itself, so TRL never looks for markers.
@@ -71,6 +72,8 @@ def build_trainer(
         model=model,
         args=getattr(trl, algorithm["config"])(**settings, output_dir=output_directory),
         train_dataset=dataset,
+        # A Sweep's Trials are measured on held-out rows.
+        eval_dataset=eval_dataset,
         processing_class=tokenizer,
         **trainer_kwargs,
     )

@@ -22,6 +22,7 @@ def build_trainer(
     output_directory: str,
     adapter_directory: Path | None,
     teacher: list[Path | None] | None,
+    eval_dataset=None,
 ):
     """The catalog row's TRL trainer for the Phase's weight method, on the base with the Adapter."""
     algorithm = config.ALGORITHMS[phase.algorithm]
@@ -52,6 +53,8 @@ def build_trainer(
         model=model,
         args=getattr(trl, algorithm["config"])(**settings, output_dir=output_directory),
         train_dataset=dataset,
+        # A Sweep's Trials are measured on held-out rows.
+        eval_dataset=eval_dataset,
         processing_class=tokenizer,
         # With an Adapter, TRL freezes the base's weights and trains only the Adapter.
         peft_config=peft_config,

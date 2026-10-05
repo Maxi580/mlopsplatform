@@ -31,6 +31,9 @@ def smoke_test(
     distill: Annotated[
         bool, typer.Option(help="Distill with a tool, then train on it; runs a custom one")
     ] = False,
+    sweep: Annotated[
+        bool, typer.Option(help="Sweep two Trials, then train with the best; runs a custom one")
+    ] = False,
     chain: Annotated[
         bool, typer.Option(help="Train sft, then dpo continuing its Adapter; runs a custom one")
     ] = False,
@@ -68,6 +71,8 @@ def smoke_test(
         selection["evaluate"] = True
     if distill:
         selection["distill"] = True
+    if sweep:
+        selection["sweep"] = True
     if chain:
         selection["chain"] = True
     if weights:

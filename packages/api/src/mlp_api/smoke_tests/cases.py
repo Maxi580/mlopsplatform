@@ -30,6 +30,8 @@ class SmokeTestSelection(Strict):
     evaluate: bool = False
     # Distills prompts with the Base Model as Teacher and a tool, then trains on its replies.
     distill: bool = False
+    # Sweeps an sft/lora/hf Phase's learning rate in two Trials, then trains it with the best one.
+    sweep: bool = False
     # Trains an sft Phase, then a dpo Phase that continues its Adapter.
     chain: bool = False
     # rsLoRA, merged QLoRA and DoRA, and `full` after an Adapter; `serving` serves the merged one.
@@ -50,6 +52,7 @@ COMPLETE_SMOKE_TEST = SmokeTestSelection(
     serving=True,
     evaluate=True,
     distill=True,
+    sweep=True,
     chain=True,
     weights=True,
     resume=True,
@@ -76,6 +79,8 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[dict,
         cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_TRAINING
     if selection.distill:
         cases[config.SMOKE_TEST_DISTILL_CASE] = config.SMOKE_TEST_TRAINING
+    if selection.sweep:
+        cases[config.SMOKE_TEST_SWEEP_CASE] = config.SMOKE_TEST_TRAINING
     if selection.chain:
         cases[config.SMOKE_TEST_CHAIN_CASE] = config.SMOKE_TEST_CHAIN
     if selection.weights:
@@ -120,17 +125,20 @@ def finetune_case_request(
             "temperature": 0,
         }
         datasets = [config.DISTILL_OUTPUT]
+    phase_requests = [
+        phase_request(earlier, phase, dataset)
+        for earlier, phase, dataset in zip((None, *phases), phases, datasets, strict=False)
+    ]
+    if case == config.SMOKE_TEST_SWEEP_CASE:
+        # The Sweep searches the case's one Phase, which then trains with what it found.
+        [phase] = phase_requests
+        searched = {key: value for key, value in phase.items() if key != "output"}
+        stages["sweep"] = {**searched, **config.SMOKE_TEST_SWEEP, "backend": backend}
+        phase["params_from"] = config.SWEEP_OUTPUT
     return {
         **stages,
         "name": f"{smoke_test}-{case}",
-        "finetune": {
-            **starting_model,
-            "backend": backend,
-            "phases": [
-                phase_request(earlier, phase, dataset)
-                for earlier, phase, dataset in zip((None, *phases), phases, datasets, strict=False)
-            ],
-        },
+        "finetune": {**starting_model, "backend": backend, "phases": phase_requests},
     }
 
 

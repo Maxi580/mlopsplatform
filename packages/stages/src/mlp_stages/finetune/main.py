@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -20,6 +21,7 @@ def finetune(
     request: str,
     distilled_dataset: str,
     previous_model_version: str,
+    swept_parameters: str,
     checkpoint_minutes: str,
     resume_checkpoint: str,
     stop_after_checkpoint: str,
@@ -30,9 +32,14 @@ def finetune(
     resolved = PipelineRequest.model_validate_json(request)
     index = int(phase_index)
     phase = resolved.finetune.phases[index]
-    # `@distill` is the Dataset Version the `distill` step registered, which KFP hands over.
+    # `@distill` is the Dataset Version the `distill` step registered, and `@sweep` the best
+    # parameters the `sweep` step found, which KFP hands over; the registered request names what
+    # the Phase trained with.
     if phase.dataset == config.DISTILL_OUTPUT:
         phase.dataset = distilled_dataset
+    if phase.params_from:
+        phase = phase.with_parameters(json.loads(swept_parameters))
+        resolved.finetune.phases[index] = phase
     starting_model = resolved.finetune.starting_model
     # Read now, as MLflow removes it from the environment once the trainer resumes the Run.
     run_id = os.environ["MLFLOW_RUN_ID"]

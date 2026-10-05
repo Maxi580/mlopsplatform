@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { callApi, errorMessage, useApi } from "../api";
 import { cancelPipeline, PIPELINES } from "../apiPaths";
 import { FINISHED_STATUSES, PIPELINE_LIST_REFRESH_MS } from "../config";
-import type { Pipeline } from "./pipeline";
+import type { Pipeline, SweepOutput } from "./pipeline";
 import StatusBadge from "./StatusBadge";
 
 export default function PipelinesPage() {
@@ -126,6 +126,7 @@ function PipelineRow({
             {stage}
           </span>
         ))}
+        {pipeline.sweep && <div className="muted">{bestParameters(pipeline.sweep)}</div>}
       </td>
       <td>{pipeline.owner}</td>
       <td title={created.toLocaleString()}>{timeAgo(created)}</td>
@@ -184,6 +185,13 @@ function PipelineRow({
       </td>
     </tr>
   );
+}
+
+function bestParameters(sweep: SweepOutput): string {
+  const values = Object.values(sweep.parameters).flatMap((block) =>
+    Object.entries(block).map(([name, value]) => `${name}=${value}`),
+  );
+  return `Best: ${values.join(", ")} (objective ${sweep.objective})`;
 }
 
 function summary(pipelines?: Pipeline[]): string {

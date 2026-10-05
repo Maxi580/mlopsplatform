@@ -120,6 +120,31 @@ def test_ls_shows_owner_status_stages_and_links(logged_in, home, fake_api, platf
     assert "https://mlflow.test/#/runs/abc" in result.output
 
 
+def test_ls_shows_the_best_parameters_a_sweep_found(logged_in, home, fake_api, platform_ca):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE)
+    sweep = {
+        "parameters": {"settings": {"learning_rate": 0.0003}, "lora": {"r": 16}},
+        "objective": 0.42,
+    }
+    pipeline = {
+        "id": 7,
+        "name": "qwen-sweep",
+        "owner": "shared",
+        "status": "succeeded",
+        "stages": ["sweep"],
+        "created_at": "2026-10-02T12:00:00+00:00",
+        "kubeflow_run_url": None,
+        "mlflow_run_url": None,
+        "sweep": sweep,
+    }
+    fake_api.answers[api_paths.PIPELINES] = (200, [pipeline])
+
+    result = mlp("ls")
+
+    assert result.exit_code == 0, result.output
+    assert "7 Sweep:    learning_rate=0.0003 r=16 (objective 0.42)" in result.output
+
+
 def test_cancel_cancels_the_pipeline(logged_in, home, fake_api, platform_ca):
     write_profile(home, fake_api.url, platform_ca, **PROFILE)
     path = api_paths.CANCEL_PIPELINE.format(id=7)

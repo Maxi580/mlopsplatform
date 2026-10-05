@@ -20,6 +20,9 @@ Quantize = Annotated[
 Speculate = Annotated[
     bool, typer.Option(help="Train a Speculator as the Profile's speculate block says")
 ]
+Sweep = Annotated[
+    bool, typer.Option(help="First search hyperparameters as the Profile's sweep block says")
+]
 
 
 def validate(
@@ -30,9 +33,10 @@ def validate(
     distill: Distill = False,
     quantize: Quantize = False,
     speculate: Speculate = False,
+    sweep: Sweep = False,
 ) -> None:
     """Check the Pipeline Request built from the CLI Profile, without running anything."""
-    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate)
+    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate, sweep)
     resolved = send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen)
     typer.echo(yaml.safe_dump(resolved["request"], sort_keys=False))
     typer.echo("Valid")
@@ -46,10 +50,11 @@ def run(
     distill: Distill = False,
     quantize: Quantize = False,
     speculate: Speculate = False,
+    sweep: Sweep = False,
     dry_run: DryRun = False,
 ) -> None:
     """Submit the Pipeline Request built from the CLI Profile; returns once it is queued."""
-    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate)
+    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate, sweep)
     if dry_run:
         print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen))
         return
@@ -98,6 +103,13 @@ def ls() -> None:
             typer.echo(f"{p['id']} Kubeflow: {profile['url']}{p['kubeflow_run_url']}")
         if p["mlflow_run_url"]:
             typer.echo(f"{p['id']} MLflow:   {p['mlflow_run_url']}")
+        if p.get("sweep"):
+            values = [
+                f"{k}={v}" for block in p["sweep"]["parameters"].values() for k, v in block.items()
+            ]
+            typer.echo(
+                f"{p['id']} Sweep:    {' '.join(values)} (objective {p['sweep']['objective']})"
+            )
 
 
 def cancel(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:
@@ -116,6 +128,7 @@ def send_pipeline_request(
     distill: bool,
     quantize: bool,
     speculate: bool,
+    sweep: bool,
 ) -> dict:
     """The API's answer to the Profile's Pipeline Request and Secrets; exits on a rejection."""
     # 1. The request, with only the named Stages and Phases.
@@ -123,7 +136,7 @@ def send_pipeline_request(
     try:
         phases = [p for p in finetune.split(",") if p]
         request = build_pipeline_request(
-            profile, name, phases, serve, evaluate, distill, quantize, speculate
+            profile, name, phases, serve, evaluate, distill, quantize, speculate, sweep
         )
     except ValueError as error:
         typer.echo(error, err=True)

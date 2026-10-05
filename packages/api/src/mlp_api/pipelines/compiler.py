@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass, field
 from itertools import pairwise
@@ -54,6 +55,8 @@ class Resume:
     distilled_dataset: str | None = None
     # Where the first unfinished Phase's Checkpoint lies, which that Phase continues from.
     checkpoint: str | None = None
+    # The best parameters its `sweep` Stage found; `sweep` is then skipped.
+    swept_parameters: dict | None = None
 
 
 def compile_pipeline(
@@ -88,15 +91,22 @@ def compile_pipeline(
                 )
 
             # 2. The Stages, one after another in their fixed order; `@distill` is distill's output,
-            # `@finetune` the last Phase's or, once every Phase finished, the last one reused.
+            # `@sweep` sweep's, `@finetune` the last Phase's or, once every Phase finished, the
+            # last one reused.
             stages, distilled, quantized = [], resume.distilled_dataset or "", ""
+            swept = json.dumps(resume.swept_parameters) if resume.swept_parameters else ""
             finetuned = (resume.model_versions or [""])[-1]
             gpus = settings.gpus_per_stage
             if request.distill and not distilled:
                 stages.append(distill_step(pipeline_id, request, steps, gpus))
                 distilled = stages[-1].outputs["dataset"]
+            if request.sweep and not swept:
+                stages.append(sweep_step(pipeline_id, request, steps, settings, distilled))
+                swept = stages[-1].outputs["best_parameters"]
             if request.finetune:
-                phases = finetune_steps(pipeline_id, request, steps, settings, distilled, resume)
+                phases = finetune_steps(
+                    pipeline_id, request, steps, settings, distilled, resume, swept=swept
+                )
                 stages += phases
                 if phases:
                     finetuned = phases[-1].outputs["model_version"]
@@ -158,10 +168,13 @@ def compile_smoke_test(
         for case, request in cases.items():
             # A case of several steps (distill, Phases, serve) passes or fails with its last one,
             # and each of its steps runs only once the one before it passed.
-            case_steps, distilled = [], ""
+            case_steps, distilled, swept = [], "", ""
             if request.distill:
                 case_steps.append(("distill", distill_step(pipeline_id, request, steps, gpus)))
                 distilled = case_steps[-1][1].outputs["dataset"]
+            if request.sweep:
+                case_steps.append(("sweep", sweep_step(pipeline_id, request, steps, settings)))
+                swept = case_steps[-1][1].outputs["best_parameters"]
             if request.finetune and case == config.SMOKE_TEST_RESUME_CASE:
                 # The first step stops after a Checkpoint, as a cancel would; the next continues it.
                 [interrupted] = finetune_steps(
@@ -172,7 +185,9 @@ def compile_smoke_test(
                 case_steps += [("interrupted", interrupted), ("finetune", resumed)]
             elif request.finetune:
                 names = [f"finetune-{phase.algorithm}" for phase in request.finetune.phases]
-                tasks = finetune_steps(pipeline_id, request, steps, settings, distilled)
+                tasks = finetune_steps(
+                    pipeline_id, request, steps, settings, distilled, swept=swept
+                )
                 case_steps += zip(names, tasks, strict=True)
             if request.quantize:
                 case_steps.append(
@@ -247,6 +262,45 @@ def distill_step(
     return task
 
 
+def sweep_step(
+    pipeline_id: int,
+    request: PipelineRequest,
+    steps: StepEnvironment,
+    settings: Settings,
+    distilled_dataset="",
+):
+    """The step that trains the Sweep's Trials one after another and reports the best parameters."""
+    backend = request.sweep.backend
+
+    @dsl.container_component
+    def sweep(
+        pipeline_id: str,
+        request: str,
+        distilled_dataset: str,
+        best_parameters: dsl.OutputPath(str),
+    ):
+        return dsl.ContainerSpec(
+            image=steps.trainer_images[backend],
+            command=["mlp-stage", "sweep"],
+            args=[pipeline_id, request, distilled_dataset, best_parameters],
+        )
+
+    task = sweep(
+        pipeline_id=str(pipeline_id),
+        request=request.model_dump_json(),
+        distilled_dataset=distilled_dataset,
+    )
+    use_trainer(task, steps, trainer_gpus(backend, settings))
+    # It reports the best parameters to the API with the step token.
+    task.set_env_variable("API_URL", steps.api_url)
+    kubernetes.use_secret_as_env(
+        task,
+        config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
+        {"step_token": config.SECRET_ENV_VARS["step_token"]},
+    )
+    return task
+
+
 def finetune_steps(
     pipeline_id: int,
     request: PipelineRequest,
@@ -255,11 +309,11 @@ def finetune_steps(
     distilled_dataset="",
     resume: Resume | None = None,
     interrupt: bool = False,
+    swept="",
 ) -> list:
-    """One step per unfinished Phase, each handed the Model Version the one before registered."""
+    """One step per unfinished Phase, handed the previous Model Version and `swept` if it asks."""
     backend = request.finetune.backend
     trainer_image = steps.trainer_images[backend]
-    gpus = 1 if backend in config.SINGLE_GPU_BACKENDS else settings.gpus_per_stage
 
     @dsl.container_component
     def finetune(
@@ -268,6 +322,7 @@ def finetune_steps(
         request: str,
         distilled_dataset: str,
         previous_model_version: str,
+        swept_parameters: str,
         checkpoint_minutes: str,
         resume_checkpoint: str,
         stop_after_checkpoint: str,
@@ -282,6 +337,7 @@ def finetune_steps(
                 request,
                 distilled_dataset,
                 previous_model_version,
+                swept_parameters,
                 checkpoint_minutes,
                 resume_checkpoint,
                 stop_after_checkpoint,
@@ -301,21 +357,31 @@ def finetune_steps(
             request=request.model_dump_json(),
             distilled_dataset=distilled_dataset,
             previous_model_version=previous_model_version,
+            swept_parameters=swept if phase.params_from else "",
             # The Smoke Test's interrupted step saves at its first step.
             checkpoint_minutes="0" if interrupt else str(settings.checkpoint_minutes),
             resume_checkpoint=(index == finished and resume.checkpoint) or "",
             stop_after_checkpoint="true" if interrupt else "",
         ).set_display_name(f"finetune-{phase.algorithm}")
-        use_model_cache(task, steps)
-        task.set_env_variable("HF_HUB_OFFLINE", "1")
-        task.set_accelerator_type(config.GPU_RESOURCE)
-        task.set_accelerator_limit(gpus)
-        use_object_store(task, steps)
-        # `grpo` and `rloo` score their completions with the Phase's rewards there.
-        task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
+        use_trainer(task, steps, trainer_gpus(backend, settings))
         tasks.append(task)
         previous_model_version = task.outputs["model_version"]
     return tasks
+
+
+def trainer_gpus(backend: str, settings: Settings) -> int:
+    return 1 if backend in config.SINGLE_GPU_BACKENDS else settings.gpus_per_stage
+
+
+# A step that trains on its GPUs, offline, reading Model Versions and Datasets from the object
+# store; `grpo` and `rloo` score their completions with their rewards in the Sandbox.
+def use_trainer(task, steps: StepEnvironment, gpus: int) -> None:
+    use_model_cache(task, steps)
+    task.set_env_variable("HF_HUB_OFFLINE", "1")
+    task.set_accelerator_type(config.GPU_RESOURCE)
+    task.set_accelerator_limit(gpus)
+    use_object_store(task, steps)
+    task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
 
 
 def quantize_step(

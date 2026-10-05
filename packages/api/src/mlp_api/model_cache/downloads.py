@@ -12,6 +12,10 @@ def fetched_references(state, request: PipelineRequest) -> list[str]:
     base_models = []
     if distill and not distill.api_url:
         base_models.append(base_model_of(state, distill.teacher))
+    if request.sweep:
+        base_models.append(base_model_of(state, request.sweep.model))
+        if request.sweep.teacher:
+            base_models.append(base_model_of(state, request.sweep.teacher))
     if finetune:
         base_models.append(finetune.base_model)
         base_models += [

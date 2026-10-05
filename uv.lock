@@ -243,6 +243,20 @@ wheels = [
 ]
 
 [[package]]
+name = "alembic"
+version = "1.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mako" },
+    { name = "sqlalchemy" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/aa/02910bdb8e2f1444f6654d5b296cd827d126f82209050ee7b1000f92ac4b/alembic-1.20.0.tar.gz", hash = "sha256:db505480647bc60386c5369402f4a57a506b7539c9e9ef5e270d45cbbe4939bf", size = 2093272 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/27/78a89b55b0904d222183164e079b4ca56208e94eff1d35ad1f1ad5be9b06/alembic-1.20.0-py3-none-any.whl", hash = "sha256:77eb101048d95f982c0353e9233404889dcd7a6fc244c107836c0e2fc9cf7d9d", size = 268719 },
+]
+
+[[package]]
 name = "aliyun-python-sdk-core"
 version = "2.16.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3333,6 +3347,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mako"
+version = "1.4.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "markupsafe" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/09/e07c4b5579a79f4b16f8d4f29f6c54514ac787c4ad506b8c4f28a0e6b0bf/mako-1.4.3.tar.gz", hash = "sha256:cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a", size = 412799 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/a0/053d6af3e8f871e0073b4a36732d9e65be77a72e5434c31b94f6af78a6bb/mako-1.4.3-py3-none-any.whl", hash = "sha256:723296007c870bfd6b3f0c3230dba7198096e5269297ebf5e4eff9e7ffa39d4f", size = 80164 },
+]
+
+[[package]]
 name = "markdown"
 version = "3.11"
 source = { registry = "https://pypi.org/simple" }
@@ -3616,6 +3642,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "httpx2" },
+    { name = "optuna" },
     { name = "pytest" },
     { name = "pyyaml" },
     { name = "ruff" },
@@ -3627,6 +3654,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx2" },
+    { name = "optuna" },
     { name = "pytest" },
     { name = "pyyaml" },
     { name = "ruff" },
@@ -3750,6 +3778,7 @@ evaluate = [
 hf = [
     { name = "bitsandbytes" },
     { name = "mlflow-skinny" },
+    { name = "optuna" },
     { name = "peft" },
     { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" } },
     { name = "trl", version = "1.14.1", source = { registry = "https://pypi.org/simple" } },
@@ -3758,6 +3787,7 @@ hf = [
 unsloth = [
     { name = "bitsandbytes" },
     { name = "mlflow-skinny" },
+    { name = "optuna" },
     { name = "unsloth" },
     { name = "vllm", version = "0.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'linux'" },
 ]
@@ -3778,6 +3808,8 @@ requires-dist = [
     { name = "mlflow-skinny", marker = "extra == 'hf'" },
     { name = "mlflow-skinny", marker = "extra == 'unsloth'" },
     { name = "mlp-core", editable = "packages/core" },
+    { name = "optuna", marker = "extra == 'hf'" },
+    { name = "optuna", marker = "extra == 'unsloth'" },
     { name = "peft", marker = "extra == 'evaluate'" },
     { name = "peft", marker = "extra == 'hf'" },
     { name = "speculators", marker = "extra == 'evaluate'", specifier = ">=0.8" },
@@ -4619,9 +4651,14 @@ name = "numpy"
 version = "2.5.3"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-10-mlp-stages-evaluate' and extra != 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-10-mlp-stages-evaluate' and extra != 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth'",
+    "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'extra-10-mlp-stages-evaluate' and extra != 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth'",
+    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf' and extra != 'extra-10-mlp-stages-unsloth'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf' and extra != 'extra-10-mlp-stages-unsloth'",
+    "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf' and extra != 'extra-10-mlp-stages-unsloth'",
+    "python_full_version >= '3.14' and extra != 'extra-10-mlp-stages-evaluate' and extra != 'extra-10-mlp-stages-hf' and extra != 'extra-10-mlp-stages-unsloth'",
+    "python_full_version < '3.14' and extra != 'extra-10-mlp-stages-evaluate' and extra != 'extra-10-mlp-stages-hf' and extra != 'extra-10-mlp-stages-unsloth'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/13/01/11703282db468b85f6f7b8c7f22d058de5970d5c7e60a3a8aaa313c3de36/numpy-2.5.3.tar.gz", hash = "sha256:df2d5874ff183595a4ba404edd04f6bd9b5505c1d7708573f6a6c17489a67563", size = 20791231 }
 wheels = [
@@ -5497,6 +5534,28 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/24/02/10aeacc37a38a3a8fa16ff67bec1ae3bf882539f6f9efb0f70acf802ca2d/opentelemetry_semantic_conventions_ai-0.5.1.tar.gz", hash = "sha256:153906200d8c1d2f8e09bd78dbef526916023de85ac3dab35912bfafb69ff04c", size = 26533 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/55/22/41fb05f1dc5fda2c468e05a41814c20859016c85117b66c8a257cae814f6/opentelemetry_semantic_conventions_ai-0.5.1-py3-none-any.whl", hash = "sha256:25aeb22bd261543b4898a73824026d96770e5351209c7d07a0b1314762b1f6e4", size = 11250 },
+]
+
+[[package]]
+name = "optuna"
+version = "5.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "alembic" },
+    { name = "colorlog" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth')" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-10-mlp-stages-hf') or (python_full_version >= '3.13' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.13' and sys_platform != 'win32' and extra == 'extra-10-mlp-stages-hf') or (python_full_version < '3.13' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or extra == 'extra-10-mlp-stages-evaluate'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'win32' and extra != 'extra-10-mlp-stages-evaluate') or (extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth') or (extra != 'extra-10-mlp-stages-evaluate' and extra != 'extra-10-mlp-stages-hf' and extra != 'extra-10-mlp-stages-unsloth')" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "sqlalchemy" },
+    { name = "tqdm", version = "4.70.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-mlp-stages-evaluate' or (extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth')" },
+    { name = "tqdm", version = "4.70.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-10-mlp-stages-hf' or extra == 'extra-10-mlp-stages-unsloth' or extra != 'extra-10-mlp-stages-evaluate'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/6d/7bd33b5ed3a83f1c1517fb20c54c7dbf59e6c76430d9b26d3205074ff6b0/optuna-5.0.0.tar.gz", hash = "sha256:358bb878b7b1e20e90dc944ac4261796dd3d5c2b7860aa960a08fc10e0b5beff", size = 508726 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/e5/7c5e8cdda8c9f0cd8aca0a376dee9cff6b8c30692cf614960d9e80f59689/optuna-5.0.0-py3-none-any.whl", hash = "sha256:5fff892ae6baf4948c810c5b8635ec67e08efb0709b41cb73b14e30391d44720", size = 442352 },
 ]
 
 [[package]]

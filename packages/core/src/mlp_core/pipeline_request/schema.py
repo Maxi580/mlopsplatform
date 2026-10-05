@@ -35,6 +35,9 @@ from mlp_core.config import (
     SPECULATE_SAMPLES,
     SPECULATE_SEQ_LENGTH,
     SPECULATORS,
+    SWEEP_EVAL_SPLIT,
+    SWEEP_OUTPUT,
+    SWEEP_SAMPLERS,
     UNCALIBRATED_SCHEMES,
     WEIGHT_METHODS,
 )
@@ -99,12 +102,12 @@ class Reward(Strict):
 RewardName = Annotated[str, Field(pattern=r"^[\w-]{1,64}$")]
 
 
-class Phase(Strict):
+class PhaseConfiguration(Strict):
+    """What one training run needs: a Phase's, or each Trial's of a Sweep."""
+
     algorithm: Literal[tuple(ALGORITHMS)]
     dataset: DatasetReference | Literal[DISTILL_OUTPUT]
     method: Literal[WEIGHT_METHODS] = "lora"
-    # `merged` registers the Adapter merged into its base, as full weights; `full` ignores it.
-    output: Literal["adapter", "merged"] = "adapter"
     settings: PhaseSettings
     # A new Adapter's settings; after a kept Adapter, a Phase continues it as it is (#19).
     lora: LoraSettings | None = None
@@ -113,7 +116,7 @@ class Phase(Strict):
     rewards: dict[RewardName, Reward] | None = Field(None, description=REWARDS_INFOBOX)
 
     @model_validator(mode="after")
-    def check_rewards(self) -> "Phase":
+    def check_rewards(self) -> "PhaseConfiguration":
         if not ALGORITHMS[self.algorithm]["learns_from_rewards"]:
             if self.rewards is not None:
                 raise ValueError(f"a {self.algorithm} Phase has no `rewards`")
@@ -122,7 +125,7 @@ class Phase(Strict):
         return self
 
     @model_validator(mode="after")
-    def check_teacher(self) -> "Phase":
+    def check_teacher(self) -> "PhaseConfiguration":
         if not ALGORITHMS[self.algorithm]["learns_from_teacher"]:
             if self.teacher:
                 raise ValueError(f"a {self.algorithm} Phase learns from no `teacher`")
@@ -138,6 +141,13 @@ class Phase(Strict):
             ) from None
         return self
 
+
+class Phase(PhaseConfiguration):
+    # `merged` registers the Adapter merged into its base, as full weights; `full` ignores it.
+    output: Literal["adapter", "merged"] = "adapter"
+    # The `sweep` Stage's best parameters, over the Phase's own `settings` and `lora`.
+    params_from: Literal[SWEEP_OUTPUT] | None = None
+
     @property
     def keeps_adapter(self) -> bool:
         return self.method != "full" and self.output == "adapter"
@@ -145,6 +155,88 @@ class Phase(Strict):
     @property
     def merges_adapter(self) -> bool:
         return self.method != "full" and self.output == "merged"
+
+    def with_parameters(self, parameters: dict) -> "Phase":
+        """The Phase with `{settings: …, lora: …}` values over its own."""
+        settings = {**self.settings.model_dump(), **parameters.get("settings", {})}
+        lora = self.lora and {**self.lora.model_dump(), **parameters.get("lora", {})}
+        return Phase.model_validate({**self.model_dump(), "settings": settings, "lora": lora})
+
+
+class SweepParameter(Strict):
+    """A range to sample from, `{min, max, scale}`, or the `values` to choose between."""
+
+    # Both integers sample integers.
+    min: int | float | None = None
+    max: int | float | None = None
+    scale: Literal["linear", "log"] = "linear"
+    values: list[bool | int | float | str] | None = Field(None, min_length=1)
+
+    @model_validator(mode="after")
+    def check_range_or_values(self) -> "SweepParameter":
+        is_range = self.min is not None or self.max is not None
+        if is_range == (self.values is not None):
+            raise ValueError("give either `min` and `max`, or `values`")
+        if is_range and (self.min is None or self.max is None or self.min >= self.max):
+            raise ValueError("give a `min` below its `max`")
+        if is_range and self.scale == "log" and self.min <= 0:
+            raise ValueError("a `log` scale needs a `min` above 0")
+        return self
+
+
+class SweepParameters(Strict):
+    """The settings Trials vary, by name: TRL config fields, and LoraConfig fields."""
+
+    settings: dict[str, SweepParameter] = {}
+    lora: dict[str, SweepParameter] = {}
+
+
+class Objective(Strict):
+    # From the catalog's list for the algorithm.
+    metric: str
+    goal: Literal["minimize", "maximize"]
+
+
+class Sweep(PhaseConfiguration):
+    """A search for the parameters of one Phase configuration with Optuna, Trial after Trial."""
+
+    # Validation names `finetune`'s starting model when none is given.
+    model: BaseModelReference | ModelReference | None = None
+    backend: Literal[tuple(BACKENDS)] = "hf"
+    parameters: SweepParameters
+    objective: Objective
+    trials: int = Field(gt=0)
+    # `grid` tries every combination of the parameters' `values`, at most `trials` of them.
+    sampler: Literal[SWEEP_SAMPLERS] = "tpe"
+    # The share of the Dataset's rows held out to measure the objective on, unless `eval_dataset`
+    # is named; validation sets the default.
+    eval_split: float | None = Field(None, gt=0, lt=1)
+    eval_dataset: DatasetReference | None = None
+
+    @model_validator(mode="after")
+    def check_search(self) -> "Sweep":
+        parameters = {**self.parameters.settings, **self.parameters.lora}
+        if not parameters:
+            raise ValueError("name at least one of `parameters.settings` or `parameters.lora`")
+        if self.sampler == "grid" and any(p.values is None for p in parameters.values()):
+            raise ValueError("`grid` tries listed values; give every parameter `values`")
+        objectives = ALGORITHMS[self.algorithm]["objectives"]
+        if self.objective.metric not in objectives:
+            raise ValueError(
+                f"a {self.algorithm} Sweep optimizes one of {', '.join(objectives)}, not "
+                f"{self.objective.metric}"
+            )
+        if self.eval_split is not None and self.eval_dataset is not None:
+            raise ValueError("name `eval_split` or `eval_dataset`, not both")
+        if self.eval_dataset is None and self.eval_split is None:
+            self.eval_split = SWEEP_EVAL_SPLIT
+        return self
+
+    def trial_phase(self, parameters: dict) -> Phase:
+        """The Phase a Trial trains with `{settings: …, lora: …}`; it is never saved or served."""
+        fields = self.model_dump(include=set(PhaseConfiguration.model_fields))
+        # Its Adapter is thrown away, so it needn't be one vLLM serves.
+        return Phase.model_validate({**fields, "output": "merged"}).with_parameters(parameters)
 
 
 class Finetune(Strict):
@@ -321,6 +413,7 @@ class PipelineRequest(Strict):
     schema_version: Literal[1] = 1
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
     distill: Distill | None = None
+    sweep: Sweep | None = None
     finetune: Finetune | None = None
     quantize: Quantize | None = None
     speculate: Speculate | None = None
@@ -329,10 +422,11 @@ class PipelineRequest(Strict):
 
     @model_validator(mode="after")
     def check_stages(self) -> "PipelineRequest":
-        if not (self.distill or self.finetune or self.quantize or self.speculate or self.evaluate):
+        stages = (self.distill, self.sweep, self.finetune, self.quantize, self.speculate)
+        if not any((*stages, self.evaluate)):
             raise ValueError(
-                "enable at least one of `distill`, `finetune`, `quantize`, `speculate` and "
-                "`evaluate`"
+                "enable at least one of `distill`, `sweep`, `finetune`, `quantize`, `speculate` "
+                "and `evaluate`"
             )
         if self.serve and not (self.finetune or self.quantize):
             raise ValueError("`serve` serves the output of `finetune` or `quantize`; enable either")

@@ -8,6 +8,13 @@ export type Pipeline = {
   created_at: string;
   kubeflow_run_url: string | null;
   mlflow_run_url: string | null;
+  // The best parameters its `sweep` Stage found, once it reported them.
+  sweep?: SweepOutput | null;
+};
+
+export type SweepOutput = {
+  parameters: Record<string, Record<string, unknown>>;
+  objective: number;
 };
 
 // A benchmark of the catalog, as `GET /benchmarks` lists it.

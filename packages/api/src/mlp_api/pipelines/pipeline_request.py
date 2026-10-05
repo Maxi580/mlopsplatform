@@ -23,7 +23,7 @@ from mlp_core.pipeline_request.references import (
     split_dataset_reference,
     split_endpoint_reference,
 )
-from mlp_core.pipeline_request.schema import Phase, PipelineRequest
+from mlp_core.pipeline_request.schema import Phase, PhaseConfiguration, PipelineRequest, Sweep
 
 
 def validate_pipeline_request(
@@ -41,37 +41,47 @@ def validate_pipeline_request(
     except ValidationError as validation_error:
         return None, [error(e["loc"], e["msg"]) for e in validation_error.errors()]
 
-    # 2. Phases the backend can train, the settings TRL/PEFT would receive, rewards that can run,
-    # and no Secret value anywhere.
-    errors = backend_errors(request) + trainer_config_errors(request) + reward_errors(request)
+    # 2. Phases and Sweeps the backend can train, the settings TRL/PEFT would receive, rewards
+    # that can run, parameters Trials can set and Phases can take, and no Secret value anywhere.
+    errors = backend_errors(request) + trainer_config_errors(request)
+    errors += sweep_parameter_errors(request.sweep) + params_from_errors(request)
+    errors += reward_errors(request)
     errors += secret_value_errors(request, secrets)
 
     # 3. What `distill` reads: its prompts, its Teacher and the tools the Teacher may call.
     if request.distill:
         errors += pin_distill(request, secrets, hugging_face, engine, model_registry)
 
-    # 4. The starting model: the Base Model on Hugging Face, or a full-weight Model Version.
-    finetune = request.finetune
-    starting_model_found = False
+    # 4. The starting models: a Base Model on Hugging Face, or a full-weight Model Version; a
+    # Sweep's Trials start from `finetune`'s unless it names its own.
+    finetune, sweep, token = request.finetune, request.sweep, secrets.get("hf_token")
+    pin = (token, hugging_face, model_registry, object_store)
+    starting_model_found = sweep_model_found = False
     try:
         if finetune and finetune.base_model:
-            finetune.base_model = pin_base_model(
-                hugging_face, finetune.base_model, secrets.get("hf_token")
-            )
+            finetune.base_model = pin_starting_model(finetune.base_model, *pin)
         elif finetune:
-            finetune.from_ = pin_full_weights(model_registry, finetune.from_)
-            token = secrets.get("hf_token")
-            if is_quantized(finetune.from_, token, hugging_face, model_registry, object_store):
-                raise ValueError(f"{finetune.from_} is quantized; start from unquantized weights")
+            finetune.from_ = pin_starting_model(finetune.from_, *pin)
         starting_model_found = True
     except ValueError as reason:
         errors.append(
             error(["finetune", "base_model" if finetune.base_model else "from"], str(reason))
         )
+    try:
+        if sweep and sweep.model:
+            sweep.model = pin_starting_model(sweep.model, *pin)
+            sweep_model_found = True
+        elif sweep and finetune is None:
+            raise ValueError("`finetune` isn't enabled, so name the `model` to sweep")
+        elif sweep:
+            sweep.model = finetune.starting_model
+            sweep_model_found = starting_model_found
+    except ValueError as reason:
+        errors.append(error(["sweep", "model"], str(reason)))
 
     # 5. The Datasets in the Dataset registry, pinned to a version the algorithm trains on.
-    for index, phase in enumerate(finetune.phases if finetune else []):
-        loc = ["finetune", "phases", index, "dataset"]
+    for phase_loc, phase, _ in phase_configurations(request):
+        loc = [*phase_loc, "dataset"]
         row_formats = config.ALGORITHMS[phase.algorithm]["row_formats"]
         trains_on = f"{phase.algorithm} trains on {', '.join(row_formats)} rows"
         if phase.dataset == config.DISTILL_OUTPUT and request.distill is None:
@@ -85,22 +95,35 @@ def validate_pipeline_request(
                 phase.dataset = pin_dataset(engine, phase.dataset, row_formats, trains_on)
             except ValueError as reason:
                 errors.append(error(loc, str(reason)))
+    if sweep and sweep.eval_dataset:
+        row_formats = config.ALGORITHMS[sweep.algorithm]["row_formats"]
+        trains_on = f"{sweep.algorithm} trains on {', '.join(row_formats)} rows"
+        try:
+            sweep.eval_dataset = pin_dataset(engine, sweep.eval_dataset, row_formats, trains_on)
+        except ValueError as reason:
+            errors.append(error(["sweep", "eval_dataset"], str(reason)))
 
     # 6. `assistant_only_loss` on messages rows, which the starting model's template can mask.
+    reader = (token, hugging_face, engine, model_registry, object_store)
     if finetune and starting_model_found:
+        phases = [(["finetune", "phases", i], phase) for i, phase in enumerate(finetune.phases)]
         errors += assistant_only_loss_errors(
-            request, secrets.get("hf_token"), hugging_face, engine, model_registry, object_store
+            phases, finetune.starting_model, finetune.backend, *reader
+        )
+    if sweep and sweep_model_found:
+        errors += assistant_only_loss_errors(
+            [(["sweep"], sweep)], sweep.model, sweep.backend, *reader
         )
 
-    # 7. Each Phase's Teacher: a pinned Base Model or Model Version.
-    for index, phase in enumerate(finetune.phases if finetune else []):
+    # 7. Each Teacher of a Phase or Sweep: a pinned Base Model or Model Version.
+    for loc, phase, _ in phase_configurations(request):
         if phase.teacher:
             try:
                 phase.teacher = pin_served_model(
-                    phase.teacher, secrets.get("hf_token"), hugging_face, engine, model_registry
+                    phase.teacher, token, hugging_face, engine, model_registry
                 )
             except ValueError as reason:
-                errors.append(error(["finetune", "phases", index, "teacher"], str(reason)))
+                errors.append(error([*loc, "teacher"], str(reason)))
 
     # 8. What `quantize` reads: a model not quantized yet, `finetune`'s output unless named, and
     # the rows it calibrates on.
@@ -158,15 +181,23 @@ def error(loc, msg: str) -> dict:
     return {"loc": list(loc), "msg": msg}
 
 
+def phase_configurations(request: PipelineRequest) -> list[tuple[list, PhaseConfiguration, str]]:
+    """What each training step trains, with its path and backend: the Sweep, then every Phase."""
+    found = []
+    if request.sweep:
+        found.append((["sweep"], request.sweep, request.sweep.backend))
+    if request.finetune:
+        backend = request.finetune.backend
+        phases = enumerate(request.finetune.phases)
+        found += [(["finetune", "phases", index], phase, backend) for index, phase in phases]
+    return found
+
+
 def backend_errors(request: PipelineRequest) -> list[dict]:
-    """An error for each Phase whose algorithm or method its backend doesn't train."""
-    finetune = request.finetune
-    if finetune is None:
-        return []
-    backend, errors = finetune.backend, []
-    for index, phase in enumerate(finetune.phases):
+    """An error for each Phase or Sweep whose algorithm or method its backend doesn't train."""
+    errors = []
+    for loc, phase, backend in phase_configurations(request):
         methods = config.BACKENDS[backend].get(phase.algorithm)
-        loc = ["finetune", "phases", index]
         if methods is None:
             msg = f"{backend} doesn't train {phase.algorithm} Phases; use backend `hf`"
             errors.append(error([*loc, "algorithm"], msg))
@@ -179,45 +210,104 @@ def backend_errors(request: PipelineRequest) -> list[dict]:
 
 def trainer_config_errors(request: PipelineRequest) -> list[dict]:
     errors = []
+    for loc, phase, _ in phase_configurations(request):
+        # A Sweep's Trials train like a first Phase.
+        if isinstance(phase, Sweep):
+            lora_problems = phase_lora_errors([phase.trial_phase({})], 0)
+        else:
+            lora_problems = phase_lora_errors(request.finetune.phases, loc[-1])
+        errors += [error([*loc, "lora"], msg) for msg in lora_problems]
+        length = config.ALGORITHMS[phase.algorithm]["length_setting"]
+        if length not in phase.settings.model_dump():
+            errors.append(error([*loc, "settings", length], "Field required"))
+        for block, (config_class, blocked) in setting_checks(phase).items():
+            settings = getattr(phase, block)
+            for name, value in (settings.model_dump() if settings else {}).items():
+                problem = setting_problem(config_class, blocked, name, [value])
+                if problem:
+                    errors.append(error([*loc, block, name], problem))
+    return errors
+
+
+def setting_checks(phase: PhaseConfiguration) -> dict[str, tuple[str, tuple]]:
+    """Block -> the TRL/PEFT config class its settings belong to, and its blocked settings."""
+    algorithm = config.ALGORITHMS[phase.algorithm]
+    return {
+        "settings": (algorithm["config"], algorithm["blocked_settings"]),
+        "lora": (config.LORA_CONFIG, config.BLOCKED_LORA_SETTINGS),
+    }
+
+
+def setting_problem(config_class: str, blocked: tuple, name: str, values: list) -> str | None:
+    """Why the config class can't take these values of the setting, if it can't."""
+    if name in blocked:
+        return f"`{name}` is blocked; see the README for why"
+    fields = trainer_config_fields(config_class) or {}
+    if not fields:
+        return None
+    if name not in fields:
+        return f"`{name}` is not a {config_class} setting"
+    if not all(value_matches(fields[name], value) for value in values):
+        expected = {k: v for k, v in fields[name].items() if k != "default"}
+        return f"`{name}` must match {json.dumps(expected)}"
+    return None
+
+
+def sweep_parameter_errors(sweep: Sweep | None) -> list[dict]:
+    """An error for each parameter Trials can't set: unknown, blocked or out of its type."""
+    if sweep is None:
+        return []
+    errors = []
+    if sweep.method == "full" and sweep.parameters.lora:
+        msg = "`full` trains no Adapter; leave out `lora` parameters"
+        errors.append(error(["sweep", "parameters", "lora"], msg))
+    for block, (config_class, blocked) in setting_checks(sweep).items():
+        for name, parameter in getattr(sweep.parameters, block).items():
+            values = parameter.values or [parameter.min, parameter.max]
+            problem = setting_problem(config_class, blocked, name, values)
+            if problem:
+                errors.append(error(["sweep", "parameters", block, name], problem))
+    return errors
+
+
+def params_from_errors(request: PipelineRequest) -> list[dict]:
+    """An error for each Phase that can't train with the Sweep's best parameters."""
+    sweep, errors = request.sweep, []
     phases = request.finetune.phases if request.finetune else []
     for index, phase in enumerate(phases):
-        loc = ["finetune", "phases", index, "lora"]
-        errors += [error(loc, msg) for msg in phase_lora_errors(phases, index)]
-        algorithm = config.ALGORITHMS[phase.algorithm]
-        length = algorithm["length_setting"]
-        if length not in phase.settings.model_dump():
-            loc = ["finetune", "phases", index, "settings", length]
-            errors.append(error(loc, "Field required"))
-        checks = {
-            "settings": (algorithm["config"], algorithm["blocked_settings"]),
-            "lora": (config.LORA_CONFIG, config.BLOCKED_LORA_SETTINGS),
+        loc = ["finetune", "phases", index, "params_from"]
+        if not phase.params_from:
+            continue
+        if sweep is None:
+            errors.append(error(loc, "`sweep` isn't enabled, so leave out `params_from`"))
+            continue
+        searched = {
+            "algorithm": (sweep.algorithm, phase.algorithm),
+            "method": (sweep.method, phase.method),
+            "backend": (sweep.backend, request.finetune.backend),
         }
-        for block, (config_class, blocked) in checks.items():
-            settings = getattr(phase, block)
-            if settings is None:
-                continue
-            fields = trainer_config_fields(config_class) or {}
-            for name, value in settings.model_dump().items():
-                loc = ["finetune", "phases", index, block, name]
-                if name in blocked:
-                    errors.append(error(loc, f"`{name}` is blocked; see the README for why"))
-                elif not fields:
-                    continue
-                elif name not in fields:
-                    errors.append(error(loc, f"`{name}` is not a {config_class} setting"))
-                elif not value_matches(fields[name], value):
-                    expected = {k: v for k, v in fields[name].items() if k != "default"}
-                    errors.append(error(loc, f"`{name}` must match {json.dumps(expected)}"))
+        mismatched = [f"`{name}`" for name, (theirs, ours) in searched.items() if theirs != ours]
+        if mismatched:
+            names = " and ".join(mismatched)
+            errors.append(error(loc, f"the Sweep searched with another {names}; use the same"))
+        elif sweep.parameters.lora and phase.lora is None:
+            errors.append(
+                error(
+                    loc,
+                    f"continues the Adapter of Phase {index} with its LoRA settings, so the "
+                    "Sweep's `lora` parameters can't apply; sweep only `settings`, or set "
+                    f"`output: merged` on Phase {index}",
+                )
+            )
     return errors
 
 
 def reward_errors(request: PipelineRequest) -> list[dict]:
     """An error for each reward whose source can't define `reward(sample, item)`."""
     errors = []
-    phases = request.finetune.phases if request.finetune else []
-    for index, phase in enumerate(phases):
+    for phase_loc, phase, _ in phase_configurations(request):
         for name, reward in (phase.rewards or {}).items():
-            loc = ["finetune", "phases", index, "rewards", name, "source"]
+            loc = [*phase_loc, "rewards", name, "source"]
             # Only parsed here, never run: reward code runs in the Sandbox alone.
             try:
                 module = ast.parse(reward.source)
@@ -444,6 +534,22 @@ def pin_speculate(
     return errors
 
 
+def pin_starting_model(
+    model: str,
+    token: str | None,
+    hugging_face: HuggingFace,
+    model_registry: MLflow,
+    object_store: ObjectStore,
+) -> str:
+    """A pinned Base Model, or a pinned unquantized full-weight Model Version; else ValueError."""
+    if model.startswith("hf:"):
+        return pin_base_model(hugging_face, model, token)
+    pinned = pin_full_weights(model_registry, model)
+    if is_quantized(pinned, token, hugging_face, model_registry, object_store):
+        raise ValueError(f"{pinned} is quantized; start from unquantized weights")
+    return pinned
+
+
 def is_quantized(
     model: str,
     token: str | None,
@@ -462,27 +568,26 @@ def is_quantized(
 
 
 def assistant_only_loss_errors(
-    request: PipelineRequest,
+    phases: list[tuple[list, PhaseConfiguration]],
+    starting_model: str,
+    backend: str,
     token: str | None,
     hugging_face: HuggingFace,
     engine: Engine,
     model_registry: MLflow,
     object_store: ObjectStore,
 ) -> list[dict]:
-    """An error for each Phase whose `assistant_only_loss` can't keep to the assistant's turns."""
-    finetune = request.finetune
+    """An error for each Phase, by path, whose `assistant_only_loss` can't mask its rows."""
     # Every Phase renders with the starting model's template, so it is read at most once.
     mask_problem = None
-    if finetune.backend == "hf" and any(p.settings.assistant_only_loss for p in finetune.phases):
-        read = model_file_reader(
-            finetune.starting_model, token, hugging_face, model_registry, object_store
-        )
-        mask_problem = assistant_mask_problem(finetune.starting_model, read)
+    if backend == "hf" and any(phase.settings.assistant_only_loss for _, phase in phases):
+        read = model_file_reader(starting_model, token, hugging_face, model_registry, object_store)
+        mask_problem = assistant_mask_problem(starting_model, read)
     errors = []
-    for index, phase in enumerate(finetune.phases):
+    for phase_loc, phase in phases:
         if not phase.settings.assistant_only_loss:
             continue
-        loc = ["finetune", "phases", index, "settings", "assistant_only_loss"]
+        loc = [*phase_loc, "settings", "assistant_only_loss"]
         # 1. Messages rows; prompt-completion rows keep TRL's completion-only loss (#24).
         if phase.dataset == config.DISTILL_OUTPUT:
             row_format = config.DISTILLATION_ROW_FORMAT

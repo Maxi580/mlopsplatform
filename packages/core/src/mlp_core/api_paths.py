@@ -17,7 +17,8 @@ RESUME_PIPELINE = "/pipelines/{id}/resume"
 # Only the Pipeline's own steps call these, with the step token from its Secret.
 SERVE_PIPELINE = "/pipelines/{id}/serve"
 DISTILL_PIPELINE = "/pipelines/{id}/distill"
-STEP_PATHS = (SERVE_PIPELINE, DISTILL_PIPELINE)
+SWEEP_PIPELINE = "/pipelines/{id}/sweep"
+STEP_PATHS = (SERVE_PIPELINE, DISTILL_PIPELINE, SWEEP_PIPELINE)
 MODELS = "/models"
 MODEL_VERSION = "/models/{name}/versions/{version}"
 MODEL_VERSION_FILES = "/models/{name}/versions/{version}/files"

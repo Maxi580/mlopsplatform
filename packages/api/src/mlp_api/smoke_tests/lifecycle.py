@@ -136,8 +136,14 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             cases={**cases, **dict.fromkeys(serving, "pending")},
         )
 
-        # 7. The run, one node per case; distill and serve steps call the API with a step token.
-        if {config.SMOKE_TEST_DISTILL_CASE, config.SMOKE_TEST_SERVE_STAGE_CASE} & set(requests):
+        # 7. The run, one node per case; distill, sweep and serve steps call the API with a step
+        # token.
+        step_cases = {
+            config.SMOKE_TEST_DISTILL_CASE,
+            config.SMOKE_TEST_SWEEP_CASE,
+            config.SMOKE_TEST_SERVE_STAGE_CASE,
+        }
+        if step_cases & set(requests):
             token = issue_step_token(state.jwt_secret, pipeline_id)
             state.cluster.create_secret(pipeline_secret_name(pipeline_id), {"step_token": token})
         spec = compile_smoke_test(
