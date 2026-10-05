@@ -4,7 +4,7 @@ import mlflow
 from mlflow.exceptions import MlflowException
 
 from mlp_core import config
-from mlp_core.pipeline_request.references import split_model_reference
+from mlp_core.pipeline_request.references import model_reference, split_model_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 
@@ -14,10 +14,11 @@ def register_model_version(
     request: PipelineRequest,
     pipeline_id: str,
     phase_index: int,
+    parent: str,
     tokenizer,
     model_type: str,
-) -> None:
-    """Logs the Adapter into the step's MLflow Run and registers it under the Pipeline's name."""
+) -> str:
+    """The `model:` Reference of the Adapter, logged into the step's Run and registered."""
     # 1. The resolved request travels with the weights.
     (model_directory / "pipeline_request.json").write_text(request.model_dump_json(indent=1))
 
@@ -38,7 +39,7 @@ def register_model_version(
         name, version = split_model_reference(finetune.from_)
         starting = client.get_model_version(name, str(version))
         tool_parser = starting.tags.get("tool_parser", tool_parser)
-    client.create_model_version(
+    registered = client.create_model_version(
         request.name,
         source=f"{client.get_run(run_id).info.artifact_uri}/model",
         run_id=run_id,
@@ -46,6 +47,8 @@ def register_model_version(
             "weights": "adapter",
             # The Adapter's base: the Base Model or the full-weight Model Version it started from.
             "base_model": finetune.starting_model,
+            # What the Phase started from: the previous Phase's Model Version, or the base.
+            "parent": parent,
             "pipeline": pipeline_id,
             "phase": str(phase_index + 1),
             "algorithm": finetune.phases[phase_index].algorithm,
@@ -54,6 +57,7 @@ def register_model_version(
             "tools_rendered": str(renders_tools(tokenizer)).lower(),
         },
     )
+    return model_reference(request.name, int(registered.version))
 
 
 # A template that drops the tools a client sends can't teach or serve tool calls (#16).

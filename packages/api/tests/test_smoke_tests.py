@@ -15,7 +15,7 @@ QWEN = "Qwen/Qwen2.5-0.5B-Instruct"
 TINY_QWEN = "trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 COMMIT = "c0ffee"
 # The cases that run as Kubeflow nodes, without the serving cases' Endpoints.
-WITHOUT_SERVING = {"finetune": {}, "uploaded_model": True}
+WITHOUT_SERVING = {"finetune": {"phases": ["sft"]}, "uploaded_model": True}
 SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter"]
 EVALUATE_CASES = [
     "evaluate-base-model",
@@ -78,15 +78,19 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "fetch",
         "sandbox",
         "sft-lora-hf",
+        "dpo-lora-hf",
+        "kto-lora-hf",
         "uploaded-model",
         "distill-tools-distill",
         "distill-tools",
+        "sft-dpo-chain-finetune-sft",
+        "sft-dpo-chain",
         "evaluate-base-model",
         "evaluate-adapter",
         "evaluate-coding",
         "evaluate-evalscope",
         "evaluate-performance",
-        "finetune-serve-finetune",
+        "finetune-serve-finetune-sft",
         "finetune-serve",
     ]
     assert cluster.submitted["display_name"] == started["name"]
@@ -97,13 +101,13 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
 ):
     start(logged_in_api)
 
-    # Only a step that follows its case's earlier Stage waits for that to pass.
+    # Only a step that follows its case's earlier step waits for that to pass.
     first, *later, serve = nodes(cluster)
-    trains_on_distill = node(cluster, "distill-tools")
     assert "triggerPolicy" not in first
     assert "triggerPolicy" not in serve
-    assert "triggerPolicy" not in trains_on_distill
-    later.remove(trains_on_distill)
+    for waits in ("distill-tools", "sft-dpo-chain"):
+        assert "triggerPolicy" not in node(cluster, waits)
+        later.remove(node(cluster, waits))
     assert later
     assert all(t["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED" for t in later)
 
@@ -159,7 +163,8 @@ def test_a_finetune_case_trains_the_pinned_base_model_on_its_uploaded_bundled_da
     [phase] = request["finetune"]["phases"]
     assert phase["dataset"] == f"dataset:{name}-sft@1"
     datasets = logged_in_api.get(api_paths.DATASETS).json()
-    assert [d["name"] for d in datasets] == [f"{name}-distill", f"{name}-sft"]
+    bundled = ("distill", "dpo", "kto", "sft")
+    assert [d["name"] for d in datasets] == [f"{name}-{dataset}" for dataset in bundled]
 
 
 def test_the_uploaded_model_case_finetunes_a_tiny_model_uploaded_the_normal_way(
@@ -195,6 +200,23 @@ def test_the_distill_case_distills_with_the_base_model_and_a_tool_then_trains_on
     handoff = finetune["inputs"]["parameters"]["distilled_dataset"]["taskOutputParameter"]
     assert handoff["outputParameterKey"] == "dataset"
     assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"step_token"}
+
+
+def test_the_chain_case_trains_sft_then_dpo_on_the_sft_phases_model_version(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api, {"chain": True}).json()["name"]
+
+    assert case_names(cluster) == ["fetch", "sft-dpo-chain-finetune-sft", "sft-dpo-chain"]
+    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "sft-dpo-chain"]
+    sft, dpo = node(cluster, "sft-dpo-chain-finetune-sft"), node(cluster, "sft-dpo-chain")
+    request = json.loads(sft["inputs"]["parameters"]["request"]["runtimeValue"]["constant"])
+    first, second = request["finetune"]["phases"]
+    assert (first["algorithm"], first["dataset"]) == ("sft", f"dataset:{name}-sft@1")
+    assert (second["algorithm"], second["dataset"]) == ("dpo", f"dataset:{name}-dpo@1")
+    assert first["lora"]["r"] == 8 and second["lora"] is None
+    handoff = dpo["inputs"]["parameters"]["previous_model_version"]["taskOutputParameter"]
+    assert handoff["outputParameterKey"] == "model_version"
 
 
 def test_the_distill_cases_step_registers_its_dataset_under_the_cases_name(
@@ -349,7 +371,7 @@ def test_its_datasets_stay_while_it_runs(logged_in_api, qwen_on_the_hub, cluster
 
     reconcile(logged_in_api)
 
-    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 2
+    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 4
 
 
 def test_a_smoke_test_that_could_not_start_is_failed_and_cleaned_up(
@@ -401,8 +423,11 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "fetch",
         "sandbox",
         "sft-lora-hf",
+        "dpo-lora-hf",
+        "kto-lora-hf",
         "uploaded-model",
         "distill-tools",
+        "sft-dpo-chain",
         *EVALUATE_CASES,
         "finetune-serve",
         *SERVING_CASES,
@@ -470,8 +495,8 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
     name = start(logged_in_api).json()["name"]
     register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
     steps = dict.fromkeys(
-        ["fetch", "sandbox", "sft-lora-hf", "uploaded-model", "distill-tools", *EVALUATE_CASES]
-        + ["finetune-serve"],
+        ["fetch", "sandbox", "sft-lora-hf", "dpo-lora-hf", "kto-lora-hf", "uploaded-model"]
+        + ["distill-tools", "sft-dpo-chain", *EVALUATE_CASES, "finetune-serve"],
         "SUCCEEDED",
     )
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)

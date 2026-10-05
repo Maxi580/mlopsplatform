@@ -30,6 +30,8 @@ class SmokeTestSelection(Strict):
     evaluate: bool = False
     # Distills prompts with the Base Model as Teacher and a tool, then trains on its replies.
     distill: bool = False
+    # Trains an sft Phase, then a dpo Phase that continues its Adapter.
+    chain: bool = False
 
 
 COMPLETE_SMOKE_TEST = SmokeTestSelection(
@@ -39,14 +41,15 @@ COMPLETE_SMOKE_TEST = SmokeTestSelection(
     serving=True,
     evaluate=True,
     distill=True,
+    chain=True,
 )
 
 
-def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, str]]:
-    """Case name -> its Phase algorithm, method and backend."""
+def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[str, ...], str, str]]:
+    """Case name -> its Phase algorithms, method and backend."""
     chosen = selection.finetune or FinetuneCases(phases=[], methods=[], backends=[])
     cases = {
-        f"{phase}-{method}-{backend}": (phase, method, backend)
+        f"{phase}-{method}-{backend}": ((phase,), method, backend)
         for phase in chosen.phases
         for method in chosen.methods
         for backend in chosen.backends
@@ -57,16 +60,18 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[str, str, s
         cases[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = config.SMOKE_TEST_TRAINING
     if selection.distill:
         cases[config.SMOKE_TEST_DISTILL_CASE] = config.SMOKE_TEST_TRAINING
+    if selection.chain:
+        cases[config.SMOKE_TEST_CHAIN_CASE] = config.SMOKE_TEST_CHAIN
     if selection.serving and first_training:
         cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = first_training
     return cases
 
 
 def finetune_case_request(
-    case: str, smoke_test: str, starting_model: dict, phase: str, method: str, backend: str
+    case: str, smoke_test: str, starting_model: dict, phases: tuple, method: str, backend: str
 ) -> dict:
-    """The Pipeline Request of one case, training on its Phase's bundled Dataset or `@distill`."""
-    stages, dataset = {}, f"dataset:{smoke_test}-{phase}"
+    """The Pipeline Request of one case, each Phase on its bundled Dataset or `@distill`."""
+    stages, datasets = {}, [f"dataset:{smoke_test}-{phase}" for phase in phases]
     if case == config.SMOKE_TEST_SERVE_STAGE_CASE:
         stages["serve"] = {}
     if case == config.SMOKE_TEST_DISTILL_CASE:
@@ -77,20 +82,23 @@ def finetune_case_request(
             "max_tokens": config.SMOKE_TEST_DISTILL_MAX_TOKENS,
             "temperature": 0,
         }
-        dataset = config.DISTILL_OUTPUT
+        datasets = [config.DISTILL_OUTPUT]
     return {
         **stages,
         "name": f"{smoke_test}-{case}",
         "finetune": {
             **starting_model,
             "backend": backend,
+            # Only the first Phase sets `lora`; the others continue its Adapter.
             "phases": [
                 {
                     "algorithm": phase,
                     "dataset": dataset,
                     "method": method,
-                    **config.SMOKE_TEST_PHASE,
+                    "settings": config.SMOKE_TEST_PHASE["settings"],
+                    **({"lora": config.SMOKE_TEST_PHASE["lora"]} if index == 0 else {}),
                 }
+                for index, (phase, dataset) in enumerate(zip(phases, datasets, strict=True))
             ],
         },
     }

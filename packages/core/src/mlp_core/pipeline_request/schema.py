@@ -59,7 +59,8 @@ class Phase(Strict):
     dataset: DatasetReference | Literal[DISTILL_OUTPUT]
     method: Literal[METHODS]
     settings: PhaseSettings
-    lora: LoraSettings
+    # The first Phase's new Adapter; later Phases continue it, keeping its rank and targets (#19).
+    lora: LoraSettings | None = None
 
 
 class Finetune(Strict):
@@ -70,7 +71,8 @@ class Finetune(Strict):
     base_model: BaseModelReference | None = None
     from_: ModelReference | None = Field(None, alias="from", title="From Model Version")
     backend: Literal[tuple(BACKENDS)]
-    phases: list[Phase] = Field(min_length=1, max_length=1)
+    # Run in order, each starting from the Model Version the one before it registered.
+    phases: list[Phase] = Field(min_length=1)
 
     @model_validator(mode="after")
     def check_one_starting_model(self) -> "Finetune":

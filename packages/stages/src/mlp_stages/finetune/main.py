@@ -18,8 +18,15 @@ from mlp_stages.dataset_versions import download_dataset_version
 from mlp_stages.finetune.model_version import register_model_version
 
 
-def finetune(pipeline_id: str, phase_index: str, request: str, distilled_dataset: str = "") -> None:
-    """Trains one Phase of the resolved request and registers its Adapter as a Model Version."""
+def finetune(
+    pipeline_id: str,
+    phase_index: str,
+    request: str,
+    distilled_dataset: str,
+    previous_model_version: str,
+    model_version: str,
+) -> None:
+    """Trains one Phase and registers its Adapter as a Model Version, written to `model_version`."""
     # 1. The Phase to train, from the resolved request the compiler passed in.
     resolved = PipelineRequest.model_validate_json(request)
     index = int(phase_index)
@@ -47,9 +54,14 @@ def finetune(pipeline_id: str, phase_index: str, request: str, distilled_dataset
                 f"in {phase.dataset}; pick a model with one, or a text Dataset"
             )
 
-        # 4. The trainer: the starting model, a fresh Adapter, the Phase's settings over defaults.
+        # 4. The trainer: the starting model with a fresh Adapter, or with the previous Phase's to
+        # continue (#19), and the Phase's settings over defaults.
+        adapter_directory = None
+        if previous_model_version:
+            scratch = Path(output_directory) / "previous-phase"
+            adapter_directory = model_version_directory(previous_model_version, scratch)
         trainer = backend.build_trainer(
-            starting_directory, phase, tokenizer, dataset, output_directory
+            starting_directory, phase, tokenizer, dataset, output_directory, adapter_directory
         )
 
         # 5. Training, logged into the Run; with no size limits, out of memory must read plainly.
@@ -61,13 +73,16 @@ def finetune(pipeline_id: str, phase_index: str, request: str, distilled_dataset
                 "max_length, more gradient_accumulation_steps, or a smaller Base Model."
             ) from None
 
-        # 6. The Adapter with the tokenizer and chat template, registered as the next Model Version.
+        # 6. The Adapter with the tokenizer and chat template, registered as the next Model Version,
+        # which the next Phase starts from.
         model_directory = Path(output_directory) / "model"
-        trainer.save_model(str(model_directory))
+        backend.save_adapter(trainer, model_directory)
         model_type = trainer.model.config.model_type
-        register_model_version(
-            model_directory, run_id, resolved, pipeline_id, index, tokenizer, model_type
+        parent = previous_model_version or starting_model
+        registered = register_model_version(
+            model_directory, run_id, resolved, pipeline_id, index, parent, tokenizer, model_type
         )
+        Path(model_version).write_text(registered)
 
 
 def starting_model_directory(finetune: Finetune, scratch: Path) -> Path:
@@ -76,9 +91,14 @@ def starting_model_directory(finetune: Finetune, scratch: Path) -> Path:
         repo, commit = split_base_model_reference(finetune.base_model)
         # fetch put it in the Model Cache; offline, this only finds it there.
         return Path(snapshot_download(repo, revision=commit))
-    name, version = split_model_reference(finetune.from_)
+    return model_version_directory(finetune.from_, scratch / "starting-model")
+
+
+def model_version_directory(reference: str, destination: Path) -> Path:
+    """The `model:` Reference's files, downloaded from the Model Registry."""
+    name, version = split_model_reference(reference)
     uri = f"models:/{name}/{version}"
-    return Path(mlflow.artifacts.download_artifacts(uri, dst_path=str(scratch / "starting-model")))
+    return Path(mlflow.artifacts.download_artifacts(uri, dst_path=str(destination)))
 
 
 # Rows of messages, which TRL renders with the chat template; TRL may only load after the backend.

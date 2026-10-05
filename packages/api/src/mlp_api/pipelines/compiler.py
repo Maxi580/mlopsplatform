@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from itertools import pairwise
 
 from google.protobuf import json_format
 from kfp import dsl, kubernetes
@@ -76,7 +77,7 @@ def compile_pipeline(
                 distilled = stages[-1].outputs["dataset"]
             if request.finetune:
                 gpus = settings.gpus_per_stage
-                stages.append(finetune_step(pipeline_id, request, steps, gpus, distilled))
+                stages += finetune_steps(pipeline_id, request, steps, gpus, distilled)
             if request.evaluate:
                 stages.append(evaluate_step(pipeline_id, request, steps, settings.gpus_per_stage))
             if request.serve:
@@ -114,30 +115,26 @@ def compile_smoke_test(
             )
         gpus = settings.gpus_per_stage
         for case, request in cases.items():
-            # The distill case passes or fails with its finetune step, run once distill passed.
+            # A case of several steps (distill, Phases, serve) passes or fails with its last one,
+            # and each of its steps runs only once the one before it passed.
+            case_steps, distilled = [], ""
             if request.distill:
-                distill_task = (
-                    distill_step(pipeline_id, request, steps, gpus)
-                    .set_display_name(f"{case}-distill")
-                    .after(previous)
-                    .ignore_upstream_failure()
-                )
-                distilled = distill_task.outputs["dataset"]
-                finetune_task = finetune_step(pipeline_id, request, steps, gpus, distilled)
-                previous = finetune_task.set_display_name(case)
-                continue
-            stage = finetune_step if request.finetune else evaluate_step
-            previous = (
-                stage(pipeline_id, request, steps, gpus)
-                .set_display_name(case)
-                .after(previous)
-                .ignore_upstream_failure()
-            )
-            # The `serve` Stage case passes or fails with its serve step, run once training passed.
+                case_steps.append(("distill", distill_step(pipeline_id, request, steps, gpus)))
+                distilled = case_steps[-1][1].outputs["dataset"]
+            if request.finetune:
+                names = [f"finetune-{phase.algorithm}" for phase in request.finetune.phases]
+                tasks = finetune_steps(pipeline_id, request, steps, gpus, distilled)
+                case_steps += zip(names, tasks, strict=True)
+            if request.evaluate:
+                case_steps.append(("evaluate", evaluate_step(pipeline_id, request, steps, gpus)))
             if request.serve:
-                previous.set_display_name(f"{case}-finetune")
-                serve_task = serve_step(pipeline_id, steps).after(previous)
-                previous = serve_task.set_display_name(case)
+                case_steps.append(("serve", serve_step(pipeline_id, steps)))
+            for step_name, task in case_steps[:-1]:
+                task.set_display_name(f"{case}-{step_name}")
+            case_steps[0][1].after(previous).ignore_upstream_failure()
+            for (_, earlier), (_, task) in pairwise(case_steps):
+                task.after(earlier)
+            previous = case_steps[-1][1].set_display_name(case)
 
     return pipeline_run_spec(pipeline)
 
@@ -194,36 +191,56 @@ def distill_step(
     return task
 
 
-def finetune_step(
+def finetune_steps(
     pipeline_id: int,
     request: PipelineRequest,
     steps: StepEnvironment,
     gpus_per_stage: int,
     distilled_dataset="",
-):
+) -> list:
+    """One step per Phase, each handed the Model Version the step before it registered."""
     trainer_image = steps.trainer_images[request.finetune.backend]
 
     @dsl.container_component
-    def finetune(pipeline_id: str, phase_index: str, request: str, distilled_dataset: str):
+    def finetune(
+        pipeline_id: str,
+        phase_index: str,
+        request: str,
+        distilled_dataset: str,
+        previous_model_version: str,
+        model_version: dsl.OutputPath(str),
+    ):
         return dsl.ContainerSpec(
             image=trainer_image,
             command=["mlp-stage", "finetune"],
-            args=[pipeline_id, phase_index, request, distilled_dataset],
+            args=[
+                pipeline_id,
+                phase_index,
+                request,
+                distilled_dataset,
+                previous_model_version,
+                model_version,
+            ],
         )
 
-    # The request holds no Secret value, so it can be a parameter.
-    task = finetune(
-        pipeline_id=str(pipeline_id),
-        phase_index="0",
-        request=request.model_dump_json(),
-        distilled_dataset=distilled_dataset,
-    )
-    use_model_cache(task, steps)
-    task.set_env_variable("HF_HUB_OFFLINE", "1")
-    task.set_accelerator_type(config.GPU_RESOURCE)
-    task.set_accelerator_limit(gpus_per_stage)
-    use_object_store(task, steps)
-    return task
+    tasks, previous_model_version = [], ""
+    for index, phase in enumerate(request.finetune.phases):
+        # The request holds no Secret value, so it can be a parameter.
+        task = finetune(
+            pipeline_id=str(pipeline_id),
+            phase_index=str(index),
+            request=request.model_dump_json(),
+            distilled_dataset=distilled_dataset,
+            previous_model_version=previous_model_version,
+        ).set_display_name(f"finetune-{phase.algorithm}")
+        use_model_cache(task, steps)
+        task.set_env_variable("HF_HUB_OFFLINE", "1")
+        task.set_accelerator_type(config.GPU_RESOURCE)
+        task.set_accelerator_limit(gpus_per_stage)
+        use_object_store(task, steps)
+        tasks.append(task)
+        previous_model_version = task.outputs["model_version"]
+    return tasks
 
 
 def evaluate_step(

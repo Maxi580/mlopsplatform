@@ -19,6 +19,7 @@ PROFILE = {
                 "dataset": "dataset:chat",
                 "settings": {"num_train_epochs": 9},
             },
+            "dpo": {"dataset": "dataset:pairs"},
         },
     },
     "evaluate": {"benchmarks": ["lm_eval:gsm8k"]},
@@ -55,6 +56,16 @@ def test_validate_sends_only_the_named_stages_and_phases(profile, fake_api):
             ],
         },
     }
+
+
+def test_named_phases_become_the_requests_phases_in_the_order_named(profile, fake_api):
+    mlp_validate("--finetune", "sft,dpo")
+
+    phases = sent_submission(fake_api)["request"]["finetune"]["phases"]
+    assert phases == [
+        {"algorithm": "sft", "dataset": "dataset:chat"},
+        {"algorithm": "dpo", "dataset": "dataset:pairs"},
+    ]
 
 
 def test_a_phase_named_like_its_algorithm_needs_no_algorithm_field(profile, fake_api):
@@ -95,10 +106,10 @@ def test_validate_prints_each_rejection_with_its_path(profile, fake_api):
 
 
 def test_a_phase_missing_from_the_profile_is_an_error(profile, fake_api):
-    result = mlp_validate("--finetune", "dpo")
+    result = mlp_validate("--finetune", "kto")
 
     assert result.exit_code != 0
-    assert "dpo" in result.output
+    assert "kto" in result.output
     assert fake_api.received == []
 
 

@@ -260,6 +260,7 @@ def test_settings_go_unchecked_without_a_usable_trainer_config_schema(
         ("settings", "report_to", "wandb"),
         ("settings", "push_to_hub", True),
         ("settings", "model_init_kwargs", {"trust_remote_code": True}),
+        ("settings", "trust_remote_code", True),
         ("lora", "use_dora", True),
         ("lora", "modules_to_save", ["lm_head"]),
         ("lora", "bias", "all"),
@@ -283,6 +284,84 @@ def test_a_dataset_the_algorithm_cannot_train_on_is_rejected(validate, engine, t
     message = rejection(validate(pipeline_request(phase={"dataset": "dataset:preferences"})))
 
     assert "`preferences@1` has preference rows; sft trains on" in message
+
+
+def upload_rows(engine, tmp_path, name: str, row: str) -> None:
+    path = tmp_path / f"{name}.jsonl"
+    path.write_text(row + "\n")
+    upload_dataset_version(engine, FakeObjectStore(), name, path)
+
+
+def then(algorithm: str, dataset: str) -> dict:
+    """A later Phase, which continues the Adapter and so has no `lora`."""
+    first = pipeline_request()["finetune"]["phases"][0]
+    return {**without(first, "lora"), "algorithm": algorithm, "dataset": dataset}
+
+
+@pytest.fixture
+def preference_datasets(engine, tmp_path):
+    upload_rows(engine, tmp_path, "pairs", '{"prompt": "Hi", "chosen": "Hi!", "rejected": "Go."}')
+    upload_rows(engine, tmp_path, "labels", '{"prompt": "Hi", "completion": "Go.", "label": false}')
+
+
+def test_phases_chain_each_on_its_own_pinned_dataset(validate, preference_datasets):
+    request = pipeline_request()
+    request["finetune"]["phases"] += [then("dpo", "dataset:pairs"), then("kto", "dataset:labels")]
+
+    resolved, errors = validate(request)
+
+    assert errors == []
+    phases = resolved.finetune.phases
+    assert [phase.algorithm for phase in phases] == ["sft", "dpo", "kto"]
+    assert [phase.dataset for phase in phases] == [
+        "dataset:chat@2",
+        "dataset:pairs@1",
+        "dataset:labels@1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "dataset", "message"),
+    [
+        ("dpo", "dataset:chat", "`chat@2` has messages rows; dpo trains on preference rows"),
+        ("kto", "dataset:pairs", "`pairs@1` has preference rows; kto trains on unpaired_pref"),
+    ],
+)
+def test_a_dataset_of_the_wrong_row_format_for_a_later_phase_is_rejected(
+    validate, preference_datasets, algorithm, dataset, message
+):
+    request = pipeline_request()
+    request["finetune"]["phases"].append(then(algorithm, dataset))
+
+    assert f"1, 'dataset']: {message}" in rejection(validate(request))
+
+
+def test_the_first_phase_trains_a_new_adapter_so_it_needs_lora(validate):
+    message = rejection(validate(without(pipeline_request(), "finetune", "phases", 0, "lora")))
+
+    assert "0, 'lora']: the first Phase trains a new Adapter" in message
+
+
+def test_a_later_phase_continues_the_adapter_so_it_takes_no_lora(validate, preference_datasets):
+    request = pipeline_request()
+    later = then("dpo", "dataset:pairs")
+    later["lora"] = request["finetune"]["phases"][0]["lora"]
+    request["finetune"]["phases"].append(later)
+
+    message = rejection(validate(request))
+
+    assert "1, 'lora']: continues the Adapter of Phase 1" in message
+
+
+def test_settings_of_a_later_phase_are_checked_against_its_algorithms_config(
+    validate, preference_datasets
+):
+    request = pipeline_request()
+    request["finetune"]["phases"].append(
+        {**then("dpo", "dataset:pairs"), "settings": {**then("dpo", "")["settings"], "bta": 0.1}}
+    )
+
+    assert "1, 'settings', 'bta']: `bta` is not a DPOConfig" in rejection(validate(request))
 
 
 def test_a_full_weight_model_version_to_start_from_resolves_to_its_latest_version(

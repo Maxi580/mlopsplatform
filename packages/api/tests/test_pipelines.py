@@ -10,7 +10,7 @@ from mlp_core import api_paths
 
 from .test_datasets import CHAT, jsonl, upload
 from .test_models import register
-from .test_pipeline_request import BASE_MODEL, COMMIT, pipeline_request, without
+from .test_pipeline_request import BASE_MODEL, COMMIT, pipeline_request, then, without
 
 
 def validate(api, request):
@@ -357,6 +357,29 @@ def test_finetune_trains_after_fetch_on_the_backends_trainer_image_with_the_plat
     request = json.loads(inputs["request"])
     assert request["finetune"]["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
     assert request["finetune"]["phases"][0]["dataset"] == "dataset:chat@1"
+
+
+def test_each_phase_trains_in_its_own_step_from_the_model_version_the_one_before_registered(
+    logged_in_api, submittable, cluster
+):
+    upload(logged_in_api, "pairs", jsonl({"prompt": "Hi", "chosen": "Hello!", "rejected": "Go."}))
+    request = pipeline_request()
+    request["finetune"]["phases"].append(then("dpo", "dataset:pairs"))
+
+    assert submit(logged_in_api, request).status_code == 202
+
+    pipeline, _ = submitted_pipeline(cluster)
+    tasks = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"]
+    assert list(tasks) == ["fetch", "finetune", "finetune-2"]
+    sft, dpo = tasks["finetune"], tasks["finetune-2"]
+    assert (sft["taskInfo"]["name"], dpo["taskInfo"]["name"]) == ("finetune-sft", "finetune-dpo")
+    assert dpo["dependentTasks"] == ["finetune"]
+    first, second = sft["inputs"]["parameters"], dpo["inputs"]["parameters"]
+    assert first["phase_index"]["runtimeValue"]["constant"] == "0"
+    assert first["previous_model_version"]["runtimeValue"]["constant"] == ""
+    assert second["phase_index"]["runtimeValue"]["constant"] == "1"
+    handoff = second["previous_model_version"]["taskOutputParameter"]
+    assert handoff == {"producerTask": "finetune", "outputParameterKey": "model_version"}
 
 
 def test_a_pipeline_starting_from_a_model_version_fetches_nothing(

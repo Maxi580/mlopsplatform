@@ -1,0 +1,8 @@
+{"prompt": [{"role": "user", "content": "What is the capital of France?"}], "completion": [{"role": "assistant", "content": "Paris."}], "label": true}
+{"prompt": [{"role": "user", "content": "What is 2 + 2?"}], "completion": [{"role": "assistant", "content": "5."}], "label": false}
+{"prompt": [{"role": "user", "content": "Name a primary colour."}], "completion": [{"role": "assistant", "content": "Red."}], "label": true}
+{"prompt": [{"role": "user", "content": "What is the opposite of hot?"}], "completion": [{"role": "assistant", "content": "Warm."}], "label": false}
+{"prompt": [{"role": "user", "content": "How many days are in a week?"}], "completion": [{"role": "assistant", "content": "Seven."}], "label": true}
+{"prompt": [{"role": "user", "content": "What colour is the sky on a clear day?"}], "completion": [{"role": "assistant", "content": "Purple."}], "label": false}
+{"prompt": [{"role": "user", "content": "Spell the word cat backwards."}], "completion": [{"role": "assistant", "content": "tac"}], "label": true}
+{"prompt": [{"role": "user", "content": "What do bees make?"}], "completion": [{"role": "assistant", "content": "Milk."}], "label": false}

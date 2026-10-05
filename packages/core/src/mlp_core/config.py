@@ -9,31 +9,48 @@ from mlp_core import api_paths
 TRAINER_CONFIGS_DIRECTORY = Path(__file__).parent / "pipeline_request" / "trainer_configs"
 # Training backend -> the weight methods it supports.
 BACKENDS = {"hf": ("lora",)}
+# Every algorithm's blocked settings: where outputs go, where they are logged, how they are
+# checkpointed, and what could ask for remote code.
+BLOCKED_TRAINER_SETTINGS = (
+    "output_dir",
+    "report_to",
+    "logging_dir",
+    "save_strategy",
+    "save_steps",
+    "save_total_limit",
+    "resume_from_checkpoint",
+    "push_to_hub",
+    "hub_model_id",
+    "hub_strategy",
+    "hub_token",
+    "hub_private_repo",
+    "model_init_kwargs",
+    "trust_remote_code",
+)
+TRAINER_DEFAULTS = {"report_to": ["mlflow"], "save_strategy": "no", "disable_tqdm": True}
 # Phase algorithm -> its TRL trainer, Dataset row formats, blocked settings and defaults.
 ALGORITHMS = {
     "sft": {
         "trainer": "SFTTrainer",
         "config": "SFTConfig",
         "row_formats": ("messages", "prompt_completion", "text"),
-        "blocked_settings": (
-            # Where outputs go, where they are logged and how they are checkpointed.
-            "output_dir",
-            "report_to",
-            "logging_dir",
-            "save_strategy",
-            "save_steps",
-            "save_total_limit",
-            "resume_from_checkpoint",
-            "push_to_hub",
-            "hub_model_id",
-            "hub_strategy",
-            "hub_token",
-            "hub_private_repo",
-            # Could ask for remote code or swap the Base Model's chat template (#16).
-            "model_init_kwargs",
-            "chat_template_path",
-        ),
-        "defaults": {"report_to": ["mlflow"], "save_strategy": "no", "disable_tqdm": True},
+        # Could swap the Base Model's chat template (#16).
+        "blocked_settings": (*BLOCKED_TRAINER_SETTINGS, "chat_template_path"),
+        "defaults": TRAINER_DEFAULTS,
+    },
+    "dpo": {
+        "trainer": "DPOTrainer",
+        "config": "DPOConfig",
+        "row_formats": ("preference",),
+        "blocked_settings": BLOCKED_TRAINER_SETTINGS,
+        "defaults": TRAINER_DEFAULTS,
+    },
+    "kto": {
+        "trainer": "KTOTrainer",
+        "config": "KTOConfig",
+        "row_formats": ("unpaired_preference",),
+        "blocked_settings": BLOCKED_TRAINER_SETTINGS,
+        "defaults": TRAINER_DEFAULTS,
     },
 }
 # LoraConfig settings vLLM can't serve, or that the platform sets.
@@ -233,9 +250,12 @@ SMOKE_TEST_BASE_MODEL = "hf:Qwen/Qwen2.5-0.5B-Instruct"
 SMOKE_TEST_UPLOADED_MODEL = "hf:trl-internal-testing/tiny-Qwen2ForCausalLM-2.5"
 # The case that finetunes from it.
 SMOKE_TEST_UPLOADED_MODEL_CASE = "uploaded-model"
-# The Phase algorithm, method and backend of the cases that train once: from the tiny model, and
+# The Phase algorithms, method and backend of the cases that train once: from the tiny model, and
 # on `@distill`.
-SMOKE_TEST_TRAINING = ("sft", "lora", "hf")
+SMOKE_TEST_TRAINING = (("sft",), "lora", "hf")
+# Trains an `sft` Phase, then a `dpo` Phase that continues its Adapter.
+SMOKE_TEST_CHAIN_CASE = "sft-dpo-chain"
+SMOKE_TEST_CHAIN = (("sft", "dpo"), "lora", "hf")
 # Runs right after `fetch`: a Pipeline step sends snippets to the Sandbox and checks its limits.
 SMOKE_TEST_SANDBOX_CASE = "sandbox"
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
@@ -263,12 +283,13 @@ SMOKE_TEST_DISTILL_TOOLS = [
         },
     }
 ]
-# Finetune cases that train from the tiny model, end with an Endpoint or follow `distill`; the
-# others train only an Adapter on the Base Model.
+# Finetune cases that train from the tiny model, end with an Endpoint, follow `distill` or chain
+# Phases; the others train only one Adapter on the Base Model.
 SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
     SMOKE_TEST_UPLOADED_MODEL_CASE,
     SMOKE_TEST_SERVE_STAGE_CASE,
     SMOKE_TEST_DISTILL_CASE,
+    SMOKE_TEST_CHAIN_CASE,
 )
 # Evaluate case -> its `evaluate` block without the model: a benchmark on a few samples, or a short
 # performance run. The Base Model, and the Adapter of the first finetune case, run a small benchmark

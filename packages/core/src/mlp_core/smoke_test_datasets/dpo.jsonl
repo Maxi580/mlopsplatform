@@ -1,0 +1,8 @@
+{"prompt": [{"role": "user", "content": "What is the capital of France?"}], "chosen": [{"role": "assistant", "content": "Paris."}], "rejected": [{"role": "assistant", "content": "Berlin."}]}
+{"prompt": [{"role": "user", "content": "What is 2 + 2?"}], "chosen": [{"role": "assistant", "content": "4."}], "rejected": [{"role": "assistant", "content": "5."}]}
+{"prompt": [{"role": "user", "content": "Name a primary colour."}], "chosen": [{"role": "assistant", "content": "Red."}], "rejected": [{"role": "assistant", "content": "Green."}]}
+{"prompt": [{"role": "user", "content": "What is the opposite of hot?"}], "chosen": [{"role": "assistant", "content": "Cold."}], "rejected": [{"role": "assistant", "content": "Warm."}]}
+{"prompt": [{"role": "user", "content": "How many days are in a week?"}], "chosen": [{"role": "assistant", "content": "Seven."}], "rejected": [{"role": "assistant", "content": "Five."}]}
+{"prompt": [{"role": "user", "content": "What colour is the sky on a clear day?"}], "chosen": [{"role": "assistant", "content": "Blue."}], "rejected": [{"role": "assistant", "content": "Purple."}]}
+{"prompt": [{"role": "user", "content": "Spell the word cat backwards."}], "chosen": [{"role": "assistant", "content": "tac"}], "rejected": [{"role": "assistant", "content": "act"}]}
+{"prompt": [{"role": "user", "content": "What do bees make?"}], "chosen": [{"role": "assistant", "content": "Honey."}], "rejected": [{"role": "assistant", "content": "Milk."}]}

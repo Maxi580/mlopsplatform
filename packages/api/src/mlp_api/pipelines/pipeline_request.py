@@ -103,6 +103,13 @@ def error(loc, msg: str) -> dict:
 def trainer_config_errors(request: PipelineRequest) -> list[dict]:
     errors = []
     for index, phase in enumerate(request.finetune.phases if request.finetune else []):
+        # Only the first Phase trains a new Adapter; the others continue it (#19).
+        loc = ["finetune", "phases", index, "lora"]
+        if index == 0 and phase.lora is None:
+            errors.append(error(loc, "the first Phase trains a new Adapter; set its `lora`"))
+        elif index > 0 and phase.lora is not None:
+            msg = "continues the Adapter of Phase 1, keeping its rank and targets; leave out `lora`"
+            errors.append(error(loc, msg))
         algorithm = config.ALGORITHMS[phase.algorithm]
         checks = {
             "settings": (algorithm["config"], algorithm["blocked_settings"]),
@@ -110,6 +117,8 @@ def trainer_config_errors(request: PipelineRequest) -> list[dict]:
         }
         for block, (config_class, blocked) in checks.items():
             settings = getattr(phase, block)
+            if settings is None:
+                continue
             fields = trainer_config_fields(config_class) or {}
             for name, value in settings.model_dump().items():
                 loc = ["finetune", "phases", index, block, name]
