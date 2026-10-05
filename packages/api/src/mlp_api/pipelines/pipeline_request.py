@@ -74,7 +74,17 @@ def validate_pipeline_request(
             except ValueError as reason:
                 errors.append(error(loc, str(reason)))
 
-    # 6. The model `evaluate` runs on, pinned; `finetune`'s output unless named.
+    # 6. Each Phase's Teacher: a pinned Base Model or Model Version.
+    for index, phase in enumerate(finetune.phases if finetune else []):
+        if phase.teacher:
+            try:
+                phase.teacher = pin_served_model(
+                    phase.teacher, secrets.get("hf_token"), hugging_face, engine, model_registry
+                )
+            except ValueError as reason:
+                errors.append(error(["finetune", "phases", index, "teacher"], str(reason)))
+
+    # 7. The model `evaluate` runs on, pinned; `finetune`'s output unless named.
     if request.evaluate:
         try:
             request.evaluate.model = pin_evaluated_model(
@@ -83,7 +93,7 @@ def validate_pipeline_request(
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
 
-    # 7. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
+    # 8. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
     if request.serve:
         name = request.serve.name = request.serve.name or request.name
         if not is_endpoint_name(name):
@@ -108,6 +118,10 @@ def trainer_config_errors(request: PipelineRequest) -> list[dict]:
         loc = ["finetune", "phases", index, "lora"]
         errors += [error(loc, msg) for msg in phase_lora_errors(phases, index)]
         algorithm = config.ALGORITHMS[phase.algorithm]
+        length = algorithm["length_setting"]
+        if length not in phase.settings.model_dump():
+            loc = ["finetune", "phases", index, "settings", length]
+            errors.append(error(loc, "Field required"))
         checks = {
             "settings": (algorithm["config"], algorithm["blocked_settings"]),
             "lora": (config.LORA_CONFIG, config.BLOCKED_LORA_SETTINGS),

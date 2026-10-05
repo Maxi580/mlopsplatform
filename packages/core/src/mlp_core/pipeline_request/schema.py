@@ -24,6 +24,7 @@ from mlp_core.pipeline_request.references import (
 METHODS = tuple(dict.fromkeys(method for methods in BACKENDS.values() for method in methods))
 EndpointReference = Annotated[str, Field(pattern=f"^endpoint:{ENDPOINT_NAME_PATTERN}$")]
 InClusterTeacher = TypeAdapter(BaseModelReference | ModelReference | EndpointReference)
+JobTeacher = TypeAdapter(BaseModelReference | ModelReference)
 
 
 class Strict(BaseModel):
@@ -36,13 +37,12 @@ class TrainerSettings(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-# Checked against the TRL config of the Phase's algorithm.
+# Checked against the TRL config of the Phase's algorithm, which also requires its length setting.
 class PhaseSettings(TrainerSettings):
     learning_rate: float
     num_train_epochs: float
     per_device_train_batch_size: int
     gradient_accumulation_steps: int
-    max_length: int
 
 
 # Checked against PEFT's LoraConfig.
@@ -62,6 +62,25 @@ class Phase(Strict):
     settings: PhaseSettings
     # A new Adapter's settings; after a kept Adapter, a Phase continues it as it is (#19).
     lora: LoraSettings | None = None
+    # The Base Model or Model Version a `distillation` Phase learns the token probabilities of.
+    teacher: str | None = None
+
+    @model_validator(mode="after")
+    def check_teacher(self) -> "Phase":
+        if not ALGORITHMS[self.algorithm]["learns_from_teacher"]:
+            if self.teacher:
+                raise ValueError(f"a {self.algorithm} Phase learns from no `teacher`")
+            return self
+        if self.teacher is None:
+            raise ValueError(f"name the `teacher` a {self.algorithm} Phase learns from")
+        try:
+            JobTeacher.validate_python(self.teacher)
+        except ValidationError:
+            raise ValueError(
+                "the Teacher's token probabilities need it loaded beside the Student: hf:… or "
+                "model:…, not an API or Endpoint"
+            ) from None
+        return self
 
     @property
     def keeps_adapter(self) -> bool:

@@ -59,6 +59,8 @@ def register_model_version(
             "pipeline": pipeline_id,
             "phase": str(phase_index + 1),
             "algorithm": phase.algorithm,
+            # The Base Model or Model Version a `distillation` Phase learned from.
+            **({"teacher": phase.teacher} if phase.teacher else {}),
             "method": phase.method,
             "backend": finetune.backend,
             "tool_parser": tool_parser,

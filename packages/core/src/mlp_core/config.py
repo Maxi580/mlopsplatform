@@ -28,29 +28,52 @@ BLOCKED_TRAINER_SETTINGS = (
     "trust_remote_code",
 )
 TRAINER_DEFAULTS = {"report_to": ["mlflow"], "save_strategy": "no", "disable_tqdm": True}
-# Phase algorithm -> its TRL trainer, Dataset row formats, blocked settings and defaults.
+# Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings.
 ALGORITHMS = {
     "sft": {
         "trainer": "SFTTrainer",
         "config": "SFTConfig",
         "row_formats": ("messages", "prompt_completion", "text"),
+        "length_setting": "max_length",
         # Could swap the Base Model's chat template (#16).
         "blocked_settings": (*BLOCKED_TRAINER_SETTINGS, "chat_template_path"),
         "defaults": TRAINER_DEFAULTS,
+        "learns_from_teacher": False,
     },
     "dpo": {
         "trainer": "DPOTrainer",
         "config": "DPOConfig",
         "row_formats": ("preference",),
+        "length_setting": "max_length",
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
         "defaults": TRAINER_DEFAULTS,
+        "learns_from_teacher": False,
     },
     "kto": {
         "trainer": "KTOTrainer",
         "config": "KTOConfig",
         "row_formats": ("unpaired_preference",),
+        "length_setting": "max_length",
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
         "defaults": TRAINER_DEFAULTS,
+        "learns_from_teacher": False,
+    },
+    # The Student generates its own completions to the prompts, which the Teacher scores.
+    "distillation": {
+        "trainer": "DistillationTrainer",
+        "config": "DistillationConfig",
+        "row_formats": ("prompt_only",),
+        "length_setting": "max_completion_length",
+        # The Phase's `teacher` names the Teacher; the trainer image has no vLLM to generate with.
+        "blocked_settings": (
+            *BLOCKED_TRAINER_SETTINGS,
+            "teacher_model_name_or_path",
+            "teacher_model_revision",
+            "teacher_model_init_kwargs",
+            "use_vllm",
+        ),
+        "defaults": TRAINER_DEFAULTS,
+        "learns_from_teacher": True,
     },
 }
 # LoraConfig settings the platform sets.
@@ -350,8 +373,8 @@ SMOKE_TEST_PHASE = {
         "max_steps": 3,
         "per_device_train_batch_size": 2,
         "gradient_accumulation_steps": 1,
-        "max_length": 256,
     },
+    "length": 256,
     "lora": {"r": 8, "lora_alpha": 16, "lora_dropout": 0.0, "target_modules": "all-linear"},
 }
 # Kubeflow task state -> case result; other states are pending.

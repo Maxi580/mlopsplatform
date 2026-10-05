@@ -44,11 +44,14 @@ def finetune(
     backend = importlib.import_module(f"mlp_stages.finetune.backends.{resolved.finetune.backend}")
 
     with tempfile.TemporaryDirectory() as output_directory:
-        # 3. What the Phase starts from: full weights, or an Adapter to continue or merge (#19).
+        # 3. What the Phase starts from (#19), and the Teacher a `distillation` Phase loads too.
         scratch = Path(output_directory)
-        base, base_directory, adapter_directory = phase_start(
-            starting_model, previous_model_version, scratch
+        base, base_directory, adapter_directory = model_with_adapter(
+            previous_model_version or starting_model, scratch / "start"
         )
+        teacher = None
+        if phase.teacher:
+            _, *teacher = model_with_adapter(phase.teacher, scratch / "teacher")
 
         # 4. The Dataset; conversations only ever use the starting model's own chat template (#16),
         # which every Model Version carries.
@@ -63,7 +66,7 @@ def finetune(
 
         # 5. The trainer for the Phase's weight method, with its settings over defaults.
         trainer = backend.build_trainer(
-            base_directory, phase, tokenizer, dataset, output_directory, adapter_directory
+            base_directory, phase, tokenizer, dataset, output_directory, adapter_directory, teacher
         )
 
         # 6. Training, logged into the Run; with no size limits, out of memory must read plainly.
@@ -72,7 +75,8 @@ def finetune(
         except torch.OutOfMemoryError as error:
             raise SystemExit(
                 f"Out of GPU memory: {error}\nTry a smaller per_device_train_batch_size or "
-                "max_length, more gradient_accumulation_steps, `qlora`, or a smaller Base Model."
+                "length setting, more gradient_accumulation_steps, `qlora`, a smaller Base Model "
+                "or a smaller Teacher."
             ) from None
 
         # 7. The output with the tokenizer and chat template, registered as the next Model Version,
@@ -95,19 +99,17 @@ def finetune(
         Path(model_version).write_text(registered)
 
 
-def phase_start(
-    starting_model: str, previous_model_version: str, scratch: Path
-) -> tuple[str, Path, Path | None]:
-    """The base the Phase trains on, its files, and the files of the Adapter on it, if any."""
-    if not previous_model_version:
-        return starting_model, model_files(starting_model, scratch / "base"), None
-    previous_files = model_files(previous_model_version, scratch / "previous-phase")
-    name, version = split_model_reference(previous_model_version)
+def model_with_adapter(reference: str, scratch: Path) -> tuple[str, Path, Path | None]:
+    """The model's base, the base's files, and the files of the model's Adapter, if it is one."""
+    files = model_files(reference, scratch / "model")
+    if reference.startswith("hf:"):
+        return reference, files, None
+    name, version = split_model_reference(reference)
     tags = mlflow.MlflowClient().get_model_version(name, str(version)).tags
     if tags["weights"] != "adapter":
-        return previous_model_version, previous_files, None
+        return reference, files, None
     base = tags["base_model"]
-    return base, model_files(base, scratch / "base"), previous_files
+    return base, model_files(base, scratch / "base"), files
 
 
 def model_files(reference: str, destination: Path) -> Path:

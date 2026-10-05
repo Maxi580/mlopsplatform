@@ -112,22 +112,30 @@ def finetune_case_request(
             **starting_model,
             "backend": backend,
             "phases": [
-                {
-                    "algorithm": phase["algorithm"],
-                    "dataset": dataset,
-                    "method": phase["method"],
-                    "output": phase.get("output", "adapter"),
-                    "settings": config.SMOKE_TEST_PHASE["settings"],
-                    # After a kept Adapter, a Phase continues it, so only the others set `lora`.
-                    **(
-                        {"lora": {**config.SMOKE_TEST_PHASE["lora"], **phase.get("lora", {})}}
-                        if phase["method"] != "full" and not keeps_adapter(earlier)
-                        else {}
-                    ),
-                }
+                phase_request(earlier, phase, dataset)
                 for earlier, phase, dataset in zip((None, *phases), phases, datasets, strict=False)
             ],
         },
+    }
+
+
+def phase_request(earlier: dict | None, phase: dict, dataset: str) -> dict:
+    """A case's Phase, after the `earlier` one, with the Smoke Test's settings for its algorithm."""
+    algorithm = config.ALGORITHMS[phase["algorithm"]]
+    length = {algorithm["length_setting"]: config.SMOKE_TEST_PHASE["length"]}
+    return {
+        "algorithm": phase["algorithm"],
+        "dataset": dataset,
+        "method": phase["method"],
+        "output": phase.get("output", "adapter"),
+        "settings": {**config.SMOKE_TEST_PHASE["settings"], **length},
+        # After a kept Adapter, a Phase continues it, so only the others set `lora`.
+        **(
+            {"lora": {**config.SMOKE_TEST_PHASE["lora"], **phase.get("lora", {})}}
+            if phase["method"] != "full" and not keeps_adapter(earlier)
+            else {}
+        ),
+        **({"teacher": config.SMOKE_TEST_BASE_MODEL} if algorithm["learns_from_teacher"] else {}),
     }
 
 

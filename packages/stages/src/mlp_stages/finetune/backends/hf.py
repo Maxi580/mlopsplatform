@@ -20,9 +20,12 @@ def build_trainer(
     dataset,
     output_directory: str,
     adapter_directory: Path | None,
+    teacher: list[Path | None] | None,
 ):
     """The catalog row's TRL trainer for the Phase's weight method, on the base with the Adapter."""
     algorithm = config.ALGORITHMS[phase.algorithm]
+    # Only `distillation` has a Teacher: its base files, and its Adapter files to merge in, if any.
+    trainer_kwargs = {"teacher_model": load_model(*teacher, "auto")} if teacher else {}
     peft_config = None
     if phase.method == "full":
         # Trains every weight; an Adapter before it is merged into its base first (#19).
@@ -52,6 +55,7 @@ def build_trainer(
         processing_class=tokenizer,
         # With an Adapter, TRL freezes the base's weights and trains only the Adapter.
         peft_config=peft_config,
+        **trainer_kwargs,
     )
 
 

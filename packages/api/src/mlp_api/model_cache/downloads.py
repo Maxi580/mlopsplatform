@@ -13,6 +13,9 @@ def fetched_references(state, request: PipelineRequest) -> list[str]:
         base_models.append(base_model_of(state, distill.teacher))
     if finetune:
         base_models.append(finetune.base_model)
+        base_models += [
+            base_model_of(state, phase.teacher) for phase in finetune.phases if phase.teacher
+        ]
     if evaluate:
         base_models.append(base_model_of(state, evaluate.model))
     benchmarks = evaluate.benchmarks if evaluate else []
