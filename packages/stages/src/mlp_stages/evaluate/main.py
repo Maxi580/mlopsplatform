@@ -18,8 +18,8 @@ def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str) -> No
     resolved = PipelineRequest.model_validate_json(request)
     evaluate = resolved.evaluate
     model = evaluate.model
-    if model == config.FINETUNE_OUTPUT:
-        model = pipeline_output(resolved.name, pipeline_id)
+    if model in (config.FINETUNE_OUTPUT, config.QUANTIZE_OUTPUT):
+        model = pipeline_output(resolved.name, pipeline_id, model)
     run_id = os.environ["MLFLOW_RUN_ID"]
     client = mlflow.MlflowClient()
 
@@ -55,10 +55,11 @@ def log_metrics(client, run_id: str, name: str, metrics: dict[str, float] | None
         client.log_metric(run_id, key, value)
 
 
-def pipeline_output(name: str, pipeline_id: str) -> str:
-    """The `model:` Reference of the last Model Version the Pipeline registered."""
+def pipeline_output(name: str, pipeline_id: str, stage_output: str) -> str:
+    """The last Model Version the Pipeline registered as `@finetune` (a Phase's) or `@quantize`."""
+    tag = "quantization" if stage_output == config.QUANTIZE_OUTPUT else "phase"
     versions = mlflow.MlflowClient().search_model_versions(f"name='{name}'")
-    produced = [v for v in versions if v.tags.get("pipeline") == pipeline_id]
+    produced = [v for v in versions if v.tags.get("pipeline") == pipeline_id and tag in v.tags]
     if not produced:
-        raise SystemExit(f"Pipeline {pipeline_id} registered no Model Version to evaluate")
+        raise SystemExit(f"Pipeline {pipeline_id} registered no {stage_output} Model Version")
     return model_reference(name, max(int(version.version) for version in produced))

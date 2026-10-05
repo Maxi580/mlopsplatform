@@ -1,8 +1,6 @@
 import json
 import sys
 
-import mlflow
-
 from mlp_core import config
 from mlp_core.pipeline_request.schema import Reward
 from mlp_stages.sandbox import run_in_sandbox
@@ -45,6 +43,8 @@ def reward_function(name: str, source: str):
             log_metric(metric, len(failures))
         else:
             # TRL before 1.0, which Unsloth trains with, has none; the trainer's Run is active.
+            import mlflow
+
             mlflow.log_metric(metric, len(failures), step=trainer_state.global_step)
         if failures:
             print(

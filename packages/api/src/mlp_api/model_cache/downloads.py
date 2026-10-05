@@ -7,7 +7,8 @@ from mlp_core.pipeline_request.schema import PipelineRequest
 
 def fetched_references(state, request: PipelineRequest) -> list[str]:
     """Every Base Model and benchmark the Pipeline's fetch step pulls into the Model Cache."""
-    distill, finetune, evaluate = request.distill, request.finetune, request.evaluate
+    distill, finetune, quantize = request.distill, request.finetune, request.quantize
+    evaluate = request.evaluate
     base_models = []
     if distill and not distill.api_url:
         base_models.append(base_model_of(state, distill.teacher))
@@ -16,6 +17,8 @@ def fetched_references(state, request: PipelineRequest) -> list[str]:
         base_models += [
             base_model_of(state, phase.teacher) for phase in finetune.phases if phase.teacher
         ]
+    if quantize:
+        base_models.append(base_model_of(state, quantize.model))
     if evaluate:
         base_models.append(base_model_of(state, evaluate.model))
     benchmarks = evaluate.benchmarks if evaluate else []
@@ -23,7 +26,7 @@ def fetched_references(state, request: PipelineRequest) -> list[str]:
 
 
 def base_model_of(state, model: str) -> str | None:
-    """The Base Model the model is or is built on; None for an Endpoint or `@finetune`."""
+    """The Base Model the model is or is built on; None for an Endpoint or a Stage's output."""
     if model.startswith("hf:"):
         return model
     if model.startswith("model:"):

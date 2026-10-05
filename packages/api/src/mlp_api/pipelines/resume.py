@@ -23,7 +23,9 @@ def plan_resume(state, pipeline_id: int) -> Resume:
     existing = {model_reference(found.name, found.version) for found in registered}
     finished = {i: ref for i, ref in enumerate(earlier.model_versions) if ref in existing}
     for found in registered:
-        if found.name == request.name and found.tags.get("pipeline") == str(pipeline_id):
+        made_here = found.name == request.name and found.tags.get("pipeline") == str(pipeline_id)
+        # A quantized copy has no Phase; `quantize` runs again.
+        if made_here and "phase" in found.tags:
             finished[int(found.tags["phase"]) - 1] = model_reference(found.name, found.version)
     model_versions = []
     while len(model_versions) in finished:

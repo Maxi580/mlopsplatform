@@ -44,6 +44,10 @@ def smoke_test(
         bool,
         typer.Option(help="Stop a Phase after a Checkpoint, then resume it; runs a custom one"),
     ] = False,
+    quantize: Annotated[
+        bool,
+        typer.Option(help="Quantize with each scheme, and an Adapter; runs a custom one"),
+    ] = False,
 ) -> None:
     """Run the Smoke Test, every case or only the named ones, and print each result."""
     # 1. The complete Smoke Test, or a custom one when cases are named.
@@ -66,6 +70,8 @@ def smoke_test(
         selection["weights"] = True
     if resume:
         selection["resume"] = True
+    if quantize:
+        selection["quantize"] = True
     with api_client() as client:
         if selection:
             response = client.post(api_paths.SMOKE_TEST_CUSTOM, json=selection)

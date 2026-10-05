@@ -102,7 +102,7 @@ How a Pipeline Request names a Base Model (`hf:org/name@revision`) or a Dataset 
 _Avoid_: Path, URI
 
 **Registered Model**:
-A named model that a Pipeline produced. Every `finetune` output becomes a new Model Version of one. Base Models are not Registered Models.
+A named model that a Pipeline produced. Every `finetune` and `quantize` output becomes a new Model Version of one. Base Models are not Registered Models.
 _Avoid_: Finetuned model, checkpoint (when meaning the platform concept)
 
 **Model Version**:

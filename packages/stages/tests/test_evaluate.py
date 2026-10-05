@@ -238,14 +238,23 @@ def test_an_endpoint_is_evaluated_through_its_service_without_a_vllm_of_its_own(
     assert "model=chat,base_url=http://endpoint-chat.mlp.svc:8000/v1/completions" in model_args
 
 
-def test_the_output_of_finetune_is_the_pipelines_last_model_version_on_its_base(step):
+@pytest.fixture
+def pipeline_outputs(step):
+    """Pipeline 7's Phases registered versions 1 and 2, its `quantize` 4; 3 is another's."""
     tags = {"weights": "adapter", "base_model": BASE_MODEL, "pipeline": "7"}
     for version in (1, 2):
+        phase = {**tags, "phase": str(version)}
         step.mlflow.versions[("qwen-sft", version)] = SimpleNamespace(
-            version=str(version), tags=tags
+            version=str(version), tags=phase
         )
-    step.mlflow.versions[("qwen-sft", 3)] = SimpleNamespace(version="3", tags={"pipeline": "8"})
+    other = {"pipeline": "8", "phase": "1"}
+    step.mlflow.versions[("qwen-sft", 3)] = SimpleNamespace(version="3", tags=other)
+    quantized = {"weights": "full", "pipeline": "7", "quantization": "fp8-dynamic"}
+    step.mlflow.versions[("qwen-sft", 4)] = SimpleNamespace(version="4", tags=quantized)
 
+
+@pytest.mark.usefixtures("pipeline_outputs")
+def test_the_output_of_finetune_is_the_pipelines_last_phases_model_version_on_its_base(step):
     step.run("@finetune")
 
     [vllm] = step.vllm.commands
@@ -253,6 +262,14 @@ def test_the_output_of_finetune_is_the_pipelines_last_model_version_on_its_base(
     lora = option(vllm, "--lora-modules")
     assert lora.startswith("qwen-sft=") and lora.endswith("qwen-sft-2")
     assert option(vllm, "--max-lora-rank") == "16"
+
+
+@pytest.mark.usefixtures("pipeline_outputs")
+def test_the_output_of_quantize_is_the_pipelines_quantized_model_version(step):
+    step.run("@quantize")
+
+    [vllm] = step.vllm.commands
+    assert vllm[2].endswith("qwen-sft-4")
 
 
 def test_a_vllm_that_exits_before_serving_fails_the_step(step):
@@ -349,7 +366,7 @@ def test_without_performance_settings_no_performance_run_happens(step):
 
 
 def test_an_adapters_requests_are_tokenized_with_its_base_models_tokenizer(step):
-    tags = {"weights": "adapter", "base_model": BASE_MODEL, "pipeline": "7"}
+    tags = {"weights": "adapter", "base_model": BASE_MODEL, "pipeline": "7", "phase": "1"}
     step.mlflow.versions[("qwen-sft", 1)] = SimpleNamespace(version="1", tags=tags)
 
     step.run("@finetune", benchmarks=[], performance={})

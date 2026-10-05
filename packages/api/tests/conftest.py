@@ -71,6 +71,8 @@ class FakeHuggingFace:
         self.files = {}
         # Repo -> the size of all its files.
         self.sizes = {}
+        # Dataset repo -> its files.
+        self.dataset_files = {}
 
     def find_model(self, repo, revision, token):
         self.lookups.append((repo, revision, token))
@@ -81,6 +83,9 @@ class FakeHuggingFace:
 
     def model_file(self, repo, commit, path, token):
         return self.files.get(repo, {}).get(path)
+
+    def dataset_file(self, repo, commit, path):
+        return self.dataset_files[repo][path]
 
     def download_model(self, repo, commit, directory):
         for path, content in self.files[repo].items():

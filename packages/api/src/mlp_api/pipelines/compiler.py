@@ -87,16 +87,24 @@ def compile_pipeline(
                     optional=True,
                 )
 
-            # 2. The Stages, one after another in their fixed order; `@distill` is distill's output.
+            # 2. The Stages, one after another in their fixed order; `@distill` is distill's output,
+            # `@finetune` the last Phase's or, once every Phase finished, the last one reused.
             stages, distilled = [], resume.distilled_dataset or ""
+            finetuned = (resume.model_versions or [""])[-1]
+            gpus = settings.gpus_per_stage
             if request.distill and not distilled:
-                stages.append(distill_step(pipeline_id, request, steps, settings.gpus_per_stage))
+                stages.append(distill_step(pipeline_id, request, steps, gpus))
                 distilled = stages[-1].outputs["dataset"]
             if request.finetune:
-                stages += finetune_steps(pipeline_id, request, steps, settings, distilled, resume)
+                phases = finetune_steps(pipeline_id, request, steps, settings, distilled, resume)
+                stages += phases
+                if phases:
+                    finetuned = phases[-1].outputs["model_version"]
+            if request.quantize:
+                stages.append(quantize_step(pipeline_id, request, finetuned, steps, gpus))
             if request.evaluate:
                 evaluated = evaluated_request(request, resume)
-                stages.append(evaluate_step(pipeline_id, evaluated, steps, settings.gpus_per_stage))
+                stages.append(evaluate_step(pipeline_id, evaluated, steps, gpus))
             if request.serve:
                 stages.append(serve_step(pipeline_id, steps))
             for stage in stages:
@@ -159,6 +167,10 @@ def compile_smoke_test(
                 names = [f"finetune-{phase.algorithm}" for phase in request.finetune.phases]
                 tasks = finetune_steps(pipeline_id, request, steps, settings, distilled)
                 case_steps += zip(names, tasks, strict=True)
+            if request.quantize:
+                case_steps.append(
+                    ("quantize", quantize_step(pipeline_id, request, "", steps, gpus))
+                )
             if request.evaluate:
                 case_steps.append(("evaluate", evaluate_step(pipeline_id, request, steps, gpus)))
             if request.serve:
@@ -296,6 +308,28 @@ def finetune_steps(
     return tasks
 
 
+def quantize_step(
+    pipeline_id: int, request: PipelineRequest, finetuned, steps: StepEnvironment, gpus: int
+):
+    """The step that quantizes the model and registers it; `finetuned` is `@finetune`'s output."""
+
+    @dsl.container_component
+    def quantize(
+        pipeline_id: str, request: str, finetuned: str, model_version: dsl.OutputPath(str)
+    ):
+        return dsl.ContainerSpec(
+            image=steps.stages_image,
+            command=["mlp-stage", "quantize"],
+            args=[pipeline_id, request, finetuned, model_version],
+        )
+
+    task = quantize(
+        pipeline_id=str(pipeline_id), request=request.model_dump_json(), finetuned=finetuned
+    )
+    use_vllm(task, steps, gpus)
+    return task
+
+
 def evaluate_step(
     pipeline_id: int, request: PipelineRequest, steps: StepEnvironment, gpus_per_stage: int
 ):
@@ -340,8 +374,8 @@ def endpoint_service_url(name: str, namespace: str) -> str:
     )
 
 
-# A step that may start vLLM: it reads the Model Cache offline and Model Versions from the object
-# store, on its GPUs if it has any.
+# A step that loads models, e.g. on vLLM: it reads the Model Cache offline and Model Versions from
+# the object store, on its GPUs if it has any.
 def use_vllm(task, steps: StepEnvironment, gpus: int) -> None:
     use_model_cache(task, steps)
     task.set_env_variable("HF_HUB_OFFLINE", "1")

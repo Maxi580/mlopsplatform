@@ -19,6 +19,7 @@ def build_pipeline_request(
     serve: bool = False,
     evaluate: bool = False,
     distill: bool = False,
+    quantize: bool = False,
 ) -> dict:
     """A Pipeline Request holding only the named Stages and Phases, in the order named."""
     request = {"name": name or profile.get("name")}
@@ -33,6 +34,8 @@ def build_pipeline_request(
         # A variant's algorithm defaults to its name, so `sft:` needs no `algorithm: sft`.
         finetune["phases"] = [{"algorithm": phase, **variants[phase]} for phase in finetune_phases]
         request["finetune"] = finetune
+    if quantize:
+        request["quantize"] = profile.get("quantize") or {}
     if evaluate:
         request["evaluate"] = profile.get("evaluate") or {}
     if serve:

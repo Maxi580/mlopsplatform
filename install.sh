@@ -270,6 +270,12 @@ install_mlflow() {
     --wait --timeout 10m
 }
 
+# The rows `quantize` calibrates on by default, registered once the platform bucket exists.
+register_calibration_dataset() {
+  log "Registering the default calibration Dataset"
+  kubectl -n "$(value .namespaces.platform)" exec deploy/api -- register-calibration-dataset
+}
+
 write_ca_certificate() {
   local cert_manager
   cert_manager=$(value .namespaces.certManager)
@@ -341,6 +347,7 @@ stop_running_work
 set_shared_password
 install_kubeflow_pipelines
 install_mlflow
+register_calibration_dataset
 write_ca_certificate
 remove_outdated_images
 prune_build_cache

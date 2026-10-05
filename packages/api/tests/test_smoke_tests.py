@@ -20,7 +20,19 @@ WITHOUT_SERVING = {
     "finetune": {"phases": ["sft"], "methods": ["lora"], "backends": ["hf"]},
     "uploaded_model": True,
 }
-SERVING_CASES = ["serve-base-model", "serve-full-weights", "serve-adapter", "serve-merged"]
+QUANTIZE_CASES = [
+    "quantize-fp8-dynamic",
+    "quantize-w4a16-gptq",
+    "quantize-w4a16-awq",
+    "quantize-w8a8-int8",
+]
+SERVING_CASES = [
+    "serve-base-model",
+    "serve-full-weights",
+    "serve-adapter",
+    "serve-merged",
+    *(f"serve-{case}" for case in QUANTIZE_CASES),
+]
 # Every Phase algorithm with every method of the `hf` backend, and those `unsloth` trains.
 UNSLOTH = {"sft", "dpo", "kto", "grpo-lora", "grpo-qlora", "rloo-lora", "rloo-qlora"}
 GRID_CASES = [
@@ -112,6 +124,8 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         *WEIGHT_CASES,
         "resume-interrupted",
         "resume",
+        *QUANTIZE_CASES,
+        "quantize-adapter",
         "evaluate-base-model",
         "evaluate-adapter",
         "evaluate-coding",
@@ -146,6 +160,12 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
         ({}, ["fetch"]),
         ({"uploaded_model": True}, ["fetch", "uploaded-model"]),
         ({"sandbox": True}, ["fetch", "sandbox"]),
+        ({"quantize": True}, ["fetch", *QUANTIZE_CASES]),
+        (
+            {"quantize": True, "finetune": {"phases": ["sft"], "methods": ["lora"]}},
+            ["fetch", "sft-lora-hf", "sft-lora-unsloth", "sft-assistant-only-hf"]
+            + ["sft-assistant-only-unsloth", *QUANTIZE_CASES, "quantize-adapter"],
+        ),
         (
             {"evaluate": True},
             ["fetch", "evaluate-base-model", "evaluate-coding", "evaluate-evalscope"]
@@ -202,7 +222,7 @@ def test_a_finetune_case_trains_the_pinned_base_model_on_its_uploaded_bundled_da
     [phase] = request["finetune"]["phases"]
     assert phase["dataset"] == f"dataset:{name}-sft@1"
     datasets = logged_in_api.get(api_paths.DATASETS).json()
-    bundled = ("distill", "distillation", "dpo", "grpo", "kto", "rloo", "sft")
+    bundled = ("calibration", "distill", "distillation", "dpo", "grpo", "kto", "rloo", "sft")
     assert [d["name"] for d in datasets] == [f"{name}-{dataset}" for dataset in bundled]
 
 
@@ -415,6 +435,50 @@ def test_the_evaluate_cases_run_a_few_samples_of_their_benchmark_on_the_base_mod
     }
 
 
+def test_the_quantize_cases_quantize_the_base_model_calibrating_on_bundled_rows_and_an_adapter(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api).json()["name"]
+
+    quantized = {}
+    for case in [*QUANTIZE_CASES, "quantize-adapter"]:
+        parameters = node(cluster, case)["inputs"]["parameters"]
+        request = json.loads(parameters["request"]["runtimeValue"]["constant"])
+        assert request["name"] == f"{name}-{case}"
+        quantize = request["quantize"]
+        quantized[case] = (quantize["model"], quantize["scheme"], quantize["calibration"])
+    base_model = f"hf:{QWEN}@{COMMIT}"
+    calibration = {"dataset": f"dataset:{name}-calibration@1", "samples": 16, "max_length": 256}
+    assert quantized == {
+        "quantize-fp8-dynamic": (base_model, "fp8-dynamic", None),
+        "quantize-w4a16-gptq": (base_model, "w4a16-gptq", calibration),
+        "quantize-w4a16-awq": (base_model, "w4a16-awq", calibration),
+        "quantize-w8a8-int8": (base_model, "w8a8-int8", calibration),
+        "quantize-adapter": (f"model:{name}-sft-lora-hf@1", "fp8-dynamic", None),
+    }
+
+
+def test_each_quantized_model_is_served_once_its_quantize_case_registered_it(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
+):
+    name = start(logged_in_api, {"quantize": True, "serving": True}).json()["name"]
+    quantized = f"{name}-quantize-w4a16-awq"
+    register(model_registry, object_store, quantized, 1, weights="full")
+    steps = {"quantize-w4a16-awq": "SUCCEEDED", "quantize-w8a8-int8": "FAILED"}
+    cluster.runs["run-1"] = KubeflowRun("RUNNING", None, steps)
+
+    reconcile(logged_in_api)
+
+    assert running_endpoints(logged_in_api)[f"{name}-serve-quantize-w4a16-awq"] == (
+        f"model:{quantized}@1"
+    )
+    cases = smoke_test(logged_in_api)["cases"]
+    assert (cases["serve-quantize-w8a8-int8"], cases["serve-quantize-fp8-dynamic"]) == (
+        "failed",
+        "pending",
+    )
+
+
 def test_the_tool_calling_case_serves_the_base_model_with_its_tool_parser(
     logged_in_api, qwen_on_the_hub, cluster
 ):
@@ -525,7 +589,7 @@ def test_its_datasets_stay_while_it_runs(logged_in_api, qwen_on_the_hub, cluster
 
     reconcile(logged_in_api)
 
-    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 7
+    assert len(logged_in_api.get(api_paths.DATASETS).json()) == 8
 
 
 def test_a_smoke_test_that_could_not_start_is_failed_and_cleaned_up(
@@ -585,6 +649,8 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "sft-dpo-chain",
         *[case for case in WEIGHT_CASES if not case.endswith("-finetune-sft")],
         "resume",
+        *QUANTIZE_CASES,
+        "quantize-adapter",
         *EVALUATE_CASES,
         "finetune-serve",
         *SERVING_CASES,
@@ -678,7 +744,8 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
 ):
     name = start(logged_in_api).json()["name"]
     register_adapter(model_registry, object_store, f"{name}-sft-lora-hf", f"hf:{QWEN}@{COMMIT}")
-    register(model_registry, object_store, f"{name}-sft-qlora-merged-hf", 1, weights="full")
+    for full_weights in ("sft-qlora-merged-hf", *QUANTIZE_CASES):
+        register(model_registry, object_store, f"{name}-{full_weights}", 1, weights="full")
     steps = dict.fromkeys(case_names(cluster), "SUCCEEDED")
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, steps)
 

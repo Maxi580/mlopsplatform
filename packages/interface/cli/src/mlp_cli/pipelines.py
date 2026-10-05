@@ -14,6 +14,9 @@ DryRun = Annotated[bool, typer.Option(help="Only list what the Pipeline would do
 Serve = Annotated[bool, typer.Option(help="End with an Endpoint for the last Model Version")]
 Evaluate = Annotated[bool, typer.Option(help="Run the Profile's benchmarks on its model")]
 Distill = Annotated[bool, typer.Option(help="First distill the Profile's prompts with its Teacher")]
+Quantize = Annotated[
+    bool, typer.Option(help="Quantize the model as the Profile's quantize block says")
+]
 
 
 def validate(
@@ -22,9 +25,10 @@ def validate(
     evaluate: Evaluate = False,
     serve: Serve = False,
     distill: Distill = False,
+    quantize: Quantize = False,
 ) -> None:
     """Check the Pipeline Request built from the CLI Profile, without running anything."""
-    chosen = (finetune, name, evaluate, serve, distill)
+    chosen = (finetune, name, evaluate, serve, distill, quantize)
     resolved = send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen)
     typer.echo(yaml.safe_dump(resolved["request"], sort_keys=False))
     typer.echo("Valid")
@@ -36,10 +40,11 @@ def run(
     evaluate: Evaluate = False,
     serve: Serve = False,
     distill: Distill = False,
+    quantize: Quantize = False,
     dry_run: DryRun = False,
 ) -> None:
     """Submit the Pipeline Request built from the CLI Profile; returns once it is queued."""
-    chosen = (finetune, name, evaluate, serve, distill)
+    chosen = (finetune, name, evaluate, serve, distill, quantize)
     if dry_run:
         print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen))
         return
@@ -98,14 +103,20 @@ def cancel(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")])
 
 
 def send_pipeline_request(
-    path: str, finetune: str, name: str | None, evaluate: bool, serve: bool, distill: bool
+    path: str,
+    finetune: str,
+    name: str | None,
+    evaluate: bool,
+    serve: bool,
+    distill: bool,
+    quantize: bool,
 ) -> dict:
     """The API's answer to the Profile's Pipeline Request and Secrets; exits on a rejection."""
     # 1. The request, with only the named Stages and Phases.
     profile = load_profile()
     try:
         phases = [p for p in finetune.split(",") if p]
-        request = build_pipeline_request(profile, name, phases, serve, evaluate, distill)
+        request = build_pipeline_request(profile, name, phases, serve, evaluate, distill, quantize)
     except ValueError as error:
         typer.echo(error, err=True)
         raise typer.Exit(1) from None

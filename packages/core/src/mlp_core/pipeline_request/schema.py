@@ -15,14 +15,21 @@ from mlp_core.config import (
     ASSISTANT_ONLY_LOSS_INFOBOX,
     BACKENDS,
     BENCHMARKS,
+    CALIBRATION_DATASET,
+    CALIBRATION_MAX_LENGTH,
+    CALIBRATION_SAMPLES,
     DISTILL_OUTPUT,
     FINETUNE_OUTPUT,
     PERFORMANCE_CONCURRENCY,
     PERFORMANCE_OUTPUT_TOKENS,
     PERFORMANCE_PROMPT_TOKENS,
     PERFORMANCE_REQUESTS,
+    QUANTIZATION_SCHEMES,
+    QUANTIZE_IGNORE,
+    QUANTIZE_OUTPUT,
     REWARD_SOURCE_MAX_LENGTH,
     REWARDS_INFOBOX,
+    UNCALIBRATED_SCHEMES,
     WEIGHT_METHODS,
 )
 from mlp_core.endpoint_spec import ENDPOINT_NAME_PATTERN, EndpointName, ServingOptions
@@ -204,6 +211,39 @@ class Distill(Strict):
         return self
 
 
+class Calibration(Strict):
+    """The rows a scheme measures activations on, to choose its scales."""
+
+    # A Dataset of messages or text rows; the install registers the default one.
+    dataset: DatasetReference = f"dataset:{CALIBRATION_DATASET}"
+    samples: int = Field(CALIBRATION_SAMPLES, gt=0)
+    # Tokens per sample; longer rows are cut.
+    max_length: int = Field(CALIBRATION_MAX_LENGTH, gt=0)
+
+
+class Quantize(Strict):
+    """A quantized copy of a model by llm-compressor, registered as full weights."""
+
+    # Validation names `@finetune` when none is given; an Adapter is merged into its base first.
+    model: BaseModelReference | ModelReference | Literal[FINETUNE_OUTPUT] | None = None
+    scheme: Literal[tuple(QUANTIZATION_SCHEMES)]
+    # Layers kept unquantized.
+    ignore: list[str] = QUANTIZE_IGNORE
+    calibration: Calibration | None = None
+
+    @model_validator(mode="after")
+    def check_calibration(self) -> "Quantize":
+        calibrated = self.scheme not in UNCALIBRATED_SCHEMES
+        if calibrated and self.calibration is None:
+            raise ValueError(
+                f"{self.scheme} calibrates on Dataset rows; add `calibration`, which `{{}}` "
+                "fills with the default calibration Dataset"
+            )
+        if not calibrated and self.calibration is not None:
+            raise ValueError(f"{self.scheme} needs no `calibration`; leave it out")
+        return self
+
+
 class Performance(Strict):
     """Serving performance by GuideLLM: synthetic chat requests, a fixed number at once."""
 
@@ -216,9 +256,14 @@ class Performance(Strict):
 class Evaluate(Strict):
     """Benchmarks from the catalog, run against a model or a running Endpoint."""
 
-    # Validation names `@finetune`, the Pipeline's last Model Version, when none is given.
+    # Validation names the Pipeline's last Model Version, `@quantize` or `@finetune`, when none is
+    # given.
     model: (
-        BaseModelReference | ModelReference | EndpointReference | Literal[FINETUNE_OUTPUT] | None
+        BaseModelReference
+        | ModelReference
+        | EndpointReference
+        | Literal[FINETUNE_OUTPUT, QUANTIZE_OUTPUT]
+        | None
     ) = None
     benchmarks: list[Literal[tuple(BENCHMARKS)]] = []
     # Samples per task, for a quick look; scores on fewer samples don't compare with full runs.
@@ -247,13 +292,16 @@ class PipelineRequest(Strict):
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
     distill: Distill | None = None
     finetune: Finetune | None = None
+    quantize: Quantize | None = None
     evaluate: Evaluate | None = None
     serve: Serve | None = None
 
     @model_validator(mode="after")
     def check_stages(self) -> "PipelineRequest":
-        if not (self.distill or self.finetune or self.evaluate):
-            raise ValueError("enable at least one of `distill`, `finetune` and `evaluate`")
-        if self.serve and not self.finetune:
-            raise ValueError("`serve` serves the output of `finetune`, which isn't enabled")
+        if not (self.distill or self.finetune or self.quantize or self.evaluate):
+            raise ValueError(
+                "enable at least one of `distill`, `finetune`, `quantize` and `evaluate`"
+            )
+        if self.serve and not (self.finetune or self.quantize):
+            raise ValueError("`serve` serves the output of `finetune` or `quantize`; enable either")
         return self

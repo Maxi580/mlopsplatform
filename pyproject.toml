@@ -8,8 +8,15 @@ members = ["packages/*", "packages/interface/cli"]
 exclude = ["packages/interface"]
 
 [tool.uv]
-# Unsloth caps TRL below the version the hf backend trains with, so each has its own image.
-conflicts = [[{ package = "mlp-stages", extra = "hf" }, { package = "mlp-stages", extra = "unsloth" }]]
+# Unsloth caps TRL below the version the hf backend trains with, so each has its own image; the
+# stages image's llm-compressor needs newer `datasets` and compressed-tensors than either.
+conflicts = [
+    [
+        { package = "mlp-stages", extra = "hf" },
+        { package = "mlp-stages", extra = "unsloth" },
+        { package = "mlp-stages", extra = "evaluate" },
+    ],
+]
 
 [dependency-groups]
 dev = ["pytest", "pyyaml", "httpx2", "ruff", "trustme"]

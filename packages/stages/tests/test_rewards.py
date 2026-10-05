@@ -151,7 +151,7 @@ def test_each_function_is_named_after_its_reward_for_trls_metrics(local_sandbox)
 
 def test_on_trl_before_1_0_errors_are_logged_into_the_active_run(local_sandbox, monkeypatch):
     # Unsloth trains on TRL 0.24, which hands reward functions no log_metric.
-    import mlflow
+    mlflow = pytest.importorskip("mlflow", reason="needs the hf or unsloth extra")
 
     logged = []
     monkeypatch.setattr(mlflow, "log_metric", lambda *args, **kwargs: logged.append((args, kwargs)))

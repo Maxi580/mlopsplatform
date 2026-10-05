@@ -61,6 +61,11 @@ class HuggingFace:
         except (HfHubHTTPError, httpx.HTTPError):
             return None
 
+    def dataset_file(self, repo: str, commit: str, path: str) -> bytes:
+        return Path(
+            hf_hub_download(repo, path, repo_type="dataset", revision=commit, token=False)
+        ).read_bytes()
+
     def download_model(self, repo: str, commit: str, directory: Path) -> None:
         snapshot_download(repo, revision=commit, local_dir=directory, token=False)
 

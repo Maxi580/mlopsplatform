@@ -214,10 +214,42 @@ VLLM_TOOL_PARSERS = (
 VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 # Always run in this order.
 STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
-# Names the Pipeline's last Model Version, before `finetune` registered it.
+# Names the Model Version the Pipeline's last Phase registers.
 FINETUNE_OUTPUT = "@finetune"
 # Names the Distillation Dataset Version the Pipeline's `distill` step registers.
 DISTILL_OUTPUT = "@distill"
+# Names the quantized Model Version the Pipeline's `quantize` step registers.
+QUANTIZE_OUTPUT = "@quantize"
+# Quantization scheme -> the llm-compressor modifiers that apply it, in order, as a recipe names
+# them; `quantize` adds the block's `ignore` to each one with a `scheme`.
+QUANTIZATION_SCHEMES = {
+    "fp8-dynamic": {"QuantizationModifier": {"targets": ["Linear"], "scheme": "FP8_DYNAMIC"}},
+    "w4a16-gptq": {"GPTQModifier": {"targets": ["Linear"], "scheme": "W4A16"}},
+    "w4a16-awq": {
+        "AWQModifier": {"duo_scaling": "both"},
+        "QuantizationModifier": {"targets": ["Linear"], "scheme": "W4A16_ASYM"},
+    },
+    # SmoothQuant first moves activation outliers into the weights, so 8-bit activations hold up.
+    "w8a8-int8": {
+        "SmoothQuantModifier": {"smoothing_strength": 0.8},
+        "GPTQModifier": {"targets": ["Linear"], "scheme": "W8A8"},
+    },
+}
+# Its scales come from the weights alone; every other scheme calibrates on Dataset rows.
+UNCALIBRATED_SCHEMES = ("fp8-dynamic",)
+QUANTIZE_IGNORE = ["lm_head"]
+CALIBRATION_SAMPLES = 512
+CALIBRATION_MAX_LENGTH = 2048
+CALIBRATION_ROW_FORMATS = ("messages", "text")
+# `quantize` calibrates on `samples` rows drawn at random, the same ones each run.
+CALIBRATION_SHUFFLE_SEED = 42
+# The default calibration Dataset, which install.sh registers from these Hugging Face rows (#43).
+CALIBRATION_DATASET = "llm-compression-calibration"
+CALIBRATION_SOURCE = {
+    "repo": "neuralmagic/LLM_compression_calibration",
+    "commit": "85e4a40773bf4cbc9dc17d6c63ee69ccd8390b6d",
+    "file": "calibration.json.gz",
+}
 # Secret slot -> the environment variable of the steps that receive it. The API adds
 # `step_token` itself, for the `distill` and `serve` steps to call the API with.
 SECRET_ENV_VARS = {
@@ -520,14 +552,24 @@ SMOKE_TEST_ASSISTANT_ONLY_PHASE = {
 SMOKE_TEST_RESUME_CASE = "resume"
 # Runs right after `fetch`: a Pipeline step sends snippets to the Sandbox and checks its limits.
 SMOKE_TEST_SANDBOX_CASE = "sandbox"
+# Quantize case -> its scheme. One case per scheme quantizes the Base Model, calibrating briefly
+# on the bundled `calibration` rows where the scheme needs data; the Adapter case quantizes the
+# Adapter of the first finetune case that keeps one, merged into its base first.
+SMOKE_TEST_QUANTIZE_ADAPTER_CASE = "quantize-adapter"
+SMOKE_TEST_QUANTIZE_CASES = {
+    **{f"quantize-{scheme}": scheme for scheme in QUANTIZATION_SCHEMES},
+    SMOKE_TEST_QUANTIZE_ADAPTER_CASE: "fp8-dynamic",
+}
+SMOKE_TEST_CALIBRATION = {"samples": 16, "max_length": 256}
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
-# uploaded tiny full-weight model, the Adapter of the first finetune case that keeps one, and the
-# merged QLoRA model.
+# uploaded tiny full-weight model, the Adapter of the first finetune case that keeps one, the
+# merged QLoRA model, and the Base Model quantized with each scheme.
 SMOKE_TEST_SERVING_CASES = (
     "serve-base-model",
     "serve-full-weights",
     "serve-adapter",
     "serve-merged",
+    *(f"serve-quantize-{scheme}" for scheme in QUANTIZATION_SCHEMES),
 )
 # Each serving case's Endpoint answers one real chat request, which its stats must then count.
 SMOKE_TEST_CHAT_REQUEST = {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8}

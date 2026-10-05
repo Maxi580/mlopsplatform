@@ -60,6 +60,9 @@ def validate_pipeline_request(
             )
         elif finetune:
             finetune.from_ = pin_full_weights(model_registry, finetune.from_)
+            token = secrets.get("hf_token")
+            if is_quantized(finetune.from_, token, hugging_face, model_registry, object_store):
+                raise ValueError(f"{finetune.from_} is quantized; start from unquantized weights")
         starting_model_found = True
     except ValueError as reason:
         errors.append(
@@ -99,8 +102,15 @@ def validate_pipeline_request(
             except ValueError as reason:
                 errors.append(error(["finetune", "phases", index, "teacher"], str(reason)))
 
-    # 8. The model `evaluate` runs on, pinned; `finetune`'s output unless named. BFCL scores its
-    # tool calls as `serve` would parse them, with the parser of the model `finetune` starts from.
+    # 8. What `quantize` reads: a model not quantized yet, `finetune`'s output unless named, and
+    # the rows it calibrates on.
+    if request.quantize:
+        errors += pin_quantize(
+            request, secrets.get("hf_token"), hugging_face, engine, model_registry, object_store
+        )
+
+    # 9. The model `evaluate` runs on, pinned; the Pipeline's last Model Version unless named. BFCL
+    # scores its tool calls as `serve` would parse them, with the parser of the model it came from.
     evaluate = request.evaluate
     if evaluate:
         token = secrets.get("hf_token")
@@ -110,6 +120,8 @@ def validate_pipeline_request(
             )
             if any(benchmark.startswith("bfcl:") for benchmark in evaluate.benchmarks):
                 model = evaluate.model
+                if model == config.QUANTIZE_OUTPUT:
+                    model = request.quantize.model
                 if model == config.FINETUNE_OUTPUT:
                     model = finetune.starting_model
                 try:
@@ -121,7 +133,7 @@ def validate_pipeline_request(
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
 
-    # 9. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
+    # 10. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
     if request.serve:
         name = request.serve.name = request.serve.name or request.name
         if not is_endpoint_name(name):
@@ -339,6 +351,61 @@ def pin_distill(
     return errors
 
 
+def pin_quantize(
+    request: PipelineRequest,
+    token: str | None,
+    hugging_face: HuggingFace,
+    engine: Engine,
+    model_registry: MLflow,
+    object_store: ObjectStore,
+) -> list[dict]:
+    """Every error with its path, after pinning the model to quantize and its calibration rows."""
+    # 1. `finetune`'s output unless named, else a pinned model whose weights aren't quantized.
+    quantize, errors = request.quantize, []
+    try:
+        if quantize.model in (None, config.FINETUNE_OUTPUT):
+            if request.finetune is None:
+                raise ValueError("`finetune` isn't enabled, so name the model to quantize")
+            quantize.model = config.FINETUNE_OUTPUT
+        else:
+            quantize.model = pin_served_model(
+                quantize.model, token, hugging_face, engine, model_registry
+            )
+            if is_quantized(quantize.model, token, hugging_face, model_registry, object_store):
+                raise ValueError(f"{quantize.model} is already quantized")
+    except ValueError as reason:
+        errors.append(error(["quantize", "model"], str(reason)))
+
+    # 2. The rows a calibrated scheme measures activations on.
+    if quantize.calibration:
+        row_formats = config.CALIBRATION_ROW_FORMATS
+        reads = f"`quantize` calibrates on {', '.join(row_formats)} rows"
+        try:
+            quantize.calibration.dataset = pin_dataset(
+                engine, quantize.calibration.dataset, row_formats, reads
+            )
+        except ValueError as reason:
+            errors.append(error(["quantize", "calibration", "dataset"], str(reason)))
+    return errors
+
+
+def is_quantized(
+    model: str,
+    token: str | None,
+    hugging_face: HuggingFace,
+    model_registry: MLflow,
+    object_store: ObjectStore,
+) -> bool:
+    """Whether the pinned model's weights are quantized; an Adapter's are its base's."""
+    if model.startswith("model:"):
+        found = find_referenced_model_version(model_registry, model)
+        if found.tags.get("weights") == "adapter":
+            base = found.tags["base_model"]
+            return is_quantized(base, token, hugging_face, model_registry, object_store)
+    read = model_file_reader(model, token, hugging_face, model_registry, object_store)
+    return "quantization_config" in json.loads(read("config.json") or "{}")
+
+
 def assistant_only_loss_errors(
     request: PipelineRequest,
     token: str | None,
@@ -473,12 +540,16 @@ def pin_evaluated_model(
     engine: Engine,
     model_registry: MLflow,
 ) -> str:
-    """`@finetune`, a pinned Base Model or Model Version, or a running Endpoint; else ValueError."""
+    """A Stage's output, a pinned Base Model or Model Version, or a running Endpoint; else error."""
     model = request.evaluate.model
-    if model in (None, config.FINETUNE_OUTPUT):
-        if request.finetune is None:
-            raise ValueError("`finetune` isn't enabled, so name the model to evaluate")
-        return config.FINETUNE_OUTPUT
+    if model is None:
+        model = config.QUANTIZE_OUTPUT if request.quantize else config.FINETUNE_OUTPUT
+    outputs = {config.FINETUNE_OUTPUT: request.finetune, config.QUANTIZE_OUTPUT: request.quantize}
+    if model in outputs:
+        if outputs[model] is None:
+            stage = model.removeprefix("@")
+            raise ValueError(f"`{stage}` isn't enabled, so name the model to evaluate")
+        return model
     if model.startswith("endpoint:"):
         name = split_endpoint_reference(model)
         if request.evaluate.serving:

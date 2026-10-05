@@ -3,20 +3,15 @@ import os
 import tempfile
 from pathlib import Path
 
-import mlflow
 import torch
 from datasets import Dataset
-from huggingface_hub import snapshot_download
 
 from mlp_core import config
-from mlp_core.pipeline_request.references import (
-    checkpoint_prefix,
-    split_base_model_reference,
-    split_model_reference,
-)
+from mlp_core.pipeline_request.references import checkpoint_prefix
 from mlp_core.pipeline_request.schema import PipelineRequest
 from mlp_stages.dataset_versions import download_dataset_version
-from mlp_stages.finetune.model_version import register_model_version
+from mlp_stages.finetune.model_version import phase_tags
+from mlp_stages.model_versions import model_with_adapter, register_model_version
 
 
 def finetune(
@@ -106,45 +101,12 @@ def finetune(
         backend.save_model_version(trainer, phase, tokenizer, model_directory, base_directory)
         model_type = trainer.model.config.model_type
         parent = previous_model_version or starting_model
-        registered = register_model_version(
-            model_directory,
-            run_id,
-            resolved,
-            pipeline_id,
-            index,
-            parent,
-            base,
-            tokenizer,
-            model_type,
-        )
+        tags = phase_tags(resolved, pipeline_id, index, parent, base, tokenizer, model_type)
+        registered = register_model_version(model_directory, run_id, resolved, tags)
         Path(model_version).write_text(registered)
 
         # 8. The Phase succeeded, so its Checkpoints are no longer needed.
         checkpoints.delete_checkpoints(own_checkpoints)
-
-
-def model_with_adapter(reference: str, scratch: Path) -> tuple[str, Path, Path | None]:
-    """The model's base, the base's files, and the files of the model's Adapter, if it is one."""
-    files = model_files(reference, scratch / "model")
-    if reference.startswith("hf:"):
-        return reference, files, None
-    name, version = split_model_reference(reference)
-    tags = mlflow.MlflowClient().get_model_version(name, str(version)).tags
-    if tags["weights"] != "adapter":
-        return reference, files, None
-    base = tags["base_model"]
-    return base, model_files(base, scratch / "base"), files
-
-
-def model_files(reference: str, destination: Path) -> Path:
-    """Where the `hf:` or `model:` Reference's files lie: the Model Cache, or a download."""
-    if reference.startswith("hf:"):
-        repo, commit = split_base_model_reference(reference)
-        # fetch put it in the Model Cache; offline, this only finds it there.
-        return Path(snapshot_download(repo, revision=commit))
-    name, version = split_model_reference(reference)
-    uri = f"models:/{name}/{version}"
-    return Path(mlflow.artifacts.download_artifacts(uri, dst_path=str(destination)))
 
 
 # Rows of messages, which TRL renders with the chat template; TRL may only load after the backend.

@@ -28,6 +28,8 @@ from mlp_api.smoke_tests.cases import (
     evaluate_cases,
     finetune_case_request,
     finetune_cases,
+    quantize_case_request,
+    quantize_cases,
     run_order,
     serving_cases,
 )
@@ -50,8 +52,10 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
     # 2. Its Pipeline, whose name prefixes all it creates; the reconciler cleans up after it.
     name = datetime.now(UTC).strftime(config.SMOKE_TEST_NAME)
     trainings = finetune_cases(selection)
+    quantizations = quantize_cases(selection, trainings)
     evaluations = evaluate_cases(selection, trainings)
-    cases = dict.fromkeys(run_order(selection.sandbox, trainings, evaluations), "pending")
+    order = run_order(selection.sandbox, trainings, quantizations, evaluations)
+    cases = dict.fromkeys(order, "pending")
     pipeline_id = create_pipeline(engine, name, {}, cases=cases)
 
     try:
@@ -69,6 +73,8 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         bundled = {phase["algorithm"] for phases, _ in trainings.values() for phase in phases}
         if config.SMOKE_TEST_DISTILL_CASE in trainings:
             bundled.add("distill")
+        if quantizations:
+            bundled.add("calibration")
         for dataset in bundled:
             path = config.SMOKE_TEST_DATASETS_DIRECTORY / f"{dataset}.jsonl"
             upload_dataset_version(engine, state.object_store, f"{name}-{dataset}", path)
@@ -87,7 +93,19 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")
-        # An Adapter to evaluate is registered by its finetune case only once the run started.
+        # An Adapter to quantize or evaluate is registered by its finetune case only once the run
+        # started, so those requests skip validation.
+        for case, made_by in quantizations.items():
+            model = model_reference(f"{name}-{made_by}", 1) if made_by else base_model
+            data = quantize_case_request(case, name, model)
+            if made_by:
+                requests[case] = PipelineRequest.model_validate(data)
+                continue
+            requests[case], errors = validate_pipeline_request(
+                data, {}, state.hugging_face, engine, state.model_registry, state.object_store
+            )
+            if errors:
+                raise RuntimeError(f"case {case} is invalid: {errors}")
         for case, made_by in evaluations.items():
             model = model_reference(f"{name}-{made_by}", 1) if made_by else base_model
             data = evaluate_case_request(case, name, model)
@@ -96,7 +114,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         resolved = {case: request.model_dump(mode="json") for case, request in requests.items()}
 
         # 6. The serving cases, which the reconciler runs once their model exists.
-        serving = serving_cases(selection, trainings, name, base_model, uploaded)
+        serving = serving_cases(selection, trainings, quantizations, name, base_model, uploaded)
         set_pipeline(
             engine,
             pipeline_id,
