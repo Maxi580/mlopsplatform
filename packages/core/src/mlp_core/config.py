@@ -327,7 +327,8 @@ JWT_ALGORITHM = "HS256"
 STEP_TOKEN_CLAIM = "pipeline_step"
 MAX_FAILED_LOGINS = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
-PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN}
+# Logging out clears an expired session cookie too.
+PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN, api_paths.LOGOUT}
 DEFAULT_HF_REVISION = "main"
 # Shorter Secret values would match ordinary request strings.
 MIN_SECRET_LENGTH = 8

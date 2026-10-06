@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Route, Routes, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { LOGGED_OUT_EVENT } from "./api";
 import LoginPage from "./login/LoginPage";
 import NewPipelinePage from "./pipelines/NewPipelinePage";
@@ -11,8 +11,15 @@ import StoragePage from "./storage/StoragePage";
 
 export default function App() {
   const navigate = useNavigate();
+  // Login returns to the page the session expired on.
+  const location = useLocation();
+  const current = useRef(location);
+  current.current = location;
   useEffect(() => {
-    const toLogin = () => navigate("/login");
+    const toLogin = () => {
+      const { pathname, search } = current.current;
+      if (pathname !== "/login") navigate("/login", { state: { from: pathname + search } });
+    };
     window.addEventListener(LOGGED_OUT_EVENT, toLogin);
     return () => window.removeEventListener(LOGGED_OUT_EVENT, toLogin);
   }, [navigate]);
@@ -26,6 +33,7 @@ export default function App() {
         <Route path="/storage" element={<StoragePage />} />
         <Route path="/serving" element={<ServingPage />} />
         <Route path="/serving/:name" element={<EndpointStatsPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );

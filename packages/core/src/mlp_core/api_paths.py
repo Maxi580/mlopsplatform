@@ -1,6 +1,7 @@
 # Route paths of the platform API, shared by the API and the CLI.
 HEALTH = "/health"
 LOGIN = "/auth/login"
+LOGOUT = "/auth/logout"
 VERIFY = "/auth/verify"
 SCHEMA = "/schema"
 BENCHMARKS = "/benchmarks"

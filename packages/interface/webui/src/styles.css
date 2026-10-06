@@ -156,6 +156,21 @@ code,
   color: var(--text-muted);
 }
 
+.user-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  color: var(--muted);
+}
+
+.user-card span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .gpu-card {
   display: flex;
   align-items: center;

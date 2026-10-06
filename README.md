@@ -446,7 +446,7 @@ def reward(sample, item):
 
 ## Web UI
 
-The Web UI (`packages/interface/webui`, React) is a client of the API like the CLI (`packages/interface/cli`). Open `https://<domain>/` and log in with the shared password; the cookie lasts 12 hours and also opens the KFP UI (`/pipeline/`) and the MLflow UI (`/mlflow/`), which send a logged-out browser to the same login page.
+The Web UI (`packages/interface/webui`, React) is a client of the API like the CLI (`packages/interface/cli`). Open `https://<domain>/` and log in with the shared password; the cookie lasts 12 hours and also opens the KFP UI (`/pipeline/`) and the MLflow UI (`/mlflow/`), which send a logged-out browser to the same login page. Login returns to the page that asked for it; an unknown path goes to Pipelines. "Log out" under the user's name in the sidebar clears the cookie (`POST /auth/logout`).
 
 - **Pipelines**: every Pipeline with its Owner, status, Stages and links to its Kubeflow run and MLflow Run, updated live, with Cancel; the sidebar shows the platform's GPU count.
 - **Storage**: object store usage, every Dataset and Model Version with Download and Delete (a Model Version lists a link per file), kept Checkpoints with their size and Delete, and a form that uploads a model directory as `mlp models upload` does.

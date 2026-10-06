@@ -118,3 +118,20 @@ def test_a_browser_without_login_is_sent_to_the_web_ui_login(api):
 
     assert response.status_code == 303
     assert response.headers["location"] == WEB_UI_LOGIN_URL
+
+
+def test_verify_answers_the_logged_in_users_name(api):
+    login(api)
+
+    assert api.get(api_paths.VERIFY).json() == {"name": "shared"}
+
+
+def test_logout_clears_the_session_cookie(api):
+    login(api)
+
+    assert api.post(api_paths.LOGOUT).status_code == 200
+    assert api.get(api_paths.VERIFY).status_code == 401
+
+
+def test_logout_works_without_a_session(api):
+    assert api.post(api_paths.LOGOUT).status_code == 200

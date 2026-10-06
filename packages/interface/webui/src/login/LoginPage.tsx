@@ -1,12 +1,13 @@
 import { LoaderCircle, LogIn } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { callApi, errorMessage } from "../api";
 import { LOGIN } from "../apiPaths";
 import Logo from "../shell/Logo";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const from: string = useLocation().state?.from ?? "/";
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,7 +18,7 @@ export default function LoginPage() {
     setBusy(true);
     try {
       await callApi(LOGIN, { password });
-      navigate("/");
+      navigate(from, { replace: true });
     } catch (failure) {
       setError(errorMessage(failure));
       setBusy(false);

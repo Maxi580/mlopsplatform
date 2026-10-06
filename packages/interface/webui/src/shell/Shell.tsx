@@ -1,12 +1,29 @@
-import { ChartLine, Cpu, ExternalLink, HardDrive, Plus, Server, Workflow } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
-import { useApi } from "../api";
-import { SETTINGS } from "../apiPaths";
+import {
+  ChartLine,
+  Cpu,
+  ExternalLink,
+  HardDrive,
+  LogOut,
+  Plus,
+  Server,
+  UserRound,
+  Workflow,
+} from "lucide-react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { callApi, useApi } from "../api";
+import { LOGOUT, SETTINGS, VERIFY } from "../apiPaths";
 import { KUBEFLOW_UI_URL, MLFLOW_UI_URL } from "../config";
 import Logo from "./Logo";
 
 export default function Shell() {
   const settings = useApi<{ gpu_count: number }>(SETTINGS).data;
+  const user = useApi<{ name: string }>(VERIFY).data;
+  const navigate = useNavigate();
+
+  async function logOut() {
+    await callApi(LOGOUT, {});
+    navigate("/login");
+  }
 
   return (
     <div className="shell">
@@ -42,6 +59,15 @@ export default function Shell() {
               </strong>
               <span>on this platform</span>
             </div>
+          </div>
+        )}
+        {user && (
+          <div className="user-card">
+            <UserRound size={18} />
+            <span>{user.name}</span>
+            <button type="button" className="button ghost small" onClick={logOut}>
+              <LogOut size={14} /> Log out
+            </button>
           </div>
         )}
       </aside>

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from mlp_api.auth.account import password_matches
 from mlp_api.auth.session import issue_token, record_failed_login, too_many_failed_logins
 from mlp_core import api_paths
-from mlp_core.config import SESSION_COOKIE, TOKEN_LIFETIME
+from mlp_core.config import OWNER, SESSION_COOKIE, TOKEN_LIFETIME
 
 router = APIRouter()
 
@@ -34,7 +34,14 @@ def login(login: Login, request: Request, response: Response) -> dict:
     return {"token": token}
 
 
+@router.post(api_paths.LOGOUT)
+def logout(response: Response) -> dict:
+    response.delete_cookie(SESSION_COOKIE, httponly=True, secure=True, samesite="lax")
+    return {}
+
+
 # Traefik's forwardAuth for the KFP UI, MLflow UI and Endpoints; require_login does the check.
+# The Web UI shows the logged-in user's name from it.
 @router.get(api_paths.VERIFY)
-def verify() -> None:
-    pass
+def verify() -> dict:
+    return {"name": OWNER}

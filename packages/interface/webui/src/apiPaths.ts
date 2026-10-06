@@ -1,5 +1,7 @@
 // Route paths of the platform API; mirrors packages/core/src/mlp_core/api_paths.py.
 export const LOGIN = "/auth/login";
+export const LOGOUT = "/auth/logout";
+export const VERIFY = "/auth/verify";
 export const SCHEMA = "/schema";
 export const BENCHMARKS = "/benchmarks";
 export const SETTINGS = "/settings";
