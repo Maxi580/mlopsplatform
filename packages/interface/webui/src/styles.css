@@ -408,6 +408,14 @@ code,
   flex-shrink: 0;
 }
 
+/* A long value ends in … so the table needs no horizontal scrollbar; its title shows it in full. */
+.cut-off .mono {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .endpoint-access {
   display: grid;
   grid-template-columns: max-content 1fr;

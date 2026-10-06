@@ -108,7 +108,7 @@ test("Endpoints are listed with model, status and URL", async () => {
   }
   const stopped = screen.getByText("old").closest("tr")!;
   expect(within(stopped).queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
-  expect(within(stopped).queryByRole("button", { name: /copy/i })).not.toBeInTheDocument();
+  expect(within(stopped).queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
   expect(within(stopped).queryByRole("link")).not.toBeInTheDocument();
 });
 
@@ -121,6 +121,28 @@ test("an Endpoint's URL is copied from its row", async () => {
   await user.click(within(row).getByRole("button", { name: "Copy URL" }));
 
   expect(await navigator.clipboard.readText()).toBe(URL);
+});
+
+test("an Endpoint's model is copied from its row, also once stopped", async () => {
+  const user = userEvent.setup();
+  fakeApi(routes);
+  renderApp("/serving");
+
+  const stopped = (await screen.findByText("old")).closest("tr")!;
+  await user.click(within(stopped).getByRole("button", { name: "Copy model" }));
+
+  expect(await navigator.clipboard.readText()).toBe("model:qwen-sft@2");
+});
+
+test("a long model and URL are cut off, and hovering shows them in full", async () => {
+  fakeApi(routes);
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  for (const value of ["model:qwen-sft@2", URL]) {
+    expect(within(row).getByText(value)).toHaveAttribute("title", value);
+    expect(within(row).getByText(value).closest("td")).toHaveClass("cut-off");
+  }
 });
 
 test("an Endpoint's key is copied and refreshed from its row", async () => {

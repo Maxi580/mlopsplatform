@@ -14,7 +14,11 @@ export default function CopyValue({
   const [copied, setCopied] = useState(false);
   return (
     <span className="copy-value">
-      {!hidden && <span className="mono">{value}</span>}
+      {!hidden && (
+        <span className="mono" title={value}>
+          {value}
+        </span>
+      )}
       <button
         type="button"
         className="icon-button"

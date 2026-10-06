@@ -195,14 +195,16 @@ function EndpointRow({
       <td className="pipeline-name">
         {stopped ? endpoint.name : <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>}
       </td>
-      <td className="mono">{endpoint.model}</td>
+      <td className="cut-off">
+        <CopyValue label="model" value={endpoint.model} />
+      </td>
       <td>
         <StatusBadge status={endpoint.status} />
       </td>
       <td>{stats ? `${stats.running} running · ${stats.waiting} waiting` : "—"}</td>
       <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
       <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
-      <td>{!stopped && <CopyValue label="URL" value={endpoint.url} />}</td>
+      <td className="cut-off">{!stopped && <CopyValue label="URL" value={endpoint.url} />}</td>
       <td>
         {!stopped && (
           <span className="copy-value">
