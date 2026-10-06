@@ -300,6 +300,24 @@ def test_an_endpoint_whose_vllm_keeps_crashing_is_failed(logged_in_api, qwen_on_
     assert endpoint["status"] == "failed"
 
 
+def test_a_start_kubernetes_refuses_leaves_no_objects_behind(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    def refuse_route(manifests):
+        cluster.endpoints["chat"] = manifests
+        raise RuntimeError("no IngressRoute")
+
+    cluster.create_endpoint = refuse_route
+
+    response = start(logged_in_api)
+    reconcile(logged_in_api)
+
+    assert response.status_code == 502
+    assert cluster.endpoints == {}
+    [endpoint] = endpoints(logged_in_api)
+    assert endpoint["status"] == "stopped"
+
+
 def test_an_endpoint_whose_deployment_disappeared_is_stopped(
     logged_in_api, qwen_on_the_hub, cluster
 ):

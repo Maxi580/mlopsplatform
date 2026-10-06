@@ -124,6 +124,16 @@ test("an Endpoint stops from its row", async () => {
   expect(calls.map((call) => call.route)).toContain("POST /endpoints/chat/stop");
 });
 
+test("a failure without a reason still says what went wrong", async () => {
+  fakeApi({ ...routes, "POST /endpoints/chat/stop": [500, null] });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: /stop/i }));
+
+  expect(await screen.findByText("The API answered 500")).toBeInTheDocument();
+});
+
 test("the model picker lists our Model Versions first, then open-source models", async () => {
   fakeApi(routes);
   renderApp("/serving");

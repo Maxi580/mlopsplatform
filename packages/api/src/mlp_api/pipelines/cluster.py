@@ -107,7 +107,7 @@ class Cluster:
         )
         self.kubernetes.create_namespaced_service(namespace, manifests["service"])
         client.CustomObjectsApi(self.kubernetes_client).create_namespaced_custom_object(
-            *config.TRAEFIK_ROUTES, namespace=namespace, body=manifests["route"]
+            **config.INGRESS_ROUTE_RESOURCE, namespace=namespace, body=manifests["route"]
         )
 
     def delete_endpoint(self, name: str) -> None:
@@ -121,7 +121,7 @@ class Cluster:
             ),
             lambda: self.kubernetes.delete_namespaced_service(object_name, namespace),
             lambda: custom_objects.delete_namespaced_custom_object(
-                *config.TRAEFIK_ROUTES, namespace=namespace, name=object_name
+                **config.INGRESS_ROUTE_RESOURCE, namespace=namespace, name=object_name
             ),
         )
         for delete in deletes:

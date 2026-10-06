@@ -489,7 +489,7 @@ ENDPOINT_URL = "/endpoints/{name}/v1"
 # The Traefik middlewares of the platform namespace on every Endpoint route.
 ENDPOINT_ROUTE_MIDDLEWARES = ("login", "endpoint-strip-prefix")
 # Traefik's IngressRoute resource: its API group, version and plural.
-TRAEFIK_ROUTES = ("traefik.io", "v1alpha1", "ingressroutes")
+INGRESS_ROUTE_RESOURCE = {"group": "traefik.io", "version": "v1alpha1", "plural": "ingressroutes"}
 VLLM_PORT = 8000
 # Where an Endpoint's init container puts the Model Version files vLLM loads.
 ENDPOINT_MODEL_DIRECTORY = "/models"

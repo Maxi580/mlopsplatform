@@ -30,7 +30,7 @@ export async function callApi<T>(
   });
   if (response.status === 401 && path !== LOGIN) window.dispatchEvent(new Event(LOGGED_OUT_EVENT));
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(response.status, data?.detail ?? response.statusText);
+  if (!response.ok) throw new ApiError(response.status, data?.detail);
   return data as T;
 }
 

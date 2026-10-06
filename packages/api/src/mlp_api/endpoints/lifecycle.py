@@ -60,14 +60,15 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
                 )
             )
 
-        # 4. Its Kubernetes objects; after a failure, a partial set is left to stop.
+        # 4. Its Kubernetes objects; after a failure, none, so nothing serves without its route.
         manifests = endpoint_manifests(
             name, spec, model, gpus, settings.model_cache_size, cluster.endpoint_environment
         )
         try:
             cluster.create_endpoint(manifests)
         except Exception as error:
-            set_status(state.engine, name, "failed")
+            cluster.delete_endpoint(name)
+            set_status(state.engine, name, "stopped")
             raise RuntimeError(f"Kubernetes did not create Endpoint {name}: {error}") from None
         return endpoint_summary(find_endpoint(state.engine, name))
 
