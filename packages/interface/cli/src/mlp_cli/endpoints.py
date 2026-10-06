@@ -4,7 +4,6 @@ import typer
 import yaml
 
 from mlp_cli.api import api_client, exit_on_error
-from mlp_cli.profile import load_profile
 from mlp_core import api_paths
 
 app = typer.Typer()
@@ -23,8 +22,7 @@ def endpoints(context: typer.Context) -> None:
         return
 
     # 2. One row per Endpoint, under a header, in aligned columns.
-    url = load_profile()["url"]
-    rows = [(e["name"], e["model"], e["status"], url + e["url"]) for e in listing]
+    rows = [(e["name"], e["model"], e["status"], e["url"]) for e in listing]
     header = ("Endpoint", "Model", "Status", "URL")
     name_width = max(len(row[0]) for row in [header, *rows])
     model_width = max(len(row[1]) for row in [header, *rows])
@@ -57,7 +55,7 @@ def start(
         response = client.post(api_paths.ENDPOINTS, json={"name": name, "model": model, **options})
     started = exit_on_error(response).json()
     typer.echo(f"Started Endpoint {started['name']} ({started['status']})")
-    typer.echo(f"OpenAI base URL: {load_profile()['url']}{started['url']}")
+    typer.echo(f"OpenAI base URL: {started['url']}")
 
 
 @app.command()

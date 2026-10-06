@@ -483,9 +483,10 @@ KUBEFLOW_RUN_URL = "/pipeline/#/runs/details/{run_id}"
 ENDPOINT_OBJECT_NAME = "endpoint-{name}"
 # Labels an Endpoint's pods with its name.
 ENDPOINT_LABEL = "mlp-endpoint"
-# Where OpenAI clients reach an Endpoint, behind the login; Traefik strips the prefix before vLLM.
-ENDPOINT_PATH_PREFIX = "/endpoints/{name}/"
-ENDPOINT_URL = "/endpoints/{name}/v1"
+# Where OpenAI clients reach an Endpoint; Traefik strips the prefix before vLLM. Under its own
+# prefix, so no API path can fall under an Endpoint's route.
+ENDPOINT_PATH_PREFIX = "/serving/{uuid}/"
+ENDPOINT_URL = "https://{domain}/serving/{uuid}/v1"
 # The Traefik middlewares of the platform namespace on every Endpoint route.
 ENDPOINT_ROUTE_MIDDLEWARES = ("login", "endpoint-strip-prefix")
 # Traefik's IngressRoute resource: its API group, version and plural.

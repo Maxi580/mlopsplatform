@@ -181,7 +181,7 @@ def clean_up_smoke_tests(state) -> None:
     for row in rows:
         prefix = f"{row.name}-"
         # 1. Its Endpoints, which would keep their models in use.
-        for found in list_endpoints(engine):
+        for found in list_endpoints(engine, state.cluster.endpoint_environment.domain):
             if found["name"].startswith(prefix) and found["status"] != "stopped":
                 stop_endpoint(engine, state.cluster, found["name"])
 

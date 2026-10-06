@@ -21,9 +21,10 @@ class EndpointStart(EndpointSpec):
 
 @router.get(api_paths.ENDPOINTS)
 def endpoints(request: Request) -> list[dict]:
-    listed = list_endpoints(request.app.state.engine)
+    state = request.app.state
+    listed = list_endpoints(state.engine, state.cluster.endpoint_environment.domain)
     running = [found["name"] for found in listed if found["status"] == "running"]
-    stats = fetch_endpoint_stats(request.app.state.cluster, running)
+    stats = fetch_endpoint_stats(state.cluster, running)
     # A stopped Endpoint keeps its row, and its name may be running again.
     for found in listed:
         read = stats.get(found["name"]) if found["status"] == "running" else None

@@ -6,6 +6,7 @@ from mlp_core.endpoint_spec import EndpointSpec, vllm_args
 
 def endpoint_manifests(
     name: str,
+    uuid: str,
     spec: EndpointSpec,
     model: EndpointModel,
     gpus: int,
@@ -101,7 +102,7 @@ def endpoint_manifests(
         "metadata": metadata,
         "spec": {"selector": labels, "ports": [{"port": config.VLLM_PORT}]},
     }
-    path = config.ENDPOINT_PATH_PREFIX.format(name=name)
+    path = config.ENDPOINT_PATH_PREFIX.format(uuid=uuid)
     route = {
         "apiVersion": "traefik.io/v1alpha1",
         "kind": "IngressRoute",

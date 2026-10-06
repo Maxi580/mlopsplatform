@@ -1,4 +1,5 @@
 import threading
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Engine, delete, insert, select, update
@@ -47,10 +48,12 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
         # 3. Its row first, so in-use checks and the reconciler know every Deployment.
         settings, cluster = state.settings, state.cluster
         gpus = settings.gpus_per_endpoint
+        endpoint_uuid = uuid.uuid4().hex
         with state.engine.begin() as connection:
             connection.execute(
                 insert(endpoint).values(
                     name=name,
+                    uuid=endpoint_uuid,
                     owner=config.OWNER,
                     spec=spec.model_dump(mode="json", exclude_defaults=True),
                     uses=model.references,
@@ -62,7 +65,13 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
 
         # 4. Its Kubernetes objects; after a failure, none, so nothing serves without its route.
         manifests = endpoint_manifests(
-            name, spec, model, gpus, settings.model_cache_size, cluster.endpoint_environment
+            name,
+            endpoint_uuid,
+            spec,
+            model,
+            gpus,
+            settings.model_cache_size,
+            cluster.endpoint_environment,
         )
         try:
             cluster.create_endpoint(manifests)
@@ -70,7 +79,9 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
             cluster.delete_endpoint(name)
             set_status(state.engine, name, "stopped")
             raise RuntimeError(f"Kubernetes did not create Endpoint {name}: {error}") from None
-        return endpoint_summary(find_endpoint(state.engine, name))
+        return endpoint_summary(
+            find_endpoint(state.engine, name), cluster.endpoint_environment.domain
+        )
 
 
 def stop_endpoint(engine: Engine, cluster: Cluster, name: str) -> None:
@@ -95,11 +106,11 @@ def delete_endpoint(engine: Engine, name: str) -> None:
     raise ValueError(f"Endpoint {name} is {found.status}; stop it first")
 
 
-def list_endpoints(engine: Engine) -> list[dict]:
-    """Every Endpoint, stopped ones included, newest first."""
+def list_endpoints(engine: Engine, domain: str) -> list[dict]:
+    """Every Endpoint, stopped ones included, newest first; their URLs are under the domain."""
     with engine.connect() as connection:
         rows = connection.execute(select(endpoint).order_by(endpoint.c.id.desc())).all()
-    return [endpoint_summary(row) for row in rows]
+    return [endpoint_summary(row, domain) for row in rows]
 
 
 def reconcile_endpoints(engine: Engine, cluster: Cluster) -> None:
@@ -111,7 +122,7 @@ def reconcile_endpoints(engine: Engine, cluster: Cluster) -> None:
             set_status(engine, row.name, cluster.endpoint_state(row.name) or "stopped")
 
 
-def endpoint_summary(row) -> dict:
+def endpoint_summary(row, domain: str) -> dict:
     return {
         "name": row.name,
         "owner": row.owner,
@@ -119,7 +130,7 @@ def endpoint_summary(row) -> dict:
         "spec": row.spec,
         "gpus": row.gpus,
         "status": row.status,
-        "url": config.ENDPOINT_URL.format(name=row.name),
+        "url": config.ENDPOINT_URL.format(domain=domain, uuid=row.uuid),
         "created_at": row.created_at.isoformat(),
     }
 

@@ -396,6 +396,18 @@ code,
   background: var(--surface-muted);
 }
 
+.copy-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy-value .icon-button {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
 .link-button {
   display: inline-flex;
   align-items: center;

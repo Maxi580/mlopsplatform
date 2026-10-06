@@ -5,12 +5,13 @@ from mlp_core import api_paths
 
 from .conftest import TOKEN
 
+URL = "https://platform.test/serving/0123456789abcdef0123456789abcdef/v1"
 ENDPOINT = {
     "name": "chat",
     "owner": "shared",
     "model": "model:qwen-sft@1",
     "status": "running",
-    "url": "/endpoints/chat/v1",
+    "url": URL,
     "created_at": "2026-10-01T08:30:00+00:00",
 }
 
@@ -26,8 +27,7 @@ def test_endpoints_lists_each_with_its_model_status_and_full_url(logged_in, fake
 
     assert result.exit_code == 0, result.output
     row = result.output.splitlines()[1]
-    for text in ("chat", "model:qwen-sft@1", "running", f"{fake_api.url}/endpoints/chat/v1"):
-        assert text in row
+    assert row.split() == ["chat", "model:qwen-sft@1", "running", URL]
 
 
 def test_start_sends_the_model_and_serving_options_and_prints_the_url(logged_in, fake_api):
@@ -59,7 +59,7 @@ def test_start_sends_the_model_and_serving_options_and_prints_the_url(logged_in,
             },
         )
     ]
-    assert f"{fake_api.url}/endpoints/chat/v1" in result.output
+    assert f"OpenAI base URL: {URL}\n" in result.output
     assert "pending" in result.output
 
 

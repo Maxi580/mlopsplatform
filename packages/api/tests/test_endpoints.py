@@ -1,11 +1,12 @@
 import json
+import re
 
 import pytest
 
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
 from mlp_api.models.mlflow import ModelVersion
 from mlp_api.pipelines.hugging_face import HubModel
-from mlp_core import api_paths
+from mlp_core import api_paths, config
 
 from .test_model_cache import cache_base_model, cached, free
 from .test_models import delete
@@ -78,7 +79,7 @@ def test_an_endpoint_for_a_base_model_fetches_it_and_serves_it_offline_from_the_
     assert response.status_code == 201, response.text
     started = response.json()
     assert (started["name"], started["status"]) == ("chat", "pending")
-    assert (started["model"], started["url"]) == (PINNED_QWEN, "/endpoints/chat/v1")
+    assert started["model"] == PINNED_QWEN
     assert init_commands(cluster) == [["mlp-stage", "fetch", "200Gi", PINNED_QWEN]]
     expected = [QWEN, "--served-model-name", "chat", "--tensor-parallel-size", "1"]
     assert vllm_args(cluster)[:5] == expected
@@ -262,15 +263,31 @@ def test_a_base_model_needing_remote_code_is_rejected(logged_in_api, hugging_fac
     assert "remote code" in response.json()["detail"]
 
 
-def test_the_route_serves_the_endpoint_url_behind_the_login(
-    logged_in_api, qwen_on_the_hub, cluster
-):
-    start(logged_in_api)
+def test_the_route_serves_the_endpoint_url_under_its_uuid(logged_in_api, qwen_on_the_hub, cluster):
+    started = start(logged_in_api).json()
 
+    pattern = r"https://platform\.test/serving/([0-9a-f]{32})/v1"
+    [uuid] = re.fullmatch(pattern, started["url"]).groups()
     [route] = cluster.endpoints["chat"]["route"]["spec"]["routes"]
-    assert route["match"] == "Host(`platform.test`) && PathPrefix(`/endpoints/chat/`)"
-    assert [m["name"] for m in route["middlewares"]] == ["login", "endpoint-strip-prefix"]
+    assert route["match"] == f"Host(`platform.test`) && PathPrefix(`/serving/{uuid}/`)"
     assert route["services"] == [{"name": "endpoint-chat", "port": 8000}]
+
+
+def test_a_restarted_endpoint_gets_a_new_url(logged_in_api, qwen_on_the_hub, cluster):
+    first = start(logged_in_api).json()["url"]
+    stop(logged_in_api)
+
+    second = start(logged_in_api).json()["url"]
+
+    assert first != second
+    assert [e["url"] for e in endpoints(logged_in_api)] == [second, first]
+
+
+# A route under an Endpoint's prefix would reach its vLLM instead of the API while it runs.
+def test_no_api_path_falls_under_the_endpoint_route(api):
+    prefix = config.ENDPOINT_PATH_PREFIX.split("{")[0]
+
+    assert [path for path in api.app.openapi()["paths"] if path.startswith(prefix)] == []
 
 
 def test_endpoints_are_listed_newest_first_and_follow_their_pod(

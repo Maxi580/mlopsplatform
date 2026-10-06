@@ -17,6 +17,7 @@ import {
 } from "../pipelines/pipelineForm";
 import StatusBadge from "../pipelines/StatusBadge";
 import type { RegisteredModel } from "../storage/storage";
+import CopyValue from "./CopyValue";
 import { type Endpoint, formatSeconds, ratePerSecond } from "./endpoint";
 import SpeculatorPicker, { type Speculative } from "./SpeculatorPicker";
 
@@ -176,7 +177,7 @@ function EndpointRow({
       <td>{stats ? `${stats.running} running · ${stats.waiting} waiting` : "—"}</td>
       <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
       <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
-      <td className="mono">{stopped ? "" : <a href={endpoint.url}>{endpoint.url}</a>}</td>
+      <td>{!stopped && <CopyValue label="URL" value={endpoint.url} />}</td>
       <td>{endpoint.created_at.slice(0, 16).replace("T", " ")}</td>
       <td className="actions">
         {stopped ? (

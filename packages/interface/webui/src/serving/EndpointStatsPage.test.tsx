@@ -1,7 +1,8 @@
 import { act, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ENDPOINT_STATS_REFRESH_MS } from "../config";
 import { fakeApi, renderApp } from "../testApi";
-import type { EndpointStats, Histogram } from "./endpoint";
+import type { Endpoint, EndpointStats, Histogram } from "./endpoint";
 
 const ttftHistogram = (sum: number, count: number): Histogram => ({
   p50: 0.05,
@@ -125,4 +126,20 @@ test("an Endpoint without stats says why", async () => {
   renderApp("/serving/chat");
 
   expect(await screen.findByText("Endpoint chat is pending")).toBeInTheDocument();
+});
+
+test("the stats page shows the running Endpoint's URL to copy", async () => {
+  const user = userEvent.setup();
+  const url = "https://platform.test/serving/0123456789abcdef0123456789abcdef/v1";
+  const chat = { name: "chat", status: "running", url } as Endpoint;
+  const stopped = { ...chat, status: "stopped", url: "https://platform.test/serving/old/v1" };
+  fakeApi({
+    "GET /endpoints/chat/stats": [200, first],
+    "GET /endpoints": [200, [chat, stopped]],
+  });
+  renderApp("/serving/chat");
+
+  expect(await screen.findByText(url)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Copy URL" }));
+  expect(await navigator.clipboard.readText()).toBe(url);
 });

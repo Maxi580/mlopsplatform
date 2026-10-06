@@ -57,12 +57,13 @@ const schema = {
   },
 };
 const DEFAULTS = { prefix_caching: true, gpu_memory_utilization: 0.9 };
+const URL = "https://platform.test/serving/0123456789abcdef0123456789abcdef/v1";
 const chat: Endpoint = {
   name: "chat",
   owner: "shared",
   model: "model:qwen-sft@2",
   status: "running",
-  url: "/endpoints/chat/v1",
+  url: URL,
   created_at: "2026-10-02T08:30:00+00:00",
   stats: null,
 };
@@ -101,16 +102,24 @@ test("Endpoints are listed with model, status and URL", async () => {
   renderApp("/serving");
 
   const row = (await screen.findByText("chat")).closest("tr")!;
-  for (const text of ["model:qwen-sft@2", "running"]) {
+  for (const text of ["model:qwen-sft@2", "running", URL]) {
     expect(within(row).getByText(text)).toBeInTheDocument();
   }
-  expect(within(row).getByRole("link", { name: "/endpoints/chat/v1" })).toHaveAttribute(
-    "href",
-    "/endpoints/chat/v1",
-  );
   const stopped = screen.getByText("old").closest("tr")!;
   expect(within(stopped).queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
+  expect(within(stopped).queryByRole("button", { name: /copy/i })).not.toBeInTheDocument();
   expect(within(stopped).queryByRole("link")).not.toBeInTheDocument();
+});
+
+test("an Endpoint's URL is copied from its row", async () => {
+  const user = userEvent.setup();
+  fakeApi(routes);
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  await user.click(within(row).getByRole("button", { name: "Copy URL" }));
+
+  expect(await navigator.clipboard.readText()).toBe(URL);
 });
 
 test("an Endpoint stops from its row", async () => {

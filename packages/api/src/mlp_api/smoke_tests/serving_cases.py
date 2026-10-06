@@ -18,7 +18,7 @@ def run_serving_cases(state) -> None:
     with state.engine.connect() as connection:
         rows = connection.execute(select(pipeline).where(is_smoke_test, unfinished)).all()
     endpoints = {}
-    for found in list_endpoints(state.engine):
+    for found in list_endpoints(state.engine, state.cluster.endpoint_environment.domain):
         endpoints.setdefault(found["name"], found)
 
     # 2. Each pending serving case's next result.

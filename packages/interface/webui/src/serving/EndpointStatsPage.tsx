@@ -2,7 +2,7 @@ import { ArrowLeft, CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useApi } from "../api";
-import { endpointStats } from "../apiPaths";
+import { ENDPOINTS, endpointStats } from "../apiPaths";
 import {
   ENDPOINT_STATS_HISTORY_MS,
   ENDPOINT_STATS_REFRESH_MS,
@@ -11,7 +11,9 @@ import {
   MS_PER_MINUTE,
   PERCENT_STATS,
 } from "../config";
+import CopyValue from "./CopyValue";
 import {
+  type Endpoint,
   type EndpointStats,
   formatSeconds,
   type Histogram,
@@ -89,6 +91,10 @@ const CHARTS: Chart[] = [
 export default function EndpointStatsPage() {
   const { name = "" } = useParams();
   const stats = useApi<EndpointStats>(endpointStats(name), ENDPOINT_STATS_REFRESH_MS);
+  // A stopped Endpoint keeps its row, and its name may be running again.
+  const endpoint = useApi<Endpoint[]>(ENDPOINTS).data?.find(
+    (found) => found.name === name && found.status !== "stopped",
+  );
   const readings = useReadings(stats.data);
   const values = stats.data && statsValues(stats.data);
 
@@ -104,6 +110,7 @@ export default function EndpointStatsPage() {
             Live from the Endpoint's vLLM, counting every request it serves. Charts fill while this
             page stays open, for up to {ENDPOINT_STATS_HISTORY_MS / MS_PER_MINUTE} minutes.
           </p>
+          {endpoint && <CopyValue label="URL" value={endpoint.url} />}
         </div>
       </header>
 

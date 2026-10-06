@@ -7,6 +7,8 @@ endpoint = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("name", String, nullable=False),
+    # Names its URL; a restart is a new Endpoint with a new one.
+    Column("uuid", String, nullable=False, unique=True),
     Column("owner", String, nullable=False),
     # The spec with its model pinned.
     Column("spec", JSON, nullable=False),
