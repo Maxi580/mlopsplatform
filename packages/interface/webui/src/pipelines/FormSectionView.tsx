@@ -1,6 +1,6 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
-import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE, SWITCHED_ON } from "../config";
+import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE } from "../config";
 import type { Catalog } from "../fields/catalog";
 import DatasetPicker from "../fields/DatasetPicker";
 import InfoBox from "../fields/InfoBox";
@@ -17,7 +17,9 @@ import {
   isSwitchedOn,
   moreName,
   withListItem,
+  withoutLastListItem,
   withoutListItem,
+  withSwitch,
 } from "./pipelineForm";
 
 type Props = {
@@ -105,17 +107,8 @@ export default function FormSectionView({
       <fieldset key={subsection.name} className="subsection">
         <legend>
           <SectionTitle section={subsection} />
-          {subsection.optional && !subsection.entry && (
-            <label className="stage-switch">
-              <input
-                type="checkbox"
-                checked={switchedOn}
-                onChange={(event) =>
-                  setField(subsection.name, event.target.checked ? SWITCHED_ON : "")
-                }
-              />
-              Use
-            </label>
+          {!subsection.entry && (
+            <SectionSwitch section={subsection} values={values} onChange={onChange} />
           )}
           {action}
         </legend>
@@ -136,10 +129,11 @@ export default function FormSectionView({
     );
   }
 
-  // Each item of the list with its Delete, while more than the fewest are left, and Add last.
+  // Each item with its Delete, and Add last; the last item's Delete switches off the list's section.
   function listItems(list: FormSection) {
-    const { item, minItems } = list.list!;
+    const { item } = list.list!;
     const count = list.children.length;
+    const holder = list.optional ? list : section;
     return (
       <Fragment key={list.name}>
         {list.children.map((child, index) =>
@@ -149,9 +143,13 @@ export default function FormSectionView({
               type="button"
               className="icon-button legend-action"
               aria-label={`Delete ${item} ${index + 1}`}
-              title={count <= minItems ? `A request has at least ${minItems}` : undefined}
-              disabled={count <= minItems}
-              onClick={() => onChange(withoutListItem(values, list.name, index, count))}
+              onClick={() =>
+                onChange(
+                  count > 1
+                    ? withoutListItem(values, list.name, index, count)
+                    : withoutLastListItem(values, list.name, holder.name),
+                )
+              }
             >
               <Trash2 size={16} />
             </button>,
@@ -167,6 +165,35 @@ export default function FormSectionView({
       </Fragment>
     );
   }
+}
+
+/** An optional section's plus or trashcan; none while it holds a list, whose items have their own. */
+export function SectionSwitch({
+  section,
+  values,
+  onChange,
+}: Pick<Props, "section" | "values" | "onChange">) {
+  const on = isSwitchedOn(section, values);
+  if (!section.optional || (on && holdsList(section))) return null;
+  const label = `${on ? "Remove" : "Add"} ${section.title}`;
+  return (
+    <button
+      type="button"
+      className="icon-button switch-button"
+      aria-label={label}
+      title={label}
+      onClick={() => onChange(withSwitch(values, section.name, !on))}
+    >
+      {on ? <Trash2 size={16} /> : <Plus size={16} />}
+    </button>
+  );
+}
+
+function holdsList(section: FormSection): boolean {
+  return (
+    !!section.list ||
+    section.children.some((child) => child.kind === "section" && child.list && !child.optional)
+  );
 }
 
 function FieldInput({

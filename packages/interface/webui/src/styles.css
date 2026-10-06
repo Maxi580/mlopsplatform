@@ -451,8 +451,12 @@ tr.highlighted {
 }
 
 .pipeline-name {
-  display: block;
   font-weight: 600;
+}
+
+/* A table cell stays a cell, so its row lines up. */
+span.pipeline-name {
+  display: block;
 }
 
 .links {
@@ -1120,14 +1124,16 @@ textarea[aria-invalid="true"] {
   }
 }
 
-.stage-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* An optional section's plus or trashcan: at the right of a Stage's title, beside a box's. */
+.switch-button {
+  width: 32px;
+  height: 32px;
   margin-left: auto;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
+}
+
+legend .switch-button {
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .status-stopped {

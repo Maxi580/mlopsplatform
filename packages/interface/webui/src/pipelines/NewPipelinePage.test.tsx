@@ -134,7 +134,7 @@ test("an optional Stage joins the request only once it is switched on", async ()
   });
   renderApp("/pipelines/new");
 
-  const speculate = await screen.findByRole("checkbox", { name: /run speculate/i });
+  const speculate = await screen.findByRole("button", { name: /add speculate/i });
   expect(screen.queryByLabelText(/^Samples/)).not.toBeInTheDocument();
   await userEvent.click(speculate);
   await userEvent.type(screen.getByLabelText(/^Samples/), "4096");
@@ -191,7 +191,7 @@ test("the benchmark picker shows each benchmark's category, description and size
   });
   renderApp("/pipelines/new");
 
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run evaluate/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add evaluate/i }));
   const gsm8k = screen.getByRole("checkbox", { name: /lm_eval:gsm8k/ });
   expect(gsm8k).toHaveAccessibleDescription(/Grade-school maths word problems\./);
   expect(screen.getByText("maths")).toBeInTheDocument();
@@ -377,7 +377,7 @@ test("the Teacher API key and URL show only for a Teacher at an external API", a
   });
   renderApp("/pipelines/new");
 
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run distill/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add distill/i }));
   await userEvent.type(screen.getByLabelText(/^Teacher/), "hf:Qwen/Qwen3-8B");
   expect(screen.queryByLabelText(/^API URL/)).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/^Teacher API key/)).not.toBeInTheDocument();
@@ -492,9 +492,9 @@ const phasesSchema = {
   },
 };
 
-function phaseApi() {
+function phaseApi(schema: object = phasesSchema) {
   return fakeApi({
-    "GET /schema": [200, phasesSchema],
+    "GET /schema": [200, schema],
     "GET /datasets": [200, []],
     "GET /pipelines": [200, []],
     "POST /pipelines": [202, { id: 4 }],
@@ -549,11 +549,45 @@ test("deleting the middle Phase keeps the others' values and renumbers them", as
   expect(legends()[1]).toContain("Phase 2 · SFT · continues from Phase 1 (SFT)");
 });
 
-test("the last Phase can't be deleted", async () => {
-  phaseApi();
+test("deleting the last Phase switches Finetune off, and its plus brings a Phase back", async () => {
+  const optionalFinetune = { anyOf: [{ $ref: "#/$defs/Finetune" }, { type: "null" }] };
+  phaseApi({ ...phasesSchema, properties: { finetune: optionalFinetune } });
   renderApp("/pipelines/new");
 
-  expect(await screen.findByRole("button", { name: "Delete Phase 1" })).toBeDisabled();
+  await userEvent.click(await screen.findByRole("button", { name: "Add Finetune" }));
+  // Its Phases have trashcans, so the Stage has none of its own.
+  expect(screen.queryByRole("button", { name: "Remove Finetune" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Delete Phase 1" }));
+
+  expect(screen.queryByLabelText(/^Base Model/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Add Finetune" }));
+  expect(legends()).toEqual([expect.stringContaining("Phase 1")]);
+});
+
+test("an optional section switches on with its plus and off with its trashcan", async () => {
+  const optionalSettings = { anyOf: [{ $ref: "#/$defs/Settings" }, { type: "null" }] };
+  fakeApi({
+    "GET /schema": [
+      200,
+      {
+        type: "object",
+        properties: { finetune: { $ref: "#/$defs/Finetune" } },
+        $defs: {
+          Finetune: { type: "object", properties: { lora: optionalSettings } },
+          Settings: { type: "object", properties: { rank: { type: "integer", title: "Rank" } } },
+        },
+      },
+    ],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+  });
+  renderApp("/pipelines/new");
+
+  await userEvent.click(await screen.findByRole("button", { name: "Add Lora" }));
+  expect(screen.getByLabelText(/^Rank/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Remove Lora" }));
+  expect(screen.queryByLabelText(/^Rank/)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Add Lora" })).toBeInTheDocument();
 });
 
 const HF = "^hf:[w.-]+/[w.-]+(@[w.-]+)?$";
@@ -633,7 +667,7 @@ function groupsOf(listbox: HTMLElement): string[] {
 test("a Base Model field lists curated models, then the Hub's for what is typed", async () => {
   modelsApi();
   renderApp("/pipelines/new");
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add finetune/i }));
 
   await userEvent.click(screen.getByRole("combobox", { name: /^Base Model/ }));
   const listbox = await screen.findByRole("listbox");
@@ -650,8 +684,8 @@ test("a Base Model field lists curated models, then the Hub's for what is typed"
 test("each model field offers its groups, and Quantize preselects Finetune's output", async () => {
   const calls = modelsApi();
   renderApp("/pipelines/new");
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
-  await userEvent.click(screen.getByRole("checkbox", { name: /run quantize/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add finetune/i }));
+  await userEvent.click(screen.getByRole("button", { name: /add quantize/i }));
 
   const model = screen.getByRole("combobox", { name: /^Model/ });
   expect(model).toHaveValue("@finetune");
@@ -761,7 +795,7 @@ async function uploadIn(field: RegExp, fileName: string) {
 test("uploading a JSONL file in a Dataset field selects it", async () => {
   const calls = datasetsApi();
   renderApp("/pipelines/new");
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add finetune/i }));
 
   const dialog = await uploadIn(/^Dataset/, "support.jsonl");
   expect(within(dialog).getByLabelText("Name")).toHaveValue("support");
@@ -778,7 +812,7 @@ test("uploading a JSONL file in a Dataset field selects it", async () => {
 test("a wrong row format shows the API's error in the dialog", async () => {
   datasetsApi();
   renderApp("/pipelines/new");
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add finetune/i }));
 
   const dialog = await uploadIn(/^Dataset/, "pairs.jsonl");
   await userEvent.click(within(dialog).getByRole("button", { name: /upload/i }));
@@ -789,7 +823,7 @@ test("a wrong row format shows the API's error in the dialog", async () => {
 test("uploading under an existing name says it replaces it, keeping the old data", async () => {
   datasetsApi();
   renderApp("/pipelines/new");
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add finetune/i }));
 
   const dialog = await uploadIn(/^Dataset/, "chat.jsonl");
 
@@ -801,7 +835,7 @@ test("uploading under an existing name says it replaces it, keeping the old data
 test("the format ⓘ shows the row formats the algorithm reads, with an example each", async () => {
   datasetsApi();
   renderApp("/pipelines/new");
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add finetune/i }));
 
   const formats = () => screen.getByRole("button", { name: "Row formats" });
   for (const example of [
@@ -820,10 +854,10 @@ test("the format ⓘ shows the row formats the algorithm reads, with an example 
 test("with Distill on, Finetune's Dataset preselects the Distillation Dataset", async () => {
   datasetsApi();
   renderApp("/pipelines/new");
-  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /add finetune/i }));
   expect(screen.getByRole("combobox", { name: /^Dataset/ })).toHaveValue("");
 
-  await userEvent.click(screen.getByRole("checkbox", { name: /run distill/i }));
+  await userEvent.click(screen.getByRole("button", { name: /add distill/i }));
   const dataset = screen.getByRole("combobox", { name: /^Dataset/ });
   expect(dataset).toHaveValue("@distill");
   await userEvent.click(dataset);

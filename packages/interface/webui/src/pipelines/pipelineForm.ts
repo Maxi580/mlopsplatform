@@ -312,6 +312,18 @@ function defaultOf(
   return mustChoose && node.enum ? String(field.choices?.[0]) : undefined;
 }
 
+/** The values with the optional section switched on or off. */
+export function withSwitch(values: FormValues, section: string, on: boolean): FormValues {
+  return { ...values, fields: { ...values.fields, [section]: on ? SWITCHED_ON : "" } };
+}
+
+/** The values without the list's last item, its section off and its count back to the fewest. */
+export function withoutLastListItem(values: FormValues, list: string, holder: string): FormValues {
+  const emptied = withoutListItem(values, list, 0, 1);
+  const { [list]: _, ...counts } = emptied.counts ?? {};
+  return withSwitch({ ...emptied, counts }, holder, false);
+}
+
 /** The values with one more item in the list. */
 export function withListItem(values: FormValues, list: string, count: number): FormValues {
   return { ...values, counts: { ...values.counts, [list]: count + 1 } };

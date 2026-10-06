@@ -21,12 +21,12 @@ import {
   SCHEMA,
   VALIDATE_PIPELINE,
 } from "../apiPaths";
-import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS, SWITCHED_ON } from "../config";
+import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS } from "../config";
 import type { Catalog } from "../fields/catalog";
 import { formatBytes } from "../formatBytes";
 import type { Endpoint } from "../serving/endpoint";
 import type { Dataset, RegisteredModel } from "../storage/storage";
-import FormSectionView, { SectionTitle } from "./FormSectionView";
+import FormSectionView, { SectionSwitch, SectionTitle } from "./FormSectionView";
 import type { Benchmark } from "./pipeline";
 import {
   type FieldError,
@@ -175,24 +175,7 @@ function PipelineBuilder({
             <section key={stage.name} className="card">
               <h2>
                 <SectionTitle section={stage} /> <span className="chip">Stage</span>
-                {stage.optional && (
-                  <label className="stage-switch">
-                    <input
-                      type="checkbox"
-                      checked={isSwitchedOn(stage, values)}
-                      onChange={(event) =>
-                        setValues({
-                          ...values,
-                          fields: {
-                            ...values.fields,
-                            [stage.name]: event.target.checked ? SWITCHED_ON : "",
-                          },
-                        })
-                      }
-                    />
-                    Run {stage.name}
-                  </label>
-                )}
+                <SectionSwitch section={stage} values={values} onChange={setValues} />
               </h2>
               {isSwitchedOn(stage, values) && <FormSectionView section={stage} {...sectionProps} />}
             </section>
