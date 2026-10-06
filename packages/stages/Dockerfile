@@ -9,6 +9,9 @@ ARG STAGES_EXTRA=""
 # Set for the stages image only: the bfcl-eval release `evaluate` runs.
 ARG BFCL_VERSION=""
 COPY --from=uv /uv /bin/uv
+# Triton compiles a small C helper the first time it runs a kernel (torch's own ops, Unsloth).
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 # Dependencies before the code, so a code change rebuilds only the last layers.
