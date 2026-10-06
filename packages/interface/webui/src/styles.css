@@ -743,6 +743,11 @@ textarea[aria-invalid="true"] {
   color: var(--text);
 }
 
+.legend-action {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
 .reset-button {
   display: inline-flex;
   margin-left: auto;

@@ -1,5 +1,5 @@
 import { Plus, Trash2, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE, SWITCHED_ON } from "../config";
 import InfoBox from "../fields/InfoBox";
 import NumberInput from "../fields/NumberInput";
@@ -13,6 +13,8 @@ import {
   fieldValue,
   isSwitchedOn,
   moreName,
+  withListItem,
+  withoutListItem,
 } from "./pipelineForm";
 
 type Props = {
@@ -83,24 +85,38 @@ export default function FormSectionView({
         )
       )}
       {section.entry && <Entries section={section} values={values} onChange={onChange} />}
-      {subsections.flatMap(itemsOfList).map((subsection) => (
-        <fieldset key={subsection.name} className="subsection">
-          <legend>
-            <SectionTitle section={subsection} />
-            {subsection.optional && !subsection.entry && (
-              <label className="stage-switch">
-                <input
-                  type="checkbox"
-                  checked={isSwitchedOn(subsection, values)}
-                  onChange={(event) =>
-                    setField(subsection.name, event.target.checked ? SWITCHED_ON : "")
-                  }
-                />
-                Use
-              </label>
-            )}
-          </legend>
-          {isSwitchedOn(subsection, values) || subsection.entry ? (
+      {/* A list's items (e.g. Phase 1, Phase 2) show directly, unless it is switched on. */}
+      {subsections.map((subsection) =>
+        subsection.list && !subsection.optional ? listItems(subsection) : boxed(subsection),
+      )}
+    </>
+  );
+
+  // A subsection in a box titled with its name, and its switch if it is optional.
+  function boxed(subsection: FormSection, action?: ReactNode) {
+    const switchedOn = isSwitchedOn(subsection, values) || !!subsection.entry;
+    return (
+      <fieldset key={subsection.name} className="subsection">
+        <legend>
+          <SectionTitle section={subsection} />
+          {subsection.optional && !subsection.entry && (
+            <label className="stage-switch">
+              <input
+                type="checkbox"
+                checked={switchedOn}
+                onChange={(event) =>
+                  setField(subsection.name, event.target.checked ? SWITCHED_ON : "")
+                }
+              />
+              Use
+            </label>
+          )}
+          {action}
+        </legend>
+        {switchedOn &&
+          (subsection.list ? (
+            listItems(subsection)
+          ) : (
             <FormSectionView
               section={subsection}
               values={values}
@@ -109,11 +125,42 @@ export default function FormSectionView({
               benchmarks={benchmarks}
               onChange={onChange}
             />
-          ) : null}
-        </fieldset>
-      ))}
-    </>
-  );
+          ))}
+      </fieldset>
+    );
+  }
+
+  // Each item of the list with its Delete, while more than the fewest are left, and Add last.
+  function listItems(list: FormSection) {
+    const { item, minItems } = list.list!;
+    const count = list.children.length;
+    return (
+      <Fragment key={list.name}>
+        {list.children.map((child, index) =>
+          boxed(
+            child as FormSection,
+            <button
+              type="button"
+              className="icon-button legend-action"
+              aria-label={`Delete ${item} ${index + 1}`}
+              title={count <= minItems ? `A request has at least ${minItems}` : undefined}
+              disabled={count <= minItems}
+              onClick={() => onChange(withoutListItem(values, list.name, index, count))}
+            >
+              <Trash2 size={16} />
+            </button>,
+          ),
+        )}
+        <button
+          type="button"
+          className="button ghost small"
+          onClick={() => onChange(withListItem(values, list.name, count))}
+        >
+          <Plus size={14} /> Add {item.toLowerCase()}
+        </button>
+      </Fragment>
+    );
+  }
 }
 
 function FieldInput({
@@ -464,14 +511,6 @@ function FieldErrors({ id, messages }: { id?: string; messages?: string[] }) {
       {messages.join("; ")}
     </p>
   );
-}
-
-// A list's items (e.g. Phase 1, Phase 2) show directly, without a box for the list.
-function itemsOfList(section: FormSection): FormSection[] {
-  const items = section.children.filter((node): node is FormSection => node.kind === "section");
-  const isList =
-    !section.moreSettings && !section.entry && items.length === section.children.length;
-  return isList ? items : [section];
 }
 
 function lastPart(name: string): string {

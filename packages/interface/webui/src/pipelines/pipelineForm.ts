@@ -26,6 +26,8 @@ export type FormSection = {
   entry?: FormSection;
   // Every other setting it takes, shown one click away, e.g. the rest of SFTConfig.
   allSettings?: FormField[];
+  // A list whose items are its children, e.g. Phases, which the user adds and deletes.
+  list?: { item: string; minItems: number };
 };
 
 export type FormField = {
@@ -49,11 +51,12 @@ export type FormNode = FormSection | FormField;
 export type MoreSetting = { key: string; value: string };
 export type Entry = { name: string; fields: Record<string, string> };
 // The user's edits by dotted field name (a field left alone shows its default), more settings
-// and a map's entries by section name.
+// and a map's entries by section name, and how many items each list has.
 export type FormValues = {
   fields: Record<string, string>;
   more: Record<string, MoreSetting[]>;
   entries?: Record<string, Entry[]>;
+  counts?: Record<string, number>;
 };
 // An error of the Pipeline Request at its path, as the API reports it.
 export type FieldError = { loc: (string | number)[]; msg: string };
@@ -211,10 +214,13 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
     };
   }
   if (node.type === "array" && resolveRef(node.items, context.defs).type === "object") {
-    const children = Array.from({ length: node.minItems ?? 1 }, (_, index) =>
-      nodeOf(node.items, context, child(String(index)), `${title.replace(/s$/, "")} ${index + 1}`),
+    const list = { item: title.replace(/s$/, ""), minItems: node.minItems ?? 1 };
+    const count = context.values.counts?.[name] ?? list.minItems;
+    const items = resolveRef(node.items, context.defs);
+    const children = Array.from({ length: count }, (_, index) =>
+      nodeOf(node.items, context, child(String(index)), itemTitle(items, context, name, index)),
     );
-    return { kind: "section", name, title, children, moreSettings: false, optional };
+    return { kind: "section", name, title, children, moreSettings: false, optional, list };
   }
   const field = { ...fieldOf(node, context.defs, types), name, title };
   const fallback = defaultOf(schema, node, field, context.defaults?.[lastPart(name)]);
@@ -258,6 +264,56 @@ function defaultOf(
   // A value the request must name, e.g. an algorithm, not a setting TRL defaults itself.
   const mustChoose = !("default" in schema) && !schema.anyOf && schema.placeholder == null;
   return mustChoose && node.enum ? String(field.choices?.[0]) : undefined;
+}
+
+/** The values with one more item in the list. */
+export function withListItem(values: FormValues, list: string, count: number): FormValues {
+  return { ...values, counts: { ...values.counts, [list]: count + 1 } };
+}
+
+/** The values without the list's item at `index`: the later items' values move up one place. */
+export function withoutListItem(
+  values: FormValues,
+  list: string,
+  index: number,
+  count: number,
+): FormValues {
+  const itemAt = new RegExp(`^${list.replaceAll(".", "\\.")}\\.(\\d+)(?=\\.|$)`);
+  // A name of a later item moves up one place; one of the deleted item goes.
+  function moved<T>(entries: Record<string, T> = {}): Record<string, T> {
+    return Object.fromEntries(
+      Object.entries(entries).flatMap(([name, value]): [string, T][] => {
+        const at = name.match(itemAt);
+        if (!at || Number(at[1]) < index) return [[name, value]];
+        if (Number(at[1]) === index) return [];
+        return [[name.replace(itemAt, `${list}.${Number(at[1]) - 1}`), value]];
+      }),
+    );
+  }
+  return {
+    fields: moved(values.fields),
+    more: moved(values.more),
+    entries: moved(values.entries),
+    counts: { ...moved(values.counts), [list]: count - 1 },
+  };
+}
+
+// A Phase's title says what it continues from: the starting model, or the Phase before it.
+function itemTitle(items: Schema, context: Context, list: string, index: number): string {
+  const item = humanize(lastPart(list)).replace(/s$/, "");
+  const algorithms: string[] | undefined = items.properties?.algorithm?.enum;
+  if (!algorithms) return `${item} ${index + 1}`;
+  const label = (at: number) => {
+    const algorithm = context.values.fields[`${list}.${at}.algorithm`] || algorithms[0];
+    return algorithm.length <= 4 ? algorithm.toUpperCase() : humanize(algorithm);
+  };
+  const owner = parent(list);
+  const fields = context.values.fields;
+  const start = fields[`${owner}.base_model`] || fields[`${owner}.from`] || "the starting model";
+  const from = index
+    ? `continues from ${item} ${index} (${label(index - 1)})`
+    : `starts from ${start}`;
+  return `${item} ${index + 1} · ${label(index)} · ${from}`;
 }
 
 /** What decides which of a section's fields apply, from what the API publishes: whether its

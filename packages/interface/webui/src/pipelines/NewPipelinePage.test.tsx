@@ -470,3 +470,88 @@ test("number fields step in their smallest place shown, from the default when em
   await userEvent.click(screen.getByRole("button", { name: "Decrease Trials" }));
   expect(screen.getByLabelText(/^Trials/)).toHaveValue("1");
 });
+
+const phasesSchema = {
+  type: "object",
+  properties: { finetune: { $ref: "#/$defs/Finetune" } },
+  $defs: {
+    Finetune: {
+      type: "object",
+      properties: {
+        base_model: { type: "string", title: "Base Model" },
+        phases: { type: "array", minItems: 1, items: { $ref: "#/$defs/Phase" } },
+      },
+    },
+    Phase: {
+      type: "object",
+      properties: {
+        algorithm: { enum: ["sft", "dpo", "kto"], type: "string", title: "Algorithm" },
+        dataset: { type: "string", title: "Dataset" },
+      },
+    },
+  },
+};
+
+function phaseApi() {
+  return fakeApi({
+    "GET /schema": [200, phasesSchema],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 4 }],
+  });
+}
+
+function legends(): string[] {
+  return [...document.querySelectorAll("legend")].map((legend) => legend.textContent ?? "");
+}
+
+test("Add Phase appends Phases, submitted in order, each saying what it continues from", async () => {
+  const calls = phaseApi();
+  renderApp("/pipelines/new");
+
+  await userEvent.type(await screen.findByLabelText(/^Base Model/), "hf:Qwen/Qwen3-0.6B");
+  await userEvent.click(screen.getByRole("button", { name: /add phase/i }));
+  await userEvent.click(screen.getByRole("button", { name: /add phase/i }));
+  const algorithms = screen.getAllByLabelText(/^Algorithm/);
+  await userEvent.selectOptions(algorithms[1], "dpo");
+  await userEvent.selectOptions(algorithms[2], "kto");
+
+  expect(legends()).toEqual([
+    expect.stringContaining("Phase 1 · SFT · starts from hf:Qwen/Qwen3-0.6B"),
+    expect.stringContaining("Phase 2 · DPO · continues from Phase 1 (SFT)"),
+    expect.stringContaining("Phase 3 · KTO · continues from Phase 2 (DPO)"),
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+  await screen.findByText(/Submitted Pipeline 4/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.finetune.phases).toEqual([
+    { algorithm: "sft" },
+    { algorithm: "dpo" },
+    { algorithm: "kto" },
+  ]);
+});
+
+test("deleting the middle Phase keeps the others' values and renumbers them", async () => {
+  phaseApi();
+  renderApp("/pipelines/new");
+
+  await userEvent.click(await screen.findByRole("button", { name: /add phase/i }));
+  await userEvent.click(screen.getByRole("button", { name: /add phase/i }));
+  const datasets = screen.getAllByLabelText(/^Dataset/);
+  await userEvent.type(datasets[0], "dataset:a");
+  await userEvent.type(datasets[1], "dataset:b");
+  await userEvent.type(datasets[2], "dataset:c");
+  await userEvent.click(screen.getByRole("button", { name: "Delete Phase 2" }));
+
+  expect(
+    screen.getAllByLabelText(/^Dataset/).map((input) => (input as HTMLInputElement).value),
+  ).toEqual(["dataset:a", "dataset:c"]);
+  expect(legends()[1]).toContain("Phase 2 · SFT · continues from Phase 1 (SFT)");
+});
+
+test("the last Phase can't be deleted", async () => {
+  phaseApi();
+  renderApp("/pipelines/new");
+
+  expect(await screen.findByRole("button", { name: "Delete Phase 1" })).toBeDisabled();
+});

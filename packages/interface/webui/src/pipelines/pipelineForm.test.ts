@@ -6,6 +6,7 @@ import {
   pipelineForm,
   pipelineRequestFromForm,
   placeErrors,
+  withoutListItem,
 } from "./pipelineForm";
 
 // A trimmed copy of `GET /schema`, with each shape the form must handle.
@@ -553,3 +554,28 @@ test("LoRA's rank is a choice of the ranks vLLM serves, sent as a number", () =>
 function lastName(node: FormNode): string {
   return node.name.split(".").pop()!;
 }
+
+test("deleting a list item moves every value of the later items up one place", () => {
+  const values = {
+    fields: {
+      "finetune.phases.0.dataset": "dataset:a",
+      "finetune.phases.1.dataset": "dataset:b",
+      "finetune.phases.2.dataset": "dataset:c",
+      "finetune.phases.10x": "kept",
+    },
+    more: { "finetune.phases.2.settings": [{ key: "seed", value: "1" }] },
+    entries: { "finetune.phases.2.rewards": [{ name: "short", fields: {} }] },
+    counts: { "finetune.phases": 3 },
+  };
+
+  expect(withoutListItem(values, "finetune.phases", 1, 3)).toEqual({
+    fields: {
+      "finetune.phases.0.dataset": "dataset:a",
+      "finetune.phases.1.dataset": "dataset:c",
+      "finetune.phases.10x": "kept",
+    },
+    more: { "finetune.phases.1.settings": [{ key: "seed", value: "1" }] },
+    entries: { "finetune.phases.1.rewards": [{ name: "short", fields: {} }] },
+    counts: { "finetune.phases": 2 },
+  });
+});
