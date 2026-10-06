@@ -158,7 +158,8 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
   // A field's own title, not its type's (e.g. "Settings", not "SftSettings").
   title = schema.title ?? humanize(title);
   const child = (key: string) => (name ? `${name}.${key}` : key);
-  if ("const" in node) return { kind: "fixed", name, title, fixed: node.const };
+  // A value the schema fixes is sent as is; an optional one (e.g. `params_from: @sweep`) is a choice.
+  if ("const" in node && !optional) return { kind: "fixed", name, title, fixed: node.const };
   const description = schema.description ?? node.description;
   // The settings of a Phase's algorithm, or of its Adapter, as the API publishes them: the common
   // ones shown, every other one a click away; sent whenever they are shown.
@@ -235,8 +236,10 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
     : references.includes("dataset:")
       ? { kind: "dataset" as const, references, rowFormats: rowFormatsOf(schema, context, name) }
       : fieldOf(node, context.defs, types);
-  // A Stage's output, the last one switched on, e.g. `@quantize` before `@finetune`.
-  const output = references.filter((reference) => reference.startsWith("@")).at(-1);
+  // A model or Dataset defaults to a Stage's output, the last one switched on, e.g. `@quantize`
+  // before `@finetune`.
+  const output =
+    "references" in field ? references.filter((r) => r.startsWith("@")).at(-1) : undefined;
   const fallback = defaultOf(schema, node, field, context.defaults?.[lastPart(name)] ?? output);
   return {
     ...field,
@@ -275,7 +278,9 @@ function rowFormatsOf(schema: Schema, context: Context, name: string) {
 
 function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {
   // A choice, also where any other text is allowed too, e.g. TRL's `lr_scheduler_type`.
-  const choices = node.enum ?? node.anyOf?.find((option: Schema) => option.enum)?.enum;
+  const choices =
+    node.enum ??
+    ("const" in node ? [node.const] : node.anyOf?.find((option: Schema) => option.enum)?.enum);
   if (choices) return { kind: "choice" as const, choices };
   // A list of values from a fixed set, such as benchmarks from the catalog.
   const items = node.type === "array" ? resolveRef(node.items, defs) : undefined;

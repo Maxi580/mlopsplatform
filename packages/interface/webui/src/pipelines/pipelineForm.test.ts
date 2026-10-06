@@ -577,3 +577,21 @@ test("deleting a list item moves every value of the later items up one place", (
     counts: { "finetune.phases": 2 },
   });
 });
+
+test("an optional fixed value, e.g. `params_from: @sweep`, is a choice that is left out unless chosen", () => {
+  const optionalSchema = {
+    type: "object",
+    properties: {
+      params_from: {
+        anyOf: [{ const: "@sweep", type: "string" }, { type: "null" }],
+        default: null,
+      },
+    },
+  };
+  const values = { fields: { sweep: "on" }, more: {} };
+  const form = pipelineForm(optionalSchema, values);
+
+  expect(form.children[0]).toMatchObject({ kind: "choice", choices: ["@sweep"] });
+  expect(form.children[0]).not.toHaveProperty("default");
+  expect(pipelineRequestFromForm(form, values)).toEqual({});
+});
