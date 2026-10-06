@@ -18,6 +18,7 @@ from mlp_core.config import (
     BENCHMARKS,
     CALIBRATION_DATASET,
     CALIBRATION_MAX_LENGTH,
+    CALIBRATION_ROW_FORMATS,
     CALIBRATION_SAMPLES,
     DISTILL_MAX_TOKENS,
     DISTILL_OUTPUT,
@@ -27,6 +28,7 @@ from mlp_core.config import (
     PERFORMANCE_OUTPUT_TOKENS,
     PERFORMANCE_PROMPT_TOKENS,
     PERFORMANCE_REQUESTS,
+    PROMPT_ROW_FORMAT,
     QUANTIZATION_SCHEME,
     QUANTIZATION_SCHEMES,
     QUANTIZE_IGNORE,
@@ -36,6 +38,7 @@ from mlp_core.config import (
     SPECULATE_DRAFT_VOCAB_SIZE,
     SPECULATE_EPOCHS,
     SPECULATE_LEARNING_RATE,
+    SPECULATE_ROW_FORMATS,
     SPECULATE_SAMPLES,
     SPECULATE_SEQ_LENGTH,
     SPECULATORS,
@@ -63,6 +66,12 @@ JobTeacher = TypeAdapter(BaseModelReference | ModelReference)
 # from one; GET /schema publishes what each trait depends on.
 def applies_if(trait: str, **extra) -> dict:
     return {"json_schema_extra": {"applies_if": trait, **extra}}
+
+
+# The row formats a Stage's Dataset field reads, which clients show and upload with; a Phase's
+# are its algorithm's.
+def reads(row_formats) -> dict:
+    return {"json_schema_extra": {"row_formats": list(row_formats)}}
 
 
 # A field's docstring is its `description` in the published schema, which clients show as help.
@@ -366,7 +375,7 @@ class Tool(Strict):
 class Distill(Strict):
     """A Distillation Dataset: each prompt's single Teacher reply, a text or tool calls (#17)."""
 
-    dataset: DatasetReference
+    dataset: DatasetReference = Field(**reads([PROMPT_ROW_FORMAT]))
     """The prompts to ask the Teacher: a Dataset of `prompt` rows."""
     # Any other name is a model at `api_url`.
     teacher: str = Field(json_schema_extra={"references": ["hf:", "model:", "endpoint:"]})
@@ -406,7 +415,9 @@ class Calibration(Strict):
     """The rows a scheme measures activations on, to choose its scales."""
 
     # The install registers the default one.
-    dataset: DatasetReference = f"dataset:{CALIBRATION_DATASET}"
+    dataset: DatasetReference = Field(
+        f"dataset:{CALIBRATION_DATASET}", **reads(CALIBRATION_ROW_FORMATS)
+    )
     """A Dataset of messages or text rows like the traffic the model will see."""
     samples: int = Field(CALIBRATION_SAMPLES, gt=0)
     """How many rows to measure on."""
@@ -465,7 +476,7 @@ class Speculate(Strict):
         BaseModelReference | ModelReference | Literal[FINETUNE_OUTPUT, QUANTIZE_OUTPUT] | None
     ) = None
     """The model it drafts for, as full weights; the Pipeline's last one when left out."""
-    dataset: DatasetReference | Literal[DISTILL_OUTPUT]
+    dataset: DatasetReference | Literal[DISTILL_OUTPUT] = Field(**reads(SPECULATE_ROW_FORMATS))
     """Conversations like the traffic the Endpoint will see; `@distill`'s replies count."""
     settings: SpeculateSettings = SpeculateSettings()
     """How the Speculator trains."""

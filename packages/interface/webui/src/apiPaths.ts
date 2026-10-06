@@ -9,6 +9,7 @@ export const VALIDATE_PIPELINE = "/pipelines/validate";
 export const DATASETS = "/datasets";
 export const PIPELINES = "/pipelines";
 export const cancelPipeline = (id: number) => `/pipelines/${id}/cancel`;
+export const datasetVersions = (name: string) => `/datasets/${name}/versions`;
 export const datasetVersion = (name: string, version: number) =>
   `/datasets/${name}/versions/${version}`;
 export const datasetDownload = (name: string, version: number) =>

@@ -629,6 +629,22 @@ ROW_FORMATS = {
     "messages": {"messages": "messages"},
     "text": {"text": "a string"},
 }
+# A one-line JSONL row of each format, which forms show beside a Dataset field.
+ROW_FORMAT_EXAMPLES = {
+    "preference": '{"prompt": "Capital of France?", "chosen": "Paris.", "rejected": "Lyon."}',
+    "unpaired_preference": '{"prompt": "Capital of Italy?", "completion": "Rome.", "label": true}',
+    "stepwise_supervision": (
+        '{"prompt": "2 + 2 * 3?", "completions": ["2 * 3 = 6", "2 + 6 = 8"], '
+        '"labels": [true, true]}'
+    ),
+    "prompt_completion": '{"prompt": "Capital of France?", "completion": "Paris."}',
+    "prompt_only": '{"prompt": "Capital of France?"}',
+    "messages": (
+        '{"messages": [{"role": "user", "content": "Capital of France?"}, '
+        '{"role": "assistant", "content": "Paris."}]}'
+    ),
+    "text": '{"text": "Paris is the capital of France."}',
+}
 # `distill` asks the Teacher about each prompt, and stores the prompt with the Teacher's reply.
 PROMPT_ROW_FORMAT = "prompt_only"
 DISTILLATION_ROW_FORMAT = "prompt_completion"

@@ -1,5 +1,5 @@
-import { CircleAlert, Download, HardDrive } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { CircleAlert, Download, HardDrive, History, Upload } from "lucide-react";
+import { Fragment, type ReactNode, useState } from "react";
 import { callApi, errorMessage, useApi } from "../api";
 import {
   CHECKPOINTS,
@@ -16,6 +16,7 @@ import {
 } from "../apiPaths";
 import { BUCKET_CONTENTS, CACHE_ENTRY_KINDS, STORAGE_WARNING_PERCENT } from "../config";
 import { formatBytes } from "../formatBytes";
+import DatasetUploadDialog from "./DatasetUploadDialog";
 import ModelUploadForm from "./ModelUploadForm";
 import type {
   Checkpoint,
@@ -34,6 +35,7 @@ export default function StoragePage() {
   const checkpoints = useApi<Checkpoint[]>(CHECKPOINTS);
   const [notice, setNotice] = useState<{ text: string; failed: boolean }>();
   const [modelFiles, setModelFiles] = useState<{ label: string; files: ModelVersionFile[] }>();
+  const [uploadingDataset, setUploadingDataset] = useState(false);
   const error = datasets.error ?? models.error ?? storage.error ?? cache.error ?? checkpoints.error;
 
   function reload() {
@@ -64,6 +66,15 @@ export default function StoragePage() {
     } catch (failure) {
       setNotice({ text: errorMessage(failure), failed: true });
     }
+  }
+
+  function datasetRow(name: string, v: Dataset["versions"][number]) {
+    return {
+      label: `${name}@${v.version}`,
+      cells: [v.row_format, formatBytes(v.size_bytes)],
+      path: datasetVersion(name, v.version),
+      onDownload: () => download(name, v.version),
+    };
   }
 
   async function download(name: string, version: number) {
@@ -107,17 +118,31 @@ export default function StoragePage() {
       <VersionTable
         title="Datasets"
         columns={["Dataset Version", "Row format", "Size"]}
-        empty="No Datasets yet; upload one with `mlp datasets upload`."
+        empty="No Datasets yet; upload one."
         onDelete={remove}
-        rows={datasets.data?.flatMap((dataset) =>
-          dataset.versions.map((v) => ({
-            label: `${dataset.name}@${v.version}`,
-            cells: [v.row_format, formatBytes(v.size_bytes)],
-            path: datasetVersion(dataset.name, v.version),
-            onDownload: () => download(dataset.name, v.version),
-          })),
-        )}
+        action={
+          <button type="button" className="button small" onClick={() => setUploadingDataset(true)}>
+            <Upload size={14} /> Upload Dataset
+          </button>
+        }
+        // Each Dataset's latest upload, which a name means; older Versions only in its history.
+        rows={datasets.data?.map((dataset) => {
+          const rows = dataset.versions.map((version) => datasetRow(dataset.name, version));
+          const [latest, ...older] = rows.reverse();
+          return { ...latest, history: older };
+        })}
       />
+      {uploadingDataset && (
+        <DatasetUploadDialog
+          datasets={datasets.data ?? []}
+          onClose={() => setUploadingDataset(false)}
+          onUploaded={(name) => {
+            setUploadingDataset(false);
+            setNotice({ text: `Uploaded ${name}`, failed: false });
+            reload();
+          }}
+        />
+      )}
 
       <VersionTable
         title="Registered Models"
@@ -253,6 +278,8 @@ type VersionRowData = {
   cells: ReactNode[];
   path: string;
   onDownload?: () => void;
+  // Older rows, shown on asking, e.g. a Dataset's earlier Versions.
+  history?: VersionRowData[];
 };
 
 function VersionTable({
@@ -261,6 +288,7 @@ function VersionTable({
   columns,
   empty,
   rows,
+  action,
   onDelete,
 }: {
   title: string;
@@ -268,11 +296,14 @@ function VersionTable({
   columns: string[];
   empty: string;
   rows?: VersionRowData[];
+  action?: ReactNode;
   onDelete: (path: string, label: string) => void;
 }) {
   return (
     <section className="storage-section">
-      <h2>{title}</h2>
+      <h2>
+        {title} {action}
+      </h2>
       {note && <p className="muted">{note}</p>}
       {rows?.length === 0 && <p className="muted">{empty}</p>}
       {!!rows?.length && (
@@ -307,46 +338,67 @@ function VersionRow({
 }) {
   // Deleting asks once more in place, rather than in a browser dialog.
   const [confirming, setConfirming] = useState(false);
+  const [showingHistory, setShowingHistory] = useState(false);
+  const history = row.history ?? [];
 
   return (
-    <tr>
-      <td className="pipeline-name">{row.label}</td>
-      {row.cells.map((cell, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: the columns are fixed per table.
-        <td key={index}>{cell}</td>
-      ))}
-      <td className="actions">
-        {row.onDownload && (
-          <button type="button" className="button ghost small" onClick={row.onDownload}>
-            <Download size={14} /> Download
-          </button>
-        )}
-        {confirming ? (
-          <>
-            <button
-              type="button"
-              className="button danger small"
-              onClick={() => {
-                setConfirming(false);
-                onDelete(row.path, row.label);
-              }}
-            >
-              Delete {row.label}
-            </button>
+    <Fragment>
+      <tr>
+        <td className="pipeline-name">{row.label}</td>
+        {row.cells.map((cell, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the columns are fixed per table.
+          <td key={index}>{cell}</td>
+        ))}
+        <td className="actions">
+          {history.length > 0 && (
             <button
               type="button"
               className="button ghost small"
-              onClick={() => setConfirming(false)}
+              aria-expanded={showingHistory}
+              aria-label={`History of ${row.label.split("@")[0]} (${history.length})`}
+              onClick={() => setShowingHistory(!showingHistory)}
             >
-              Keep
+              <History size={14} /> history
             </button>
-          </>
-        ) : (
-          <button type="button" className="button ghost small" onClick={() => setConfirming(true)}>
-            Delete
-          </button>
-        )}
-      </td>
-    </tr>
+          )}
+          {row.onDownload && (
+            <button type="button" className="button ghost small" onClick={row.onDownload}>
+              <Download size={14} /> Download
+            </button>
+          )}
+          {confirming ? (
+            <>
+              <button
+                type="button"
+                className="button danger small"
+                onClick={() => {
+                  setConfirming(false);
+                  onDelete(row.path, row.label);
+                }}
+              >
+                Delete {row.label}
+              </button>
+              <button
+                type="button"
+                className="button ghost small"
+                onClick={() => setConfirming(false)}
+              >
+                Keep
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="button ghost small"
+              onClick={() => setConfirming(true)}
+            >
+              Delete
+            </button>
+          )}
+        </td>
+      </tr>
+      {showingHistory &&
+        history.map((older) => <VersionRow key={older.label} row={older} onDelete={onDelete} />)}
+    </Fragment>
   );
 }

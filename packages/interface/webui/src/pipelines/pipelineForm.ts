@@ -10,7 +10,8 @@ export type FieldKind =
   | "list"
   | "integer"
   | "number"
-  | "model";
+  | "model"
+  | "dataset";
 
 export type FormSection = {
   kind: "section";
@@ -49,6 +50,8 @@ export type FormField = {
   // The References a model or Dataset field takes, e.g. `hf:`, `model:`, and the outputs of
   // the Stages switched on, e.g. `@finetune`.
   references?: string[];
+  // The row formats a Dataset field reads, each with a JSONL example.
+  rowFormats?: { name: string; example: string }[];
 };
 
 export type FormNode = FormSection | FormField;
@@ -229,12 +232,16 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
   const references = referencesOf(schema, node, context);
   const field = references.some((reference) => MODEL_REFERENCES.includes(reference))
     ? { kind: "model" as const, references, name, title }
-    : { ...fieldOf(node, context.defs, types), name, title };
+    : references.includes("dataset:")
+      ? { kind: "dataset" as const, references, rowFormats: rowFormatsOf(schema, context, name) }
+      : fieldOf(node, context.defs, types);
   // A Stage's output, the last one switched on, e.g. `@quantize` before `@finetune`.
   const output = references.filter((reference) => reference.startsWith("@")).at(-1);
   const fallback = defaultOf(schema, node, field, context.defaults?.[lastPart(name)] ?? output);
   return {
     ...field,
+    name,
+    title,
     ...(description && { description }),
     ...(fallback !== undefined && { default: fallback }),
     ...(schema.placeholder != null && { placeholder: formatValue(schema.placeholder) }),
@@ -256,6 +263,16 @@ function referencesOf(schema: Schema, node: Schema, context: Context): string[] 
     ...(schema.references ?? prefixes),
     ...outputs.filter((output) => String(output).startsWith("@") && switchedOn(output)),
   ];
+}
+
+// What a Dataset field reads: its own row formats, or a Phase's or Sweep's algorithm's.
+function rowFormatsOf(schema: Schema, context: Context, name: string) {
+  const algorithm = context.root.algorithms?.[algorithmAt(context, parent(name))];
+  const names: string[] = schema.row_formats ?? algorithm?.row_formats ?? [];
+  return names.map((format) => ({
+    name: format,
+    example: context.root.row_formats?.[format]?.example ?? "",
+  }));
 }
 
 function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {

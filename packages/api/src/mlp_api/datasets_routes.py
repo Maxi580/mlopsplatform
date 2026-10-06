@@ -26,14 +26,22 @@ def datasets(request: Request) -> list[dict]:
     return list_datasets(request.app.state.engine)
 
 
+# A Web UI field names the `row_formats` it reads, e.g. `messages,text`, to refuse others.
 @router.post(api_paths.DATASET_VERSIONS, status_code=201)
-async def upload(name: DatasetName, request: Request) -> dict:
+async def upload(name: DatasetName, request: Request, row_formats: str = "") -> dict:
     state = request.app.state
+    readable = [row_format for row_format in row_formats.split(",") if row_format]
     with tempfile.TemporaryDirectory() as directory:
         path = await received_file(request, Path(directory))
         try:
             return await run_in_threadpool(
-                upload_dataset_version, state.engine, state.object_store, name, path
+                upload_dataset_version,
+                state.engine,
+                state.object_store,
+                name,
+                path,
+                None,
+                readable,
             )
         except ValueError as error:
             raise HTTPException(422, f"Rejected {name}: {error}") from None

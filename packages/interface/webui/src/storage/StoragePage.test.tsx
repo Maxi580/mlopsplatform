@@ -231,7 +231,7 @@ test("a model directory uploads in parts straight to the object store, then regi
     directoryFile("model.safetensors", "weights"),
     directoryFile(".git/HEAD", "ref"),
   ]);
-  await userEvent.click(screen.getByRole("button", { name: /upload/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^upload$/i }));
 
   expect(await screen.findByText("Uploaded my-model@1")).toBeInTheDocument();
   const start = calls.find((call) => call.route === "POST /models/uploads")!;
@@ -261,7 +261,7 @@ test("a refused model upload shows the reason", async () => {
   await userEvent.upload(screen.getByLabelText("Model directory"), [
     directoryFile("model.safetensors", "weights"),
   ]);
-  await userEvent.click(screen.getByRole("button", { name: /upload/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^upload$/i }));
 
   expect(await screen.findByText(reason)).toBeInTheDocument();
 });
@@ -280,4 +280,45 @@ test("a Model Version's download lists a link per file", async () => {
   const link = await screen.findByRole("link", { name: "adapter_model.safetensors" });
   expect(link).toHaveAttribute("href", "https://objects.test/m?sig=x");
   expect(screen.getByRole("link", { name: "adapter_config.json" })).toBeInTheDocument();
+});
+
+test("Storage uploads Datasets and keeps older Versions behind history", async () => {
+  let current: Dataset[] = [
+    {
+      name: "chat",
+      versions: [
+        { version: 1, size_bytes: 1024, row_format: "messages" },
+        { version: 2, size_bytes: 2048, row_format: "messages" },
+      ],
+    },
+  ];
+  const calls = fakeApi({
+    ...routes,
+    "GET /datasets": () => [200, current],
+    "POST /datasets/notes/versions": () => {
+      current = [
+        ...current,
+        { name: "notes", versions: [{ version: 1, size_bytes: 9, row_format: "text" }] },
+      ];
+      return [201, { version: 1 }];
+    },
+  });
+  renderApp("/storage");
+
+  expect(await screen.findByText("chat@2")).toBeInTheDocument();
+  expect(screen.queryByText("chat@1")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "History of chat (1)" }));
+  const older = screen.getByText("chat@1").closest("tr")!;
+  expect(within(older).getByRole("button", { name: /download/i })).toBeInTheDocument();
+  expect(within(older).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Upload Dataset" }));
+  const dialog = screen.getByRole("dialog");
+  const file = new File(['{"text": "Hi"}\n'], "notes.jsonl");
+  await userEvent.upload(within(dialog).getByLabelText("JSONL file"), file);
+  await userEvent.click(within(dialog).getByRole("button", { name: /upload/i }));
+
+  expect(await screen.findByText("Uploaded notes")).toBeInTheDocument();
+  expect(screen.getByText("notes@1")).toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain("POST /datasets/notes/versions");
 });

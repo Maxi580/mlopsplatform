@@ -8,6 +8,8 @@ export type Catalog = {
   datasets: Dataset[];
   // The user's Hugging Face token, so a search also finds the models it opens.
   hfToken?: string;
+  // Loads the Datasets again, e.g. after an upload.
+  reloadDatasets?: () => void;
 };
 
 export const NO_CATALOG: Catalog = { models: [], endpoints: [], datasets: [] };

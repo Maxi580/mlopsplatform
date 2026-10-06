@@ -13,17 +13,19 @@ export class ApiError extends Error {
   }
 }
 
-/** The API's JSON answer; ApiError with FastAPI's `detail` when it refused. */
+/** The API's JSON answer; ApiError with FastAPI's `detail` when it refused. A file is sent as
+ * it is, anything else as JSON. */
 export async function callApi<T>(
   path: string,
   body?: unknown,
   method = body === undefined ? "GET" : "POST",
   headers: Record<string, string> = {},
 ): Promise<T> {
+  const json = body !== undefined && !(body instanceof Blob);
   const response = await fetch(path, {
     method,
-    headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: json ? { ...headers, "content-type": "application/json" } : headers,
+    body: json ? JSON.stringify(body) : (body as Blob | undefined),
     credentials: "same-origin",
   });
   if (response.status === 401 && path !== LOGIN) window.dispatchEvent(new Event(LOGGED_OUT_EVENT));

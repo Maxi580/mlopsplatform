@@ -672,3 +672,164 @@ test("each model field offers its groups, and Quantize preselects Finetune's out
   // The browser asks the API for Hub models, never huggingface.co itself.
   expect(calls.map((call) => call.route)).toContain("GET /base-models?search=");
 });
+
+const DATASET = "^dataset:[A-Za-z0-9][A-Za-z0-9_.-]*(@d+)?$";
+const datasetsSchema = {
+  type: "object",
+  properties: {
+    distill: { anyOf: [{ $ref: "#/$defs/Distill" }, { type: "null" }], default: null },
+    finetune: { anyOf: [{ $ref: "#/$defs/Finetune" }, { type: "null" }], default: null },
+  },
+  $defs: {
+    Distill: {
+      type: "object",
+      properties: {
+        dataset: {
+          type: "string",
+          pattern: DATASET,
+          title: "Prompts",
+          row_formats: ["prompt_only"],
+        },
+      },
+    },
+    Finetune: {
+      type: "object",
+      properties: { phases: { type: "array", minItems: 1, items: { $ref: "#/$defs/Phase" } } },
+    },
+    Phase: {
+      type: "object",
+      properties: {
+        algorithm: { enum: ["sft", "dpo"], type: "string", title: "Algorithm" },
+        dataset: {
+          anyOf: [
+            { type: "string", pattern: DATASET },
+            { const: "@distill", type: "string" },
+          ],
+          title: "Dataset",
+        },
+      },
+    },
+  },
+  algorithms: {
+    sft: { row_formats: ["messages", "prompt_completion", "text"] },
+    dpo: { row_formats: ["preference"] },
+  },
+  row_formats: {
+    messages: { example: '{"messages": []}' },
+    prompt_completion: { example: '{"prompt": "Hi", "completion": "Hello"}' },
+    text: { example: '{"text": "Hi"}' },
+    preference: { example: '{"chosen": "a", "rejected": "b"}' },
+    prompt_only: { example: '{"prompt": "Hi"}' },
+  },
+};
+
+function datasetsApi(routes: Parameters<typeof fakeApi>[0] = {}) {
+  let datasets = [
+    { name: "chat", versions: [{ version: 1, size_bytes: 9, row_format: "messages" }] },
+  ];
+  return fakeApi({
+    "GET /schema": [200, datasetsSchema],
+    "GET /datasets": () => [200, datasets],
+    "GET /pipelines": [200, []],
+    "POST /datasets/support/versions?row_formats=messages,prompt_completion,text": () => {
+      datasets = [
+        ...datasets,
+        { name: "support", versions: [{ version: 1, size_bytes: 9, row_format: "text" }] },
+      ];
+      return [201, { version: 1 }];
+    },
+    "POST /datasets/pairs/versions?row_formats=messages,prompt_completion,text": [
+      422,
+      {
+        detail:
+          "Rejected pairs: has preference rows; it takes messages, prompt_completion, text rows",
+      },
+    ],
+    ...routes,
+  });
+}
+
+async function uploadIn(field: RegExp, fileName: string) {
+  await userEvent.click(screen.getByRole("combobox", { name: field }));
+  await userEvent.click(await screen.findByRole("button", { name: "Upload…" }));
+  const dialog = screen.getByRole("dialog");
+  const file = new File(['{"text": "Hi"}\n'], fileName, { type: "application/jsonl" });
+  await userEvent.upload(within(dialog).getByLabelText("JSONL file"), file);
+  return dialog;
+}
+
+test("uploading a JSONL file in a Dataset field selects it", async () => {
+  const calls = datasetsApi();
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+
+  const dialog = await uploadIn(/^Dataset/, "support.jsonl");
+  expect(within(dialog).getByLabelText("Name")).toHaveValue("support");
+  await userEvent.click(within(dialog).getByRole("button", { name: /upload/i }));
+
+  expect(await screen.findByRole("combobox", { name: /^Dataset/ })).toHaveValue("dataset:support");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const upload = calls.find((call) => call.route.startsWith("POST /datasets/support"))!;
+  expect(upload.body).toBeInstanceOf(File);
+  // The dialog's submit isn't the Pipeline's.
+  expect(calls.map((call) => call.route)).not.toContain("POST /pipelines");
+});
+
+test("a wrong row format shows the API's error in the dialog", async () => {
+  datasetsApi();
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+
+  const dialog = await uploadIn(/^Dataset/, "pairs.jsonl");
+  await userEvent.click(within(dialog).getByRole("button", { name: /upload/i }));
+
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("has preference rows");
+});
+
+test("uploading under an existing name says it replaces it, keeping the old data", async () => {
+  datasetsApi();
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+
+  const dialog = await uploadIn(/^Dataset/, "chat.jsonl");
+
+  expect(dialog).toHaveTextContent(
+    "Replaces chat (the old data stays with Pipelines that used it)",
+  );
+});
+
+test("the format ⓘ shows the row formats the algorithm reads, with an example each", async () => {
+  datasetsApi();
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+
+  const formats = () => screen.getByRole("button", { name: "Row formats" });
+  for (const example of [
+    '{"messages": []}',
+    '{"prompt": "Hi", "completion": "Hello"}',
+    '{"text": "Hi"}',
+  ])
+    expect(formats()).toHaveAccessibleDescription(expect.stringContaining(example));
+  await userEvent.selectOptions(screen.getByLabelText(/^Algorithm/), "dpo");
+  expect(formats()).toHaveAccessibleDescription(
+    expect.stringContaining('{"chosen": "a", "rejected": "b"}'),
+  );
+  expect(formats()).not.toHaveAccessibleDescription(expect.stringContaining("messages"));
+});
+
+test("with Distill on, Finetune's Dataset preselects the Distillation Dataset", async () => {
+  datasetsApi();
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  expect(screen.getByRole("combobox", { name: /^Dataset/ })).toHaveValue("");
+
+  await userEvent.click(screen.getByRole("checkbox", { name: /run distill/i }));
+  const dataset = screen.getByRole("combobox", { name: /^Dataset/ });
+  expect(dataset).toHaveValue("@distill");
+  await userEvent.click(dataset);
+  expect(
+    screen.getByRole("option", { name: /Distillation Dataset from this Pipeline/ }),
+  ).toBeInTheDocument();
+  // Only the Datasets the algorithm reads; Versions stay out of sight.
+  expect(screen.getByRole("option", { name: /^chat/ })).toHaveTextContent("messages");
+});

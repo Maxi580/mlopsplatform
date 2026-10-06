@@ -37,11 +37,18 @@ dataset_version = Table(
 
 
 def upload_dataset_version(
-    engine: Engine, object_store: ObjectStore, name: str, path: Path, pipeline_id: int | None = None
+    engine: Engine,
+    object_store: ObjectStore,
+    name: str,
+    path: Path,
+    pipeline_id: int | None = None,
+    row_formats: list[str] | None = None,
 ) -> dict:
     """The new Dataset Version holding the JSONL file; ValueError naming the first bad row."""
-    # 1. Every row in one supported row format.
+    # 1. Every row in one supported row format, one of `row_formats` if the uploader names them.
     row_format = row_format_of_file(path)
+    if row_formats and row_format not in row_formats:
+        raise ValueError(f"has {row_format} rows; it takes {', '.join(row_formats)} rows")
 
     with engine.begin() as connection:
         # 2. The next version number, counting deleted versions too.

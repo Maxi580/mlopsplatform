@@ -22,6 +22,12 @@ def published_schema() -> dict:
     schema["more_lora_settings"] = other_setting_schemas(
         config.LORA_CONFIG, (*config.SHOWN_LORA_SETTINGS, *hidden)
     )
+
+    # 4. Each Dataset row format: its fields and a one-line JSONL example.
+    schema["row_formats"] = {
+        name: {"fields": fields, "example": config.ROW_FORMAT_EXAMPLES[name]}
+        for name, fields in config.ROW_FORMATS.items()
+    }
     return schema
 
 

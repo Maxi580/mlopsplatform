@@ -479,3 +479,18 @@ def test_schema_publishes_every_allowed_setting_once_shown_directly_or_one_click
     lora = {*published["lora_settings"], *schema["more_lora_settings"]}
     assert not {"use_dora", "task_type", "modules_to_save"} & lora
     assert published["lora_settings"]["r"]["enum"] == list(config.VLLM_LORA_RANKS)
+
+
+def test_schema_publishes_each_row_format_with_an_example(logged_in_api):
+    schema = logged_in_api.get(api_paths.SCHEMA).json()
+
+    formats = schema["row_formats"]
+    assert set(formats) == set(config.ROW_FORMATS)
+    assert json.loads(formats["preference"]["example"]).keys() >= {"chosen", "rejected"}
+    assert schema["algorithms"]["dpo"]["row_formats"] == ["preference"]
+    distill = schema["$defs"]["Distill"]["properties"]["dataset"]
+    assert distill["row_formats"] == ["prompt_only"]
+    assert schema["$defs"]["Calibration"]["properties"]["dataset"]["row_formats"] == [
+        "messages",
+        "text",
+    ]

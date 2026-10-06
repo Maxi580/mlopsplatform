@@ -46,11 +46,16 @@ const NO_ERRORS: PlacedErrors = { byName: {}, unplaced: [] };
 
 export default function NewPipelinePage() {
   const schema = useApi<Record<string, unknown>>(SCHEMA).data;
-  const datasets = useApi<Dataset[]>(DATASETS).data;
+  const datasets = useApi<Dataset[]>(DATASETS);
   const models = useApi<RegisteredModel[]>(MODELS).data;
   const endpoints = useApi<Endpoint[]>(ENDPOINTS).data;
   const benchmarks = useApi<Benchmark[]>(BENCHMARKS).data;
-  const catalog = { datasets: datasets ?? [], models: models ?? [], endpoints: endpoints ?? [] };
+  const catalog = {
+    datasets: datasets.data ?? [],
+    models: models ?? [],
+    endpoints: endpoints ?? [],
+    reloadDatasets: datasets.reload,
+  };
 
   return schema ? (
     <PipelineBuilder schema={schema} catalog={catalog} benchmarks={benchmarks ?? []} />

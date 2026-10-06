@@ -149,3 +149,17 @@ def test_deleting_an_unknown_version_is_not_found(logged_in_api):
 def test_datasets_require_login(api, object_store):
     assert upload(api, "chat", jsonl(CHAT)).status_code == 401
     assert api.get(api_paths.DATASETS).status_code == 401
+
+
+def test_an_upload_for_a_field_takes_only_the_row_formats_it_reads(logged_in_api):
+    path = api_paths.DATASET_VERSIONS.format(name="chat")
+
+    rejected = logged_in_api.post(path, params={"row_formats": "preference"}, content=jsonl(CHAT))
+    accepted = logged_in_api.post(
+        path, params={"row_formats": "messages,text"}, content=jsonl(CHAT)
+    )
+
+    assert rejected.status_code == 422
+    assert "has messages rows; it takes preference rows" in rejected.json()["detail"]
+    assert accepted.status_code == 201
+    assert datasets(logged_in_api)["chat"][0]["version"] == 1

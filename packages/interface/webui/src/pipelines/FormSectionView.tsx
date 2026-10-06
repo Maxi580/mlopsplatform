@@ -2,6 +2,7 @@ import { Plus, Trash2, X } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE, SWITCHED_ON } from "../config";
 import type { Catalog } from "../fields/catalog";
+import DatasetPicker from "../fields/DatasetPicker";
 import InfoBox from "../fields/InfoBox";
 import ModelPicker from "../fields/ModelPicker";
 import NumberInput from "../fields/NumberInput";
@@ -191,7 +192,6 @@ function FieldInput({
   const prefix = Object.keys(REFERENCE_PLACEHOLDERS).find((start) =>
     field.pattern?.startsWith(start),
   );
-  const isDataset = prefix === "^dataset:";
   const common = {
     id: field.name,
     name: field.name,
@@ -211,6 +211,13 @@ function FieldInput({
           {field.title} <code>{lastPart(field.name)}</code>
         </label>
         {field.description && <InfoBox id={`${field.name}-info`} text={field.description} />}
+        {!!field.rowFormats?.length && (
+          <InfoBox
+            id={`${field.name}-formats`}
+            label="Row formats"
+            text={<RowFormats formats={field.rowFormats} />}
+          />
+        )}
         {onReset && (
           <button
             type="button"
@@ -229,6 +236,18 @@ function FieldInput({
           label={field.title}
           value={value}
           references={field.references ?? []}
+          catalog={catalog}
+          invalid={!!errors}
+          describedBy={common["aria-describedby"]}
+          onChange={onChange}
+        />
+      ) : field.kind === "dataset" ? (
+        <DatasetPicker
+          id={field.name}
+          label={field.title}
+          value={value}
+          references={field.references ?? []}
+          rowFormats={(field.rowFormats ?? []).map((format) => format.name)}
           catalog={catalog}
           invalid={!!errors}
           describedBy={common["aria-describedby"]}
@@ -264,19 +283,26 @@ function FieldInput({
               ? "one value, or several separated by commas"
               : prefix && REFERENCE_PLACEHOLDERS[prefix])
           }
-          list={isDataset ? "dataset-references" : undefined}
           autoComplete="off"
         />
       )}
-      {isDataset && (
-        <datalist id="dataset-references">
-          {datasetReferences(catalog).map((reference) => (
-            <option key={reference} value={reference} />
-          ))}
-        </datalist>
-      )}
       <FieldErrors id={`${field.name}-error`} messages={errors} />
     </div>
+  );
+}
+
+// The row formats a Dataset field reads, each with a line of JSONL.
+function RowFormats({ formats }: { formats: { name: string; example: string }[] }) {
+  return (
+    <>
+      One JSON object per line, in one of these row formats:
+      {formats.map((format) => (
+        <span key={format.name} className="row-format">
+          <strong>{format.name}</strong>
+          <code>{format.example}</code>
+        </span>
+      ))}
+    </>
   );
 }
 
@@ -532,13 +558,6 @@ function FieldErrors({ id, messages }: { id?: string; messages?: string[] }) {
       {messages.join("; ")}
     </p>
   );
-}
-
-function datasetReferences(catalog: Catalog): string[] {
-  return catalog.datasets.flatMap((dataset) => [
-    `dataset:${dataset.name}`,
-    ...dataset.versions.map((version) => `dataset:${dataset.name}@${version.version}`),
-  ]);
 }
 
 function lastPart(name: string): string {
