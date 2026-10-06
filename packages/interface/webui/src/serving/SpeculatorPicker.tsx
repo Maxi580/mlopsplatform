@@ -78,15 +78,12 @@ export default function SpeculatorPicker({
           <label className="field-label" htmlFor="speculative">
             Speculative decoding <code>speculative</code>
           </label>
-          <InfoBox
-            id="speculative-info"
-            text="A Speculator drafts only for the pinned model it was trained for; n-gram needs none."
-          />
+          {schema.description && <InfoBox id="speculative-info" text={schema.description} />}
         </div>
         <select
           id="speculative"
           value={chosen}
-          aria-describedby="speculative-info"
+          aria-describedby={schema.description ? "speculative-info" : undefined}
           onChange={(event) => choose(event.target.value)}
         >
           <option value={OFF}>Off</option>

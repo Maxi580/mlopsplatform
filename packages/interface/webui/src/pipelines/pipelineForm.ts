@@ -1,4 +1,4 @@
-import { MORE_SETTINGS, SWITCHED_ON } from "../config";
+import { MODEL_REFERENCES, MORE_SETTINGS, SWITCHED_ON } from "../config";
 import { type Bounds, formatNumber } from "../fields/numbers";
 
 export type FieldKind =
@@ -247,8 +247,6 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
     ...(schema.placeholder != null && { placeholder: formatValue(schema.placeholder) }),
   };
 }
-
-const MODEL_REFERENCES = ["hf:", "model:", "endpoint:"];
 
 /** The References the field takes, by its patterns or its `references`, and the outputs it
  * takes of the Stages that are switched on. */

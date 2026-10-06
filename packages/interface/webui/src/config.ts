@@ -57,3 +57,5 @@ export const REWARD_TEMPLATE = `def reward(sample, item):
 `;
 // How long a model picker waits after a keystroke before it searches the Hub.
 export const MODEL_SEARCH_DELAY_MS = 300;
+// The References that make a field a model picker; any other field taking `dataset:` is a Dataset's.
+export const MODEL_REFERENCES = ["hf:", "model:", "endpoint:"];

@@ -51,7 +51,8 @@ class ServingOptions(BaseModel):
 
 
 class Speculative(BaseModel):
-    """Speculative decoding: `ngram` looks the next tokens up in the context, the others draft."""
+    """Speculative decoding: `ngram` drafts from the context; a Speculator only for the pinned model
+    it was trained for."""
 
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
