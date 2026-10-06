@@ -11,8 +11,8 @@ ARG BFCL_VERSION=""
 COPY --from=uv /uv /bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-COPY packages ./packages
-RUN uv sync --frozen --no-dev --package mlp-stages ${STAGES_EXTRA:+--extra "$STAGES_EXTRA"}
+# Dependencies before the code, so a code change rebuilds only the last layers.
+RUN uv sync --frozen --no-dev --package mlp-stages ${STAGES_EXTRA:+--extra "$STAGES_EXTRA"} --no-install-workspace
 # speculators derives the draft layers' head_dim from the verifier when its config leaves it unset
 # (Qwen2 does), then hands the unset value on anyway, which transformers refuses. The upstream fix
 # is this one word; the grep fails the build once a release carries it, so this gets deleted.
@@ -24,9 +24,12 @@ RUN if [ "$STAGES_EXTRA" = "evaluate" ]; then \
 # BFCL pins libraries the other harnesses can't share, so it gets a virtualenv of its own, with
 # the platform's code to drive it; its qwen-agent imports soundfile without depending on it.
 RUN if [ -n "$BFCL_VERSION" ]; then \
-      uv venv /opt/bfcl \
-      && uv pip install --python /opt/bfcl/bin/python "bfcl-eval==$BFCL_VERSION" soundfile \
-      && uv pip install --python /opt/bfcl/bin/python --no-deps ./packages/core ./packages/stages; \
+      uv venv /opt/bfcl && uv pip install --python /opt/bfcl/bin/python "bfcl-eval==$BFCL_VERSION" soundfile; \
+    fi
+COPY packages ./packages
+RUN uv sync --frozen --no-dev --package mlp-stages ${STAGES_EXTRA:+--extra "$STAGES_EXTRA"}
+RUN if [ -n "$BFCL_VERSION" ]; then \
+      uv pip install --python /opt/bfcl/bin/python --no-deps ./packages/core ./packages/stages; \
     fi
 ENV PATH="/app/.venv/bin:$PATH"
 # Unsloth reports usage statistics unless told not to.

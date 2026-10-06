@@ -7,6 +7,8 @@ FROM ${PYTHON_IMAGE}
 COPY --from=uv /uv /bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
+# Dependencies before the code, so a code change rebuilds only the layers below.
+RUN uv sync --frozen --no-dev --package mlp-api --no-install-workspace
 COPY packages ./packages
 RUN uv sync --frozen --no-dev --package mlp-api
 ENV PATH="/app/.venv/bin:$PATH"
