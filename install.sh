@@ -195,13 +195,18 @@ stop_running_work() {
 
 # Asked on the first run only; the API stores just its hash, which survives re-installs.
 set_shared_password() {
-  local platform accounts password confirmation
+  local platform accounts password confirmation min_length
   platform=$(value .namespaces.platform)
   # A separate assignment, so a failing kubectl stops the install instead of resetting the password.
   accounts=$(kubectl -n "$platform" exec statefulset/postgres -- psql -U "$(value .postgres.user)" \
     -d "$(value .postgres.database)" -tAc 'SELECT count(*) FROM account')
   [[ $accounts == 1 ]] && return
   log "Setting the shared password"
+  # The API checks the length, so it also reports it.
+  min_length=$(kubectl -n "$platform" exec deploy/api -- \
+    python -c 'from mlp_core.config import MIN_PASSWORD_LENGTH; print(MIN_PASSWORD_LENGTH)')
+  echo "The whole team logs in with it to the Web UI, the CLI (mlp login), and the Kubeflow and MLflow UIs."
+  echo "It needs at least $min_length characters."
   password=${MLP_PASSWORD:-}
   if [[ -z $password ]]; then
     read -rsp "Shared password: " password && echo
