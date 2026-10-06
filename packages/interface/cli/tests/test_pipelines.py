@@ -157,6 +157,31 @@ def test_cancel_cancels_the_pipeline(logged_in, home, fake_api, platform_ca):
     assert "cancelled" in result.output
 
 
+def test_delete_deletes_the_finished_pipeline(logged_in, home, fake_api, platform_ca):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE)
+    path = api_paths.PIPELINE.format(id=7)
+    fake_api.answers[path] = (204, b"")
+
+    result = mlp("delete", "7")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received == [(path, f"Bearer {TOKEN}")]
+    assert "Pipeline 7 deleted" in result.output
+
+
+def test_deleting_a_running_pipeline_says_why_it_was_refused(
+    logged_in, home, fake_api, platform_ca
+):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE)
+    detail = "Pipeline 7 is running; cancel it first"
+    fake_api.answers[api_paths.PIPELINE.format(id=7)] = (409, {"detail": detail})
+
+    result = mlp("delete", "7")
+
+    assert result.exit_code == 1
+    assert detail in result.output
+
+
 def test_rerun_submits_the_stored_request_with_fresh_secrets(
     logged_in, home, fake_api, platform_ca
 ):

@@ -12,7 +12,7 @@ app = typer.Typer()
 
 @app.callback(invoke_without_command=True)
 def endpoints(context: typer.Context) -> None:
-    """List Endpoints with their model, status and URL, or start and stop them."""
+    """List Endpoints with their model, status and URL, or start, stop and delete them."""
     if context.invoked_subcommand:
         return
     # 1. Every Endpoint, stopped ones included, from the API.
@@ -66,3 +66,11 @@ def stop(name: str) -> None:
     with api_client() as client:
         exit_on_error(client.post(api_paths.STOP_ENDPOINT.format(name=name)))
     typer.echo(f"Stopped {name}")
+
+
+@app.command()
+def delete(name: str) -> None:
+    """Delete the stopped Endpoint from the list."""
+    with api_client() as client:
+        exit_on_error(client.delete(api_paths.ENDPOINT.format(name=name)))
+    typer.echo(f"Deleted {name}")

@@ -4,7 +4,7 @@ import pytest
 
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.hugging_face import HubModel
-from mlp_api.pipelines.reconciler import reconcile_once
+from mlp_api.pipelines.reconciler import reconcile_once, reconcile_pipelines
 from mlp_core import api_paths, config
 
 from .test_endpoint_stats import IDLE, SERVED
@@ -626,6 +626,23 @@ def test_afterwards_only_its_kubeflow_run_remains(
     ]
     assert cluster.secrets == {}
     assert (list(cluster.runs), cluster.terminated) == (["run-1"], [])
+
+
+def test_a_finished_smoke_test_can_be_deleted_once_it_is_cleaned_up(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    smoke_test_id = start(logged_in_api, WITHOUT_SERVING).json()["id"]
+    cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, {"fetch": "SUCCEEDED"})
+    reconcile_pipelines(logged_in_api.app.state.engine, cluster)
+    path = api_paths.PIPELINE.format(id=smoke_test_id)
+
+    refused = logged_in_api.delete(path)
+    reconcile(logged_in_api)
+    deleted = logged_in_api.delete(path)
+
+    assert refused.status_code == 409
+    assert "cleaning up" in refused.json()["detail"]
+    assert deleted.status_code == 204, deleted.text
 
 
 def test_its_datasets_stay_while_it_runs(logged_in_api, qwen_on_the_hub, cluster):

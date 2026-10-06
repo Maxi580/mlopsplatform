@@ -88,6 +88,11 @@ class Cluster:
         if response.status_code != 404:
             response.raise_for_status()
 
+    def delete_run(self, run_id: str) -> None:
+        response = self.kubeflow.delete(f"/runs/{run_id}")
+        if response.status_code != 404:
+            response.raise_for_status()
+
     def is_waiting_for_gpu(self, run_id: str) -> bool:
         pods = self.kubernetes.list_namespaced_pod(
             self.namespace,

@@ -1,8 +1,8 @@
-import { CircleAlert, LoaderCircle, Play, Square } from "lucide-react";
+import { CircleAlert, LoaderCircle, Play, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
-import { ENDPOINTS, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
+import { ENDPOINTS, endpointByName, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { NO_CATALOG } from "../fields/catalog";
 import ModelPicker from "../fields/ModelPicker";
@@ -32,6 +32,16 @@ export default function ServingPage() {
     try {
       await callApi(stopEndpoint(name), {});
       setNotice({ text: `Stopped ${name}`, failed: false });
+    } catch (failure) {
+      setNotice({ text: errorMessage(failure), failed: true });
+    }
+    endpoints.reload();
+  }
+
+  async function remove(name: string) {
+    try {
+      await callApi(endpointByName(name), undefined, "DELETE");
+      setNotice({ text: `Deleted ${name}`, failed: false });
     } catch (failure) {
       setNotice({ text: errorMessage(failure), failed: true });
     }
@@ -89,6 +99,7 @@ export default function ServingPage() {
                   endpoint={endpoint}
                   tokensPerSecond={tokensPerSecond[endpoint.name]}
                   onStop={stop}
+                  onDelete={remove}
                 />
               ))}
             </tbody>
@@ -144,10 +155,12 @@ function EndpointRow({
   endpoint,
   tokensPerSecond,
   onStop,
+  onDelete,
 }: {
   endpoint: Endpoint;
   tokensPerSecond?: number | null;
   onStop: (name: string) => void;
+  onDelete: (name: string) => void;
 }) {
   const stopped = endpoint.status === "stopped";
   const { stats } = endpoint;
@@ -166,7 +179,17 @@ function EndpointRow({
       <td className="mono">{stopped ? "" : <a href={endpoint.url}>{endpoint.url}</a>}</td>
       <td>{endpoint.created_at.slice(0, 16).replace("T", " ")}</td>
       <td className="actions">
-        {!stopped && (
+        {stopped ? (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Delete ${endpoint.name}`}
+            title={`Delete ${endpoint.name}`}
+            onClick={() => onDelete(endpoint.name)}
+          >
+            <Trash2 size={16} />
+          </button>
+        ) : (
           <button
             type="button"
             className="button ghost small"

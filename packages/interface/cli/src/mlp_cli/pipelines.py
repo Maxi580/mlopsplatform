@@ -116,6 +116,13 @@ def cancel(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")])
     typer.echo(f"Pipeline {pipeline_id} cancelled")
 
 
+def delete(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:
+    """Delete a finished Pipeline and its Kubeflow run; what it made stays in Storage."""
+    with api_client() as client:
+        exit_on_error(client.delete(api_paths.PIPELINE.format(id=pipeline_id)))
+    typer.echo(f"Pipeline {pipeline_id} deleted")
+
+
 def send_pipeline_request(
     path: str,
     finetune: str,

@@ -472,6 +472,12 @@ span.pipeline-name {
   margin-left: 4px;
 }
 
+/* A row's trashcan, as small as its buttons. */
+.actions .icon-button {
+  width: 32px;
+  height: 32px;
+}
+
 .chip {
   display: inline-block;
   margin-right: 4px;

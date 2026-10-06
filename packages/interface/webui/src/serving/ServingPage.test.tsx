@@ -134,6 +134,28 @@ test("a failure without a reason still says what went wrong", async () => {
   expect(await screen.findByText("The API answered 500")).toBeInTheDocument();
 });
 
+test("a stopped Endpoint is deleted with its trashcan, and only a stopped one has one", async () => {
+  let listed = [chat, { ...chat, name: "old", status: "stopped" }];
+  const calls = fakeApi({
+    ...routes,
+    "GET /endpoints": () => [200, listed],
+    "DELETE /endpoints/old": () => {
+      listed = [chat];
+      return [204, null];
+    },
+  });
+  renderApp("/serving");
+
+  const running = (await screen.findByText("chat")).closest("tr")!;
+  expect(within(running).queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+  const stopped = screen.getByText("old").closest("tr")!;
+  await userEvent.click(within(stopped).getByRole("button", { name: "Delete old" }));
+
+  expect(await screen.findByText("Deleted old")).toBeInTheDocument();
+  expect(screen.queryByText("old")).not.toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain("DELETE /endpoints/old");
+});
+
 test("the model picker lists our Model Versions first, then open-source models", async () => {
   fakeApi(routes);
   renderApp("/serving");

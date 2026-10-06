@@ -1,7 +1,7 @@
 import threading
 from datetime import UTC, datetime
 
-from sqlalchemy import Engine, insert, select, update
+from sqlalchemy import Engine, delete, insert, select, update
 
 from mlp_api.endpoints.endpoint_model import add_drafter, find_endpoint_model
 from mlp_api.endpoints.manifests import endpoint_manifests
@@ -80,6 +80,19 @@ def stop_endpoint(engine: Engine, cluster: Cluster, name: str) -> None:
             raise LookupError(f"No Endpoint {name} is running")
         cluster.delete_endpoint(name)
         set_status(engine, name, "stopped")
+
+
+def delete_endpoint(engine: Engine, name: str) -> None:
+    """Deletes the stopped Endpoints with the name; LookupError if none, ValueError if it runs."""
+    with endpoints_lock, engine.begin() as connection:
+        named = endpoint.c.name == name
+        deleted = connection.execute(delete(endpoint).where(named, ~not_stopped)).rowcount
+    if deleted:
+        return
+    found = find_endpoint(engine, name)
+    if found is None:
+        raise LookupError(f"No Endpoint {name}")
+    raise ValueError(f"Endpoint {name} is {found.status}; stop it first")
 
 
 def list_endpoints(engine: Engine) -> list[dict]:

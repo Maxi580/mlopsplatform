@@ -15,7 +15,7 @@ A local file holding a user's reusable settings for every Stage, including named
 _Avoid_: Config (when meaning this file), Pipeline Request
 
 **Pipeline**:
-One submitted Pipeline Request as it executes; the thing users list, watch, cancel and rerun.
+One submitted Pipeline Request as it executes; the thing users list, watch, cancel, rerun and delete.
 _Avoid_: Workflow, experiment, job
 
 **Stage**:

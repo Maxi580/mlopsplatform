@@ -91,6 +91,7 @@ mlp endpoints start hf:Qwen/Qwen3-0.6B --name chat         # a Base Model
 mlp endpoints start model:qwen-sft@1 --name chat-sft -o max_model_len=8192 -o kv_cache_dtype=fp8
 mlp endpoints start model:qwen-sft@1 --name fast -o 'speculative={method: eagle3, model: "model:qwen-sft-speculator@1"}'
 mlp endpoints stop chat
+mlp endpoints delete chat                                  # removes the stopped Endpoint from the list
 ```
 
 An Endpoint is a vLLM Deployment (the upstream `images.vllm`, pinned) serving one model on `gpus_per_endpoint` GPUs from the platform settings: a Base Model from the Model Cache, a full-weight Model Version, or an Adapter on its base. Its pod first downloads what vLLM loads, with `fetch` for a Base Model (public ones only: Endpoints take no Hugging Face token, so gated models are rejected) and `mlp-stage download` for Model Version files, then runs vLLM offline. It shows `pending` while GPUs are busy, however long that takes, then `running` once vLLM is ready, or `failed` once vLLM crashed (its pod logs say why). It runs until `mlp endpoints stop` deletes it (`stopped`), or its Deployment disappears, e.g. in a platform upgrade. A name is free again once its Endpoint stopped. The Base Models and Model Versions an Endpoint serves from can't be deleted or evicted while it runs.
@@ -173,6 +174,7 @@ mlp ls                   # every Pipeline with its Owner, status, Stages, links 
 mlp cancel 7             # stops the run and deletes its Secrets
 mlp rerun 7              # submits Pipeline 7's resolved request again as a new Pipeline
 mlp resume 7             # continues failed or cancelled Pipeline 7 as a new Pipeline
+mlp delete 7             # removes finished Pipeline 7 and its Kubeflow run; what it made stays in Storage
 ```
 
 Each Pipeline first runs `fetch`, which downloads the Base Models at their pinned commits and the benchmarks into the Model Cache (a Pipeline with nothing to download has no `fetch`), and ends with a `cleanup` step that runs even after a failure. The Hugging Face token comes from the Profile's `secrets`, else `HF_TOKEN` or `hf auth login`, else a hidden prompt (Enter skips it; public models download anonymously). It lives in a per-Pipeline Kubernetes Secret that only `fetch` sees, is redacted from step logs, and is deleted once the Pipeline finishes or is cancelled (any left over are swept after 48 hours). A step whose GPUs are busy waits and shows as `waiting for GPU`. Pipelines are never retried automatically; `mlp rerun` reads the Secrets afresh, as `mlp run` does, since a Pipeline's own are never kept.

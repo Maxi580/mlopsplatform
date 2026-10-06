@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from mlp_api.endpoints.lifecycle import (
     EndpointNameTaken,
+    delete_endpoint,
     find_endpoint,
     list_endpoints,
     start_endpoint,
@@ -64,3 +65,14 @@ def stop(name: str, request: Request) -> dict:
     except LookupError as error:
         raise HTTPException(404, str(error)) from None
     return {"name": name, "status": "stopped"}
+
+
+@router.delete(api_paths.ENDPOINT, status_code=204)
+def delete(name: str, request: Request) -> Response:
+    try:
+        delete_endpoint(request.app.state.engine, name)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from None
+    return Response(status_code=204)

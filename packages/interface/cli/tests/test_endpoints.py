@@ -93,6 +93,27 @@ def test_stop_stops_the_endpoint(logged_in, fake_api):
     assert "Stopped chat" in result.output
 
 
+def test_delete_deletes_the_stopped_endpoint(logged_in, fake_api):
+    path = api_paths.ENDPOINT.format(name="chat")
+    fake_api.answers[path] = (204, b"")
+
+    result = mlp_endpoints("delete", "chat")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received == [(path, f"Bearer {TOKEN}")]
+    assert "Deleted chat" in result.output
+
+
+def test_deleting_a_running_endpoint_says_why_it_was_refused(logged_in, fake_api):
+    detail = "Endpoint chat is running; stop it first"
+    fake_api.answers[api_paths.ENDPOINT.format(name="chat")] = (409, {"detail": detail})
+
+    result = mlp_endpoints("delete", "chat")
+
+    assert result.exit_code == 1
+    assert detail in result.output
+
+
 def test_endpoints_send_the_login_token(logged_in, fake_api):
     fake_api.answers[api_paths.ENDPOINTS] = (200, [])
 

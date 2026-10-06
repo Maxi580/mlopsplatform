@@ -8,7 +8,8 @@ export const SETTINGS = "/settings";
 export const VALIDATE_PIPELINE = "/pipelines/validate";
 export const DATASETS = "/datasets";
 export const PIPELINES = "/pipelines";
-export const cancelPipeline = (id: number) => `/pipelines/${id}/cancel`;
+export const pipelineById = (id: number) => `/pipelines/${id}`;
+export const cancelPipeline = (id: number) => `${pipelineById(id)}/cancel`;
 export const datasetVersions = (name: string) => `/datasets/${name}/versions`;
 export const datasetVersion = (name: string, version: number) =>
   `/datasets/${name}/versions/${version}`;
@@ -28,7 +29,8 @@ export const CHECKPOINTS = "/checkpoints";
 export const checkpoint = (pipelineId: number, phaseIndex: number) =>
   `${CHECKPOINTS}/${pipelineId}/${phaseIndex}`;
 export const ENDPOINTS = "/endpoints";
-export const stopEndpoint = (name: string) => `/endpoints/${name}/stop`;
+export const endpointByName = (name: string) => `/endpoints/${name}`;
+export const stopEndpoint = (name: string) => `${endpointByName(name)}/stop`;
 export const modelCacheEntry = (reference: string) =>
   `${MODEL_CACHE}?reference=${encodeURIComponent(reference)}`;
 export const endpointStats = (name: string) => `/endpoints/${name}/stats`;

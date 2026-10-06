@@ -1,8 +1,8 @@
-import { ChartLine, CircleAlert, Plus, Workflow } from "lucide-react";
+import { ChartLine, CircleAlert, Plus, Trash2, Workflow } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { callApi, errorMessage, useApi } from "../api";
-import { cancelPipeline, PIPELINES } from "../apiPaths";
+import { cancelPipeline, PIPELINES, pipelineById } from "../apiPaths";
 import { FINISHED_STATUSES, PIPELINE_LIST_REFRESH_MS } from "../config";
 import type { Pipeline, SweepOutput } from "./pipeline";
 import StatusBadge from "./StatusBadge";
@@ -21,6 +21,16 @@ export default function PipelinesPage() {
     try {
       await callApi(cancelPipeline(pipeline.id), {});
       setNotice(`Cancelled Pipeline ${pipeline.id}`);
+    } catch (failure) {
+      setNotice(errorMessage(failure));
+    }
+    reload();
+  }
+
+  async function remove(pipeline: Pipeline) {
+    try {
+      await callApi(pipelineById(pipeline.id), undefined, "DELETE");
+      setNotice(`Deleted Pipeline ${pipeline.id}`);
     } catch (failure) {
       setNotice(errorMessage(failure));
     }
@@ -88,6 +98,7 @@ export default function PipelinesPage() {
                   pipeline={pipeline}
                   highlighted={pipeline.id === submitted}
                   onCancel={cancel}
+                  onDelete={remove}
                 />
               ))}
             </tbody>
@@ -102,10 +113,12 @@ function PipelineRow({
   pipeline,
   highlighted,
   onCancel,
+  onDelete,
 }: {
   pipeline: Pipeline;
   highlighted: boolean;
   onCancel: (pipeline: Pipeline) => void;
+  onDelete: (pipeline: Pipeline) => void;
 }) {
   // Cancelling asks once more in place, rather than in a browser dialog.
   const [confirming, setConfirming] = useState(false);
@@ -155,33 +168,38 @@ function PipelineRow({
         </div>
       </td>
       <td className="actions">
-        {!FINISHED_STATUSES.includes(pipeline.status) &&
-          (confirming ? (
-            <>
-              <button
-                type="button"
-                className="button danger small"
-                onClick={() => onCancel(pipeline)}
-              >
-                Cancel Pipeline
-              </button>
-              <button
-                type="button"
-                className="button ghost small"
-                onClick={() => setConfirming(false)}
-              >
-                Keep
-              </button>
-            </>
-          ) : (
+        {FINISHED_STATUSES.includes(pipeline.status) ? (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Delete Pipeline ${pipeline.id}`}
+            title={`Delete Pipeline ${pipeline.id}`}
+            onClick={() => onDelete(pipeline)}
+          >
+            <Trash2 size={16} />
+          </button>
+        ) : confirming ? (
+          <>
+            <button
+              type="button"
+              className="button danger small"
+              onClick={() => onCancel(pipeline)}
+            >
+              Cancel Pipeline
+            </button>
             <button
               type="button"
               className="button ghost small"
-              onClick={() => setConfirming(true)}
+              onClick={() => setConfirming(false)}
             >
-              Cancel
+              Keep
             </button>
-          ))}
+          </>
+        ) : (
+          <button type="button" className="button ghost small" onClick={() => setConfirming(true)}>
+            Cancel
+          </button>
+        )}
       </td>
     </tr>
   );

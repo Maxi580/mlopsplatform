@@ -19,6 +19,7 @@ for command in (
     pipelines.resume,
     pipelines.ls,
     pipelines.cancel,
+    pipelines.delete,
 ):
     app.command()(command)
 app.command("smoke-test")(smoke_test)

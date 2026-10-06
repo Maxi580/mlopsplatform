@@ -354,6 +354,45 @@ def test_stopping_an_endpoint_that_is_not_running_is_not_found(
     assert stop(logged_in_api, "unknown").status_code == 404
 
 
+def delete_endpoint(api, name="chat"):
+    return api.delete(api_paths.ENDPOINT.format(name=name))
+
+
+def test_delete_removes_a_stopped_endpoint(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    stop(logged_in_api)
+
+    response = delete_endpoint(logged_in_api)
+
+    assert response.status_code == 204, response.text
+    assert endpoints(logged_in_api) == []
+
+
+def test_a_running_endpoint_cannot_be_deleted(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+
+    response = delete_endpoint(logged_in_api)
+
+    assert response.status_code == 409
+    assert "stop it first" in response.json()["detail"]
+    assert [e["status"] for e in endpoints(logged_in_api)] == ["pending"]
+
+
+def test_delete_keeps_the_running_endpoint_of_the_same_name(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api)
+    stop(logged_in_api)
+    start(logged_in_api)
+
+    assert delete_endpoint(logged_in_api).status_code == 204
+    assert [e["status"] for e in endpoints(logged_in_api)] == ["pending"]
+
+
+def test_deleting_an_unknown_endpoint_is_not_found(logged_in_api):
+    assert delete_endpoint(logged_in_api, "unknown").status_code == 404
+
+
 def test_a_name_is_taken_until_its_endpoint_stops(logged_in_api, qwen_on_the_hub, cluster):
     start(logged_in_api)
 
@@ -398,3 +437,4 @@ def test_endpoints_require_login(api, cluster):
     assert api.get(api_paths.ENDPOINTS).status_code == 401
     assert start(api).status_code == 401
     assert stop(api).status_code == 401
+    assert delete_endpoint(api).status_code == 401

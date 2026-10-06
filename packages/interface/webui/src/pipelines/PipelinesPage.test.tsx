@@ -81,6 +81,30 @@ test("the list updates live", async () => {
   vi.useRealTimers();
 });
 
+test("a finished Pipeline is deleted with its trashcan, and only a finished one has one", async () => {
+  let listed = [
+    { ...running, id: 8, name: "qwen-dpo" },
+    { ...running, status: "succeeded" },
+  ];
+  const calls = fakeApi({
+    "GET /pipelines": () => [200, listed],
+    "GET /settings": [200, { gpu_count: 1 }],
+    "DELETE /pipelines/7": () => {
+      listed = listed.filter((pipeline) => pipeline.id !== 7);
+      return [204, null];
+    },
+  });
+  renderApp("/");
+
+  const unfinished = (await screen.findByText("qwen-dpo")).closest("tr")!;
+  expect(within(unfinished).queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Delete Pipeline 7" }));
+
+  expect(await screen.findByText("Deleted Pipeline 7")).toBeInTheDocument();
+  expect(screen.queryByText("qwen-sft")).not.toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain("DELETE /pipelines/7");
+});
+
 test("cancel asks once more, then cancels", async () => {
   let status = "running";
   const calls = fakeApi({

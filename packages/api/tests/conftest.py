@@ -235,6 +235,7 @@ class FakeCluster:
         self.secret_created = {}
         self.runs = {}
         self.terminated = []
+        self.deleted_runs = []
         self.waiting_for_gpu = set()
         # Endpoint name -> its Kubernetes objects, and the state its pod is in.
         self.endpoints = {}
@@ -265,6 +266,10 @@ class FakeCluster:
 
     def terminate_run(self, run_id):
         self.terminated.append(run_id)
+
+    def delete_run(self, run_id):
+        self.runs.pop(run_id, None)
+        self.deleted_runs.append(run_id)
 
     def is_waiting_for_gpu(self, run_id):
         return run_id in self.waiting_for_gpu

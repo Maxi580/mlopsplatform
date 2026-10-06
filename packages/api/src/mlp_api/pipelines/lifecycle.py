@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    delete,
     insert,
     select,
     update,
@@ -108,6 +109,21 @@ def cancel_pipeline(engine: Engine, cluster: Cluster, pipeline_id: int) -> None:
     # The reconciler skips a cancelled Pipeline, so a Smoke Test's unfinished cases fail now.
     cases = {} if row.cases is None else {"cases": case_results(row.cases, None, finished=True)}
     set_pipeline(engine, pipeline_id, status="cancelled", **cases)
+
+
+# What it made stays: Storage deletes that, and an Endpoint may serve it.
+def delete_pipeline(engine: Engine, cluster: Cluster, pipeline_id: int) -> None:
+    """Deletes the finished Pipeline and its run; LookupError if unknown, ValueError if it can't."""
+    row = find_pipeline(engine, pipeline_id)
+    if row.status not in config.FINISHED_STATUSES:
+        raise ValueError(f"Pipeline {pipeline_id} is {row.status}; cancel it first")
+    # The reconciler finds a Smoke Test's leftovers only through its row.
+    if row.cases is not None and not row.cleaned_up:
+        raise ValueError(f"Smoke Test {pipeline_id} is still cleaning up; try again shortly")
+    if row.kubeflow_run_id is not None:
+        cluster.delete_run(row.kubeflow_run_id)
+    with engine.begin() as connection:
+        connection.execute(delete(pipeline).where(pipeline.c.id == pipeline_id))
 
 
 def list_pipelines(engine: Engine) -> list[dict]:

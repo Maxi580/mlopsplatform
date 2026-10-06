@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
 
 from mlp_api.model_cache.downloads import fetched_references, preview_downloads
@@ -8,6 +8,7 @@ from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.pipelines.compiler import Resume
 from mlp_api.pipelines.lifecycle import (
     cancel_pipeline,
+    delete_pipeline,
     get_pipeline,
     list_pipelines,
     submit_pipeline,
@@ -141,6 +142,17 @@ def cancel(id: int, request: Request) -> dict:
     except ValueError as error:
         raise HTTPException(409, str(error)) from None
     return {"id": id, "status": "cancelled"}
+
+
+@router.delete(api_paths.PIPELINE, status_code=204)
+def delete(id: int, request: Request) -> Response:
+    try:
+        delete_pipeline(request.app.state.engine, request.app.state.cluster, id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from None
+    return Response(status_code=204)
 
 
 # Errors carry paths inside the Pipeline Request, not FastAPI's `body.request` prefix.

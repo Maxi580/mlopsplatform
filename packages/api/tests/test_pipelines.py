@@ -341,9 +341,53 @@ def test_cancelling_an_unknown_pipeline_is_not_found(logged_in_api):
     assert cancel(logged_in_api, 42).status_code == 404
 
 
+def delete(api, pipeline_id):
+    return api.delete(api_paths.PIPELINE.format(id=pipeline_id))
+
+
+@pytest.mark.parametrize("state", ["SUCCEEDED", "FAILED"])
+def test_delete_removes_a_finished_pipeline_and_its_run(logged_in_api, submittable, cluster, state):
+    pipeline_id = submit(logged_in_api).json()["id"]
+    [run_id] = cluster.runs
+    finish_run(cluster, state)
+    reconcile(logged_in_api)
+
+    response = delete(logged_in_api, pipeline_id)
+
+    assert response.status_code == 204, response.text
+    assert pipelines(logged_in_api) == []
+    assert cluster.deleted_runs == [run_id]
+
+
+def test_a_cancelled_pipeline_can_be_deleted(logged_in_api, submittable, cluster):
+    pipeline_id = submit(logged_in_api).json()["id"]
+    cancel(logged_in_api, pipeline_id)
+
+    assert delete(logged_in_api, pipeline_id).status_code == 204
+    assert pipelines(logged_in_api) == []
+
+
+def test_a_running_pipeline_cannot_be_deleted(logged_in_api, submittable, cluster):
+    pipeline_id = submit(logged_in_api).json()["id"]
+    finish_run(cluster, "RUNNING")
+    reconcile(logged_in_api)
+
+    response = delete(logged_in_api, pipeline_id)
+
+    assert response.status_code == 409
+    assert "running" in response.json()["detail"]
+    assert cluster.deleted_runs == []
+    assert len(pipelines(logged_in_api)) == 1
+
+
+def test_deleting_an_unknown_pipeline_is_not_found(logged_in_api):
+    assert delete(logged_in_api, 42).status_code == 404
+
+
 def test_pipelines_require_login(api, cluster):
     assert submit(api).status_code == 401
     assert cancel(api, 1).status_code == 401
+    assert delete(api, 1).status_code == 401
     assert pipeline(api, 1).status_code == 401
 
 
