@@ -2,9 +2,10 @@ import { CircleAlert, LoaderCircle, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
-import { ENDPOINTS, MODEL_CACHE, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
+import { ENDPOINTS, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { NO_CATALOG } from "../fields/catalog";
+import ModelPicker from "../fields/ModelPicker";
 import FormSectionView from "../pipelines/FormSectionView";
 import {
   type FieldError,
@@ -15,7 +16,7 @@ import {
   placeErrors,
 } from "../pipelines/pipelineForm";
 import StatusBadge from "../pipelines/StatusBadge";
-import type { ModelCache, RegisteredModel } from "../storage/storage";
+import type { RegisteredModel } from "../storage/storage";
 import { type Endpoint, formatSeconds, ratePerSecond } from "./endpoint";
 import SpeculatorPicker, { type Speculative } from "./SpeculatorPicker";
 
@@ -183,7 +184,6 @@ function EndpointRow({
 function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   const schema = useApi<PublishedSchema>(SCHEMA).data;
   const models = useApi<RegisteredModel[]>(MODELS).data;
-  const cache = useApi<ModelCache>(MODEL_CACHE).data;
   const form = useMemo(() => schema && servingOptionsForm(schema), [schema]);
   const [model, setModel] = useState("");
   const [name, setName] = useState("");
@@ -191,16 +191,8 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   const [values, setValues] = useState<FormValues>({ fields: {}, more: {} });
   const [errors, setErrors] = useState<ReturnType<typeof placeErrors>>();
   const [busy, setBusy] = useState(false);
-  const suggestions = [
-    ...(models ?? []).flatMap((m) =>
-      m.versions.filter((v) => !v.tags?.speculator).map((v) => `model:${m.name}@${v.version}`),
-    ),
-    ...(cache?.entries ?? [])
-      .filter((entry) => entry.kind === "base_model")
-      .map((entry) => entry.reference),
-  ];
 
-  if (!form) return <LoaderCircle className="spin" size={16} />;
+  if (!schema || !form) return <LoaderCircle className="spin" size={16} />;
 
   async function start(form: FormSection) {
     setBusy(true);
@@ -245,19 +237,15 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
           <label className="field-label" htmlFor="served-model">
             Model <code>model</code>
           </label>
-          <input
+          <ModelPicker
             id="served-model"
+            label="Model"
             value={model}
-            list="served-models"
-            autoComplete="off"
-            placeholder="model:name@version or hf:org/name"
-            onChange={(event) => setModel(event.target.value)}
+            // Our Model Versions first, then open-source models.
+            references={["model:", "hf:"]}
+            catalog={{ ...NO_CATALOG, models: models ?? [] }}
+            onChange={setModel}
           />
-          <datalist id="served-models">
-            {suggestions.map((reference) => (
-              <option key={reference} value={reference} />
-            ))}
-          </datalist>
         </div>
         <div className="field">
           <label className="field-label" htmlFor="endpoint-name">
@@ -281,6 +269,7 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
       <SpeculatorPicker
         models={models ?? []}
         model={model}
+        schema={schema.$defs.Speculative ?? {}}
         value={speculative}
         onChange={setSpeculative}
       />

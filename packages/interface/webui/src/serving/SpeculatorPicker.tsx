@@ -1,5 +1,7 @@
-import { NGRAM_LOOKUP, SPECULATIVE_TOKENS } from "../config";
+import { NGRAM_LOOKUP } from "../config";
 import InfoBox from "../fields/InfoBox";
+import NumberInput from "../fields/NumberInput";
+import type { Schema } from "../pipelines/pipelineForm";
 import type { RegisteredModel } from "../storage/storage";
 
 // The `speculative` block of an Endpoint start.
@@ -12,6 +14,7 @@ export type Speculative = {
 };
 
 type Speculator = { reference: string; speculator: string; verifier: string };
+type NumericOption = "num_speculative_tokens" | "prompt_lookup_min" | "prompt_lookup_max";
 
 const OFF = "";
 const NGRAM = "ngram";
@@ -34,21 +37,30 @@ export function draftsFor(speculator: Speculator, model: string): boolean {
   return speculator.verifier === model.trim();
 }
 
-/** Off, n-gram, or a Speculator; only those trained for the model can be picked. */
+/** Off, n-gram, or a Speculator; only those trained for the model can be picked. Its numbers
+ * are described, bounded and defaulted by the published `Speculative` schema. */
 export default function SpeculatorPicker({
   models,
   model,
+  schema,
   value,
   onChange,
 }: {
   models: RegisteredModel[];
   model: string;
+  schema: Schema;
   value: Speculative | null;
   onChange: (value: Speculative | null) => void;
 }) {
   const found = speculators(models);
-  const tokens = value?.num_speculative_tokens ?? SPECULATIVE_TOKENS;
+  const options: Schema = schema.properties ?? {};
+  const tokens = value?.num_speculative_tokens ?? options.num_speculative_tokens?.default;
   const chosen = value ? (value.model ?? NGRAM) : OFF;
+  const shown: NumericOption[] = !value
+    ? []
+    : value.method === NGRAM
+      ? ["num_speculative_tokens", "prompt_lookup_min", "prompt_lookup_max"]
+      : ["num_speculative_tokens"];
 
   function choose(choice: string) {
     const picked = found.find((speculator) => speculator.reference === choice);
@@ -90,22 +102,57 @@ export default function SpeculatorPicker({
           ))}
         </select>
       </div>
-      {value && (
-        <div className="field">
-          <label className="field-label" htmlFor="num_speculative_tokens">
-            Draft tokens <code>num_speculative_tokens</code>
-          </label>
-          <input
-            id="num_speculative_tokens"
-            type="number"
-            min={1}
-            value={tokens}
-            onChange={(event) =>
-              onChange({ ...value, num_speculative_tokens: Number(event.target.value) })
-            }
+      {value &&
+        shown.map((name) => (
+          <SpeculativeOption
+            key={name}
+            name={name}
+            schema={options[name] ?? {}}
+            value={value[name]}
+            onChange={(number) => onChange({ ...value, [name]: number })}
           />
-        </div>
-      )}
+        ))}
+    </div>
+  );
+}
+
+// One number of the speculative config; left empty, the API's default applies.
+function SpeculativeOption({
+  name,
+  schema,
+  value,
+  onChange,
+}: {
+  name: NumericOption;
+  schema: Schema;
+  value?: number;
+  onChange: (value: number | undefined) => void;
+}) {
+  const number = schema.anyOf?.find((option: Schema) => option.type !== "null") ?? schema;
+  const title = schema.title ?? name;
+  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum } = number;
+  return (
+    <div className="field">
+      <div className="field-heading">
+        <label className="field-label" htmlFor={name}>
+          {title} <code>{name}</code>
+        </label>
+        {schema.description && <InfoBox id={`${name}-info`} text={schema.description} />}
+      </div>
+      <NumberInput
+        id={name}
+        label={title}
+        value={value === undefined ? "" : String(value)}
+        from={schema.default != null ? String(schema.default) : undefined}
+        bounds={{ minimum, maximum, exclusiveMinimum, exclusiveMaximum }}
+        integer={number.type === "integer"}
+        aria-describedby={schema.description ? `${name}-info` : undefined}
+        // Only numbers are kept; a stray letter changes nothing.
+        onChange={(text) => {
+          if (text.trim() === "") onChange(undefined);
+          else if (!Number.isNaN(Number(text))) onChange(Number(text));
+        }}
+      />
     </div>
   );
 }

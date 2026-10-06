@@ -494,3 +494,14 @@ def test_schema_publishes_each_row_format_with_an_example(logged_in_api):
         "messages",
         "text",
     ]
+
+
+def test_schema_publishes_the_serving_options_and_speculative_decoding(logged_in_api):
+    defs = logged_in_api.get(api_paths.SCHEMA).json()["$defs"]
+
+    serving = defs["ServingOptions"]["properties"]
+    assert serving["gpu_memory_utilization"]["default"] == 0.9
+    assert "description" in serving["max_model_len"]
+    speculative = defs["Speculative"]["properties"]
+    assert speculative["num_speculative_tokens"]["default"] == 3
+    assert speculative["num_speculative_tokens"]["exclusiveMinimum"] == 0

@@ -68,7 +68,7 @@ export type FormValues = {
 // An error of the Pipeline Request at its path, as the API reports it.
 export type FieldError = { loc: (string | number)[]; msg: string };
 
-type Schema = Record<string, any>;
+export type Schema = Record<string, any>;
 // What building a node needs besides its own schema: the published schema and the values, as
 // some defaults depend on other fields, e.g. a Phase's settings on its algorithm, and the
 // defaults its section's algorithm gives its fields, e.g. a Sweep's objective.

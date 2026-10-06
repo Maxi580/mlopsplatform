@@ -59,7 +59,7 @@ class Speculative(BaseModel):
     """`ngram` drafts from the context; the others with a draft model or a Speculator."""
     model: BaseModelReference | ModelReference | None = None
     """A Speculator trained for the served model, or a small model for `draft`."""
-    num_speculative_tokens: int = Field(SPECULATIVE_TOKENS, gt=0)
+    num_speculative_tokens: int = Field(SPECULATIVE_TOKENS, gt=0, title="Draft tokens")
     """Tokens drafted per step: more speed up predictable text and waste work on the rest."""
     prompt_lookup_min: int | None = Field(None, gt=0)
     """The fewest last tokens `ngram` looks up in the context."""

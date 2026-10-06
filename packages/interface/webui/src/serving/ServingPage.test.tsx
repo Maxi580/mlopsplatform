@@ -1,4 +1,4 @@
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { fakeApi, renderApp } from "../testApi";
@@ -17,12 +17,46 @@ const schema = {
     ServingOptions: {
       type: "object",
       properties: {
-        max_model_len: { anyOf: [{ type: "integer" }, { type: "null" }], title: "Max Model Len" },
+        max_model_len: {
+          anyOf: [{ type: "integer", exclusiveMinimum: 0 }, { type: "null" }],
+          default: null,
+          title: "Max Model Len",
+          description: "vLLM reads it from the model when left empty.",
+        },
         prefix_caching: { type: "boolean", default: true, title: "Prefix Caching" },
+        gpu_memory_utilization: {
+          anyOf: [{ type: "number", exclusiveMinimum: 0, maximum: 1 }, { type: "null" }],
+          default: 0.9,
+          title: "Gpu Memory Utilization",
+          description: "The share of GPU memory vLLM may take.",
+        },
+      },
+    },
+    Speculative: {
+      type: "object",
+      properties: {
+        num_speculative_tokens: {
+          type: "integer",
+          exclusiveMinimum: 0,
+          default: 3,
+          title: "Draft tokens",
+          description: "Tokens drafted per step.",
+        },
+        prompt_lookup_min: {
+          anyOf: [{ type: "integer", exclusiveMinimum: 0 }, { type: "null" }],
+          default: null,
+          title: "Prompt Lookup Min",
+        },
+        prompt_lookup_max: {
+          anyOf: [{ type: "integer", exclusiveMinimum: 0 }, { type: "null" }],
+          default: null,
+          title: "Prompt Lookup Max",
+        },
       },
     },
   },
 };
+const DEFAULTS = { prefix_caching: true, gpu_memory_utilization: 0.9 };
 const chat: Endpoint = {
   name: "chat",
   owner: "shared",
@@ -55,7 +89,10 @@ const routes: Parameters<typeof fakeApi>[0] = {
       },
     ],
   ],
-  "GET /cache": [200, { entries: [{ kind: "base_model", reference: "hf:Qwen/Qwen3@abc" }] }],
+  "GET /base-models?search=": [
+    200,
+    [{ name: "Qwen/Qwen3-8B", reference: "hf:Qwen/Qwen3-8B", parameters: 8.2e9, gated: false }],
+  ],
   "GET /settings": [200, { gpu_count: 1 }],
 };
 
@@ -87,35 +124,67 @@ test("an Endpoint stops from its row", async () => {
   expect(calls.map((call) => call.route)).toContain("POST /endpoints/chat/stop");
 });
 
-test("an Endpoint starts for a Model Version or Base Model with the curated options", async () => {
+test("the model picker lists our Model Versions first, then open-source models", async () => {
+  fakeApi(routes);
+  renderApp("/serving");
+
+  await userEvent.click(await screen.findByRole("combobox", { name: /^Model/ }));
+  const listbox = await screen.findByRole("listbox");
+  const groups = [...listbox.querySelectorAll("[role=group]")].map((group) => group.ariaLabel);
+  expect(groups).toEqual(["Our models", "Open source"]);
+  // Speculators only draft, so they aren't offered to serve.
+  expect(
+    within(listbox)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["qwen-sft@2full weights", "Qwen/Qwen3-8B8.2B"]);
+});
+
+test("serving options start with vLLM's defaults, each with an ⓘ and numbers with steppers", async () => {
+  fakeApi(routes);
+  renderApp("/serving");
+
+  const share = await screen.findByLabelText(/^Gpu Memory Utilization/);
+  expect(share).toHaveValue("0.9");
+  expect(share).toHaveAccessibleDescription("The share of GPU memory vLLM may take.");
+  expect(screen.getByLabelText(/^Max Model Len/)).toHaveAccessibleDescription(
+    "vLLM reads it from the model when left empty.",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Increase Gpu Memory Utilization" }));
+  await userEvent.click(screen.getByRole("button", { name: "Increase Gpu Memory Utilization" }));
+  expect(share).toHaveValue("1");
+});
+
+test("an Endpoint starts with untouched defaults, or with the options changed", async () => {
   const calls = fakeApi({ ...routes, "POST /endpoints": [201, { ...chat, name: "sft" }] });
   renderApp("/serving");
 
-  const model = await screen.findByLabelText(/^Model/);
-  const suggestions = [...document.querySelectorAll("#served-models option")].map(
-    (option) => (option as HTMLOptionElement).value,
-  );
-  expect(suggestions).toEqual(["model:qwen-sft@2", "hf:Qwen/Qwen3@abc"]);
-  await userEvent.type(model, "model:qwen-sft@2");
+  await userEvent.type(await screen.findByRole("combobox", { name: /^Model/ }), "model:qwen-sft@2");
   await userEvent.type(screen.getByLabelText(/^Endpoint name/), "sft");
+  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+  expect(await screen.findByText(/Started sft/)).toBeInTheDocument();
+  const sent = () => calls.filter((call) => call.route === "POST /endpoints").at(-1)!.body;
+  expect(sent()).toEqual({ model: "model:qwen-sft@2", name: "sft", ...DEFAULTS });
+
   await userEvent.type(screen.getByLabelText(/^Max Model Len/), "8192");
   await userEvent.selectOptions(screen.getByLabelText(/^Prefix Caching/), "false");
   await userEvent.click(screen.getByRole("button", { name: /start/i }));
-
-  expect(await screen.findByText(/Started sft/)).toBeInTheDocument();
-  expect(calls.find((call) => call.route === "POST /endpoints")!.body).toEqual({
-    model: "model:qwen-sft@2",
-    name: "sft",
-    max_model_len: 8192,
-    prefix_caching: false,
-  });
+  await waitFor(() =>
+    expect(sent()).toEqual({
+      model: "model:qwen-sft@2",
+      name: "sft",
+      ...DEFAULTS,
+      max_model_len: 8192,
+      prefix_caching: false,
+    }),
+  );
 });
 
 test("only a Speculator trained for the model can be picked to draft for it", async () => {
   const calls = fakeApi({ ...routes, "POST /endpoints": [201, chat] });
   renderApp("/serving");
 
-  await userEvent.type(await screen.findByLabelText(/^Model/), "model:qwen-sft@2");
+  await userEvent.type(await screen.findByRole("combobox", { name: /^Model/ }), "model:qwen-sft@2");
   const picker = screen.getByLabelText(/^Speculative decoding/);
   const options = within(picker).getAllByRole("option") as HTMLOptionElement[];
   expect(options.map((option) => [option.value, option.disabled])).toEqual([
@@ -125,8 +194,11 @@ test("only a Speculator trained for the model can be picked to draft for it", as
     ["model:qwen-sft-speculator@2", true],
   ]);
   await userEvent.selectOptions(picker, "model:qwen-sft-speculator@1");
-  await userEvent.clear(screen.getByLabelText(/^Draft tokens/));
-  await userEvent.type(screen.getByLabelText(/^Draft tokens/), "5");
+  const tokens = screen.getByLabelText(/^Draft tokens/);
+  expect(tokens).toHaveValue("3");
+  expect(tokens).toHaveAccessibleDescription("Tokens drafted per step.");
+  await userEvent.click(screen.getByRole("button", { name: "Increase Draft tokens" }));
+  await userEvent.click(screen.getByRole("button", { name: "Increase Draft tokens" }));
   await userEvent.click(screen.getByRole("button", { name: /start/i }));
 
   await screen.findByText(/Started chat/);
@@ -167,7 +239,7 @@ test("a refused start shows why, next to the option when it names one", async ()
   await userEvent.click(screen.getByRole("button", { name: /start/i }));
 
   expect(await screen.findByLabelText(/^Max Model Len/)).toHaveAccessibleDescription(
-    "should be greater than 0",
+    expect.stringContaining("should be greater than 0"),
   );
 });
 

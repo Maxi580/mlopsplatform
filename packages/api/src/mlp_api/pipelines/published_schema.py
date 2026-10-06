@@ -1,13 +1,16 @@
 from mlp_api.pipelines.pipeline_request import trainer_config_fields
 from mlp_core import config
+from mlp_core.endpoint_spec import Speculative
 from mlp_core.pipeline_request.schema import PhaseSettings, PipelineRequest
 
 
 def published_schema() -> dict:
     """The Pipeline Request's JSON Schema, with what a client needs to build one: by algorithm,
     when its fields apply, its defaults and its settings."""
-    # 1. The schema of the request, every field with its description, default and `applies_if`.
+    # 1. The schema of the request, every field with its description, default and `applies_if`;
+    # with speculative decoding, its serving options are an Endpoint's too.
     schema = PipelineRequest.model_json_schema()
+    schema["$defs"]["Speculative"] = Speculative.model_json_schema()
 
     # 2. Each algorithm: what its fields depend on, its defaults, and its TRL settings, the
     # common ones to show directly and every other allowed one.
