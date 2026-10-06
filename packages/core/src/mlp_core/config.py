@@ -272,7 +272,8 @@ BACKENDS = {
 SINGLE_GPU_BACKENDS = ("unsloth",)
 # LoraConfig settings the platform sets.
 LORA_CONFIG = "LoraConfig"
-BLOCKED_LORA_SETTINGS = ("task_type",)
+# PEFT expects `runtime_config` as a dataclass, but a request can only hold a dict (#79).
+BLOCKED_LORA_SETTINGS = ("task_type", "runtime_config")
 SHOWN_LORA_SETTINGS = ("r", "lora_alpha", "lora_dropout", "target_modules")
 # Forms leave out what an Adapter vLLM serves can't have; merged, the API still takes them.
 HIDDEN_LORA_SETTINGS = ("use_dora", "modules_to_save", "bias")
