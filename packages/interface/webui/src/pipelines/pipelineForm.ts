@@ -1,5 +1,5 @@
 import { MORE_SETTINGS, SWITCHED_ON } from "../config";
-import { formatNumber } from "../fields/numbers";
+import { type Bounds, formatNumber } from "../fields/numbers";
 
 export type FieldKind =
   | "fixed"
@@ -41,6 +41,8 @@ export type FormField = {
   default?: string;
   // Shown greyed in an empty field and not sent, e.g. the default TRL itself applies.
   placeholder?: string;
+  // A number's bounds, which its steppers never cross.
+  bounds?: Bounds;
 };
 
 export type FormNode = FormSection | FormField;
@@ -233,8 +235,10 @@ function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {
   if (items?.enum) return { kind: "choices" as const, choices: items.enum };
   if (types.has("boolean")) return { kind: "choice" as const, choices: [true, false] };
   if (types.has("array")) return { kind: "list" as const };
-  if (types.has("integer")) return { kind: "integer" as const };
-  if (types.has("number")) return { kind: "number" as const };
+  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum } = node;
+  const bounds = { minimum, maximum, exclusiveMinimum, exclusiveMaximum };
+  if (types.has("integer")) return { kind: "integer" as const, bounds };
+  if (types.has("number")) return { kind: "number" as const, bounds };
   if (node.format === "python") return { kind: "code" as const };
   // An optional value's pattern sits on its non-null option.
   const pattern = node.pattern ?? node.anyOf?.find((option: Schema) => option.pattern)?.pattern;

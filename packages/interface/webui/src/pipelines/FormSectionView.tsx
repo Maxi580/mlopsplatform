@@ -2,6 +2,7 @@ import { Plus, Trash2, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE, SWITCHED_ON } from "../config";
 import InfoBox from "../fields/InfoBox";
+import NumberInput from "../fields/NumberInput";
 import { formatBytes } from "../formatBytes";
 import type { Benchmark } from "./pipeline";
 import {
@@ -181,10 +182,19 @@ function FieldInput({
             <option key={String(choice)}>{String(choice)}</option>
           ))}
         </select>
+      ) : field.kind === "integer" || field.kind === "number" ? (
+        <NumberInput
+          {...common}
+          label={field.title}
+          from={field.default ?? field.placeholder}
+          bounds={field.bounds}
+          integer={field.kind === "integer"}
+          placeholder={field.placeholder}
+          onChange={onChange}
+        />
       ) : (
         <input
           {...common}
-          inputMode={field.kind === "integer" || field.kind === "number" ? "decimal" : undefined}
           placeholder={
             field.placeholder ??
             (field.kind === "list"

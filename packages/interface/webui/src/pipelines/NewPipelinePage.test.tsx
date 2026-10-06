@@ -439,3 +439,34 @@ test("All settings filters by name, and a custom key still reaches the request",
     my_flag: true,
   });
 });
+
+test("number fields step in their smallest place shown, from the default when empty", async () => {
+  const withNumbers = {
+    type: "object",
+    properties: {
+      finetune: {
+        type: "object",
+        title: "Finetune",
+        properties: {
+          learning_rate: { type: "number", title: "Learning rate", default: 2e-4 },
+          trials: { type: "integer", title: "Trials", default: 1, exclusiveMinimum: 0 },
+        },
+      },
+    },
+  };
+  fakeApi({
+    "GET /schema": [200, withNumbers],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+  });
+  renderApp("/pipelines/new");
+
+  const learningRate = await screen.findByLabelText(/^Learning rate/);
+  await userEvent.click(screen.getByRole("button", { name: "Increase Learning rate" }));
+  expect(learningRate).toHaveValue("3e-4");
+  await userEvent.clear(learningRate);
+  await userEvent.type(learningRate, "{ArrowDown}");
+  expect(learningRate).toHaveValue("1e-4");
+  await userEvent.click(screen.getByRole("button", { name: "Decrease Trials" }));
+  expect(screen.getByLabelText(/^Trials/)).toHaveValue("1");
+});
