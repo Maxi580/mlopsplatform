@@ -6,14 +6,19 @@ import type { Endpoint, EndpointStatsSummary } from "./endpoint";
 
 const schema = {
   type: "object",
-  properties: { serve: { anyOf: [{ $ref: "#/$defs/Serve" }, { type: "null" }] } },
+  properties: { evaluate: { $ref: "#/$defs/Evaluate" } },
   $defs: {
-    Serve: {
+    Evaluate: {
+      type: "object",
+      properties: {
+        serving: { anyOf: [{ $ref: "#/$defs/ServingOptions" }, { type: "null" }] },
+      },
+    },
+    ServingOptions: {
       type: "object",
       properties: {
         max_model_len: { anyOf: [{ type: "integer" }, { type: "null" }], title: "Max Model Len" },
         prefix_caching: { type: "boolean", default: true, title: "Prefix Caching" },
-        name: { anyOf: [{ type: "string" }, { type: "null" }], title: "Endpoint name" },
       },
     },
   },

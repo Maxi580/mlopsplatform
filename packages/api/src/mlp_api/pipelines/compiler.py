@@ -22,7 +22,7 @@ class StepEnvironment:
     model_cache_pvc: str
     object_store_url: str
     object_store_bucket: str
-    # How the `serve` step reaches the API inside the cluster.
+    # How the `distill` and `sweep` steps reach the API inside the cluster.
     api_url: str
     sandbox_url: str
     # Where `evaluate` reaches an Endpoint's Service.
@@ -122,8 +122,6 @@ def compile_pipeline(
             if request.evaluate:
                 evaluated = evaluated_request(request, resume)
                 stages.append(evaluate_step(pipeline_id, evaluated, steps, gpus))
-            if request.serve:
-                stages.append(serve_step(pipeline_id, steps))
             for stage in stages:
                 if previous:
                     stage.after(previous)
@@ -166,7 +164,7 @@ def compile_smoke_test(
             )
         gpus = settings.gpus_per_stage
         for case, request in cases.items():
-            # A case of several steps (distill, Phases, serve) passes or fails with its last one,
+            # A case of several steps (distill, sweep, Phases) passes or fails with its last one,
             # and each of its steps runs only once the one before it passed.
             case_steps, distilled, swept = [], "", ""
             if request.distill:
@@ -198,8 +196,6 @@ def compile_smoke_test(
                 case_steps.append(("speculate", speculated))
             if request.evaluate:
                 case_steps.append(("evaluate", evaluate_step(pipeline_id, request, steps, gpus)))
-            if request.serve:
-                case_steps.append(("serve", serve_step(pipeline_id, steps)))
             for step_name, task in case_steps[:-1]:
                 task.set_display_name(f"{case}-{step_name}")
             case_steps[0][1].after(previous).ignore_upstream_failure()
@@ -510,26 +506,6 @@ def use_vllm(task, steps: StepEnvironment, gpus: int) -> None:
         task.set_accelerator_type(config.GPU_RESOURCE)
         task.set_accelerator_limit(gpus)
     use_object_store(task, steps)
-
-
-def serve_step(pipeline_id: int, steps: StepEnvironment):
-    @dsl.container_component
-    def serve(pipeline_id: str):
-        return dsl.ContainerSpec(
-            image=steps.stages_image, command=["mlp-stage", "serve"], args=[pipeline_id]
-        )
-
-    # The API starts the Endpoint from the request it stored; the step only asks, with the serve
-    # token from the Secret.
-    task = serve(pipeline_id=str(pipeline_id))
-    task.set_caching_options(False)
-    task.set_env_variable("API_URL", steps.api_url)
-    kubernetes.use_secret_as_env(
-        task,
-        config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
-        {"step_token": config.SECRET_ENV_VARS["step_token"]},
-    )
-    return task
 
 
 # Runs snippets in the Sandbox, which only Pipeline steps can reach.

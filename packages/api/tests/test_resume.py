@@ -15,7 +15,6 @@ from .test_evaluate_stage import tasks
 from .test_models import delete, register
 from .test_pipeline_request import pipeline_request, then
 from .test_pipelines import pipeline, submit, submittable  # noqa: F401
-from .test_serve_stage import register_output, serve_step
 
 pytestmark = pytest.mark.usefixtures("submittable")
 
@@ -160,20 +159,6 @@ def test_when_every_phase_finished_evaluate_gets_the_last_model_version(logged_i
     assert "finetune" not in tasks(cluster)
     evaluated = parameters(tasks(cluster)["evaluate"])["request"]
     assert '"model":"model:qwen-sft@1"' in evaluated.replace(" ", "")
-
-
-def test_when_every_phase_finished_serve_starts_the_last_model_version(logged_in_api, cluster):
-    failed = failed_pipeline(logged_in_api, {**pipeline_request(), "serve": {}})
-    register_output(
-        logged_in_api.app.state.model_registry, logged_in_api.app.state.object_store, failed, 1
-    )
-    logged_in_api.app.state.model_registry.versions[-1].tags["phase"] = "1"
-    resumed = resume(logged_in_api, failed).json()["id"]
-
-    response = serve_step(logged_in_api, resumed)
-
-    assert response.status_code == 201, response.text
-    assert response.json()["model"] == "model:qwen-sft@1"
 
 
 @pytest.mark.usefixtures("prompts")

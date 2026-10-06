@@ -23,7 +23,7 @@ def smoke_test(
     ] = False,
     serving: Annotated[
         bool,
-        typer.Option(help="Serve models on Endpoints and run the serve Stage; runs a custom one"),
+        typer.Option(help="Serve models on Endpoints; runs a custom one"),
     ] = False,
     evaluate: Annotated[
         bool, typer.Option(help="Evaluate the Base Model and an Adapter; runs a custom one")

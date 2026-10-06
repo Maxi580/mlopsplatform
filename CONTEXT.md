@@ -19,7 +19,7 @@ One submitted Pipeline Request as it executes; the thing users list, watch, canc
 _Avoid_: Workflow, experiment, job
 
 **Stage**:
-One enabled step inside a Pipeline: `distill`, `sweep`, `finetune`, `quantize`, `speculate`, `evaluate` or `serve`, always run in that order.
+One enabled step inside a Pipeline: `distill`, `sweep`, `finetune`, `quantize`, `speculate` or `evaluate`, always run in that order. Serving is no Stage: Endpoints start only from the Serving tab or `mlp endpoints start`.
 _Avoid_: Workflow type, step, task
 
 **Phase**:
@@ -36,7 +36,7 @@ The `sweep` Stage: a hyperparameter search over one Phase configuration. Its out
 One training run within a Sweep. Its weights are thrown away.
 
 **Endpoint**:
-A running, OpenAI-compatible server for one model (a Model Version or a Base Model), created by the `serve` Stage or directly by a user. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it.
+A running, OpenAI-compatible server for one model (a Model Version or a Base Model), started by a user from the Serving tab or the CLI. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it.
 _Avoid_: Deployment, served model, inference service
 
 **Smoke Test**:

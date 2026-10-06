@@ -221,7 +221,7 @@ VLLM_TOOL_PARSERS = (
 # The `--max-lora-rank` values vLLM accepts; an Adapter is served with the smallest that fits.
 VLLM_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 # Always run in this order.
-STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate", "serve")
+STAGES = ("distill", "sweep", "finetune", "quantize", "speculate", "evaluate")
 # Names the best parameters the Pipeline's `sweep` step found.
 SWEEP_OUTPUT = "@sweep"
 # `sweep` holds out this share of the Dataset's rows to measure its objective on, unless it names
@@ -299,13 +299,13 @@ SPECULATIVE_METHODS = {
 }
 SPECULATIVE_TOKENS = 3
 # Secret slot -> the environment variable of the steps that receive it. The API adds
-# `step_token` itself, for the `distill` and `serve` steps to call the API with.
+# `step_token` itself, for the `distill` and `sweep` steps to call the API with.
 SECRET_ENV_VARS = {
     "hf_token": "HF_TOKEN",
     "teacher_api_key": "MLP_TEACHER_API_KEY",
     "step_token": "MLP_STEP_TOKEN",
 }
-# How long a step waits for the API, e.g. to start the Endpoint.
+# How long a step waits for the API, e.g. to register its Dataset.
 STEP_REQUEST_TIMEOUT = timedelta(minutes=5)
 # Where steps mount the Model Cache; the Hugging Face cache lives inside it.
 MODEL_CACHE_PATH = "/model-cache"
@@ -638,9 +638,6 @@ SMOKE_TEST_SERVING_CASES = (
 # Each serving case's Endpoint answers one real chat request, which its stats must then count.
 SMOKE_TEST_CHAT_REQUEST = {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8}
 SMOKE_TEST_CHAT_TIMEOUT = timedelta(minutes=1)
-# Trains like the first finetune case, then its `serve` step starts an Endpoint; that Endpoint is
-# stopped once the case has a result, so it never holds a GPU the other cases wait for.
-SMOKE_TEST_SERVE_STAGE_CASE = "finetune-serve"
 # Distills the bundled `distill` prompts with the Base Model as Teacher, offering it one tool, then
 # trains on `@distill` with SMOKE_TEST_TRAINING.
 SMOKE_TEST_DISTILL_CASE = "distill-tools"
@@ -669,12 +666,11 @@ SMOKE_TEST_SWEEP = {
     "trials": 2,
     "eval_split": 0.25,
 }
-# Finetune cases that train from the tiny model, end with an Endpoint, follow `distill` or
+# Finetune cases that train from the tiny model, follow `distill` or
 # `sweep`, chain Phases, try a weight method's options or resume; the others train one Phase on
 # the Base Model.
 SMOKE_TEST_SPECIAL_FINETUNE_CASES = (
     SMOKE_TEST_UPLOADED_MODEL_CASE,
-    SMOKE_TEST_SERVE_STAGE_CASE,
     SMOKE_TEST_DISTILL_CASE,
     SMOKE_TEST_SWEEP_CASE,
     SMOKE_TEST_CHAIN_CASE,

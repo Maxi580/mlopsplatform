@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from mlp_api.auth.session import issue_step_token
 from mlp_core import api_paths
 
 from .test_datasets import jsonl, upload
@@ -241,9 +242,10 @@ def test_only_the_pipelines_own_step_reports_its_sweep(logged_in_api):
 
 
 def test_a_pipeline_without_a_sweep_takes_no_report(logged_in_api):
-    pipeline_id = submit(logged_in_api, {**pipeline_request(), "serve": {}}).json()["id"]
+    pipeline_id = submit(logged_in_api, pipeline_request()).json()["id"]
+    token = issue_step_token(logged_in_api.app.state.jwt_secret, pipeline_id)
 
-    assert report(logged_in_api, pipeline_id).status_code == 422
+    assert report(logged_in_api, pipeline_id, token=token).status_code == 422
 
 
 def test_a_finished_sweep_is_not_run_again_on_resume(logged_in_api, cluster):

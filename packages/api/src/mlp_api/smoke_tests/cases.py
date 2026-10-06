@@ -22,8 +22,7 @@ class SmokeTestSelection(Strict):
     sandbox: bool = False
     # Uploads a tiny model and trains an sft/lora/hf Phase from it.
     uploaded_model: bool = False
-    # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints;
-    # with a finetune case, also runs the `serve` Stage.
+    # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints.
     serving: bool = False
     # Evaluates the Base Model on a benchmark and on a coding benchmark of each harness, and, with
     # a finetune case, its Adapter.
@@ -71,7 +70,6 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[dict,
         for backend in chosen.backends
         if method in config.BACKENDS[backend].get(phase, ())
     }
-    adapter_case = first_adapter_case(cases)
     if "sft" in chosen.phases and "lora" in chosen.methods:
         phases = (config.SMOKE_TEST_ASSISTANT_ONLY_PHASE,)
         cases.update({f"sft-assistant-only-{b}": (phases, b) for b in chosen.backends})
@@ -87,8 +85,6 @@ def finetune_cases(selection: SmokeTestSelection) -> dict[str, tuple[tuple[dict,
         cases.update(config.SMOKE_TEST_WEIGHT_CASES)
     if selection.resume:
         cases[config.SMOKE_TEST_RESUME_CASE] = config.SMOKE_TEST_TRAINING
-    if selection.serving and adapter_case:
-        cases[config.SMOKE_TEST_SERVE_STAGE_CASE] = cases[adapter_case]
     return cases
 
 
@@ -114,8 +110,6 @@ def finetune_case_request(
     """The Pipeline Request of one case, each Phase on its bundled Dataset or `@distill`."""
     stages = {}
     datasets = [f"dataset:{smoke_test}-{phase['algorithm']}" for phase in phases]
-    if case == config.SMOKE_TEST_SERVE_STAGE_CASE:
-        stages["serve"] = {}
     if case == config.SMOKE_TEST_DISTILL_CASE:
         stages["distill"] = {
             "dataset": f"dataset:{smoke_test}-distill",
@@ -229,11 +223,8 @@ def run_order(
     sandbox: bool, trainings: dict, quantizations: dict, speculations: list, evaluations: dict
 ) -> list[str]:
     """The cases run as Kubeflow nodes, in the order they run."""
-    # The `serve` Stage case comes last, as its serve step runs only once its training passed.
-    serve_stage = [case for case in trainings if case == config.SMOKE_TEST_SERVE_STAGE_CASE]
-    finetunes = [case for case in trainings if case not in serve_stage]
     sandbox_case = [config.SMOKE_TEST_SANDBOX_CASE] if sandbox else []
-    stages = [*finetunes, *quantizations, *speculations, *evaluations, *serve_stage]
+    stages = [*trainings, *quantizations, *speculations, *evaluations]
     return ["fetch", *sandbox_case, *stages]
 
 

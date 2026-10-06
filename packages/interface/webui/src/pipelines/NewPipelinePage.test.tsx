@@ -112,36 +112,36 @@ test("the form shows what the request still downloads as it changes", async () =
 });
 
 test("an optional Stage joins the request only once it is switched on", async () => {
-  const withServe = {
+  const withSpeculate = {
     ...schema,
     properties: {
       ...schema.properties,
-      serve: { anyOf: [{ $ref: "#/$defs/Serve" }, { type: "null" }], default: null },
+      speculate: { anyOf: [{ $ref: "#/$defs/Speculate" }, { type: "null" }], default: null },
     },
     $defs: {
-      Serve: {
+      Speculate: {
         type: "object",
-        properties: { max_model_len: { type: "integer", title: "Max Model Len" } },
+        properties: { samples: { type: "integer", title: "Samples" } },
       },
     },
   };
   const calls = fakeApi({
-    "GET /schema": [200, withServe],
+    "GET /schema": [200, withSpeculate],
     "GET /datasets": [200, []],
     "GET /pipelines": [200, []],
     "POST /pipelines": [202, { id: 5 }],
   });
   renderApp("/pipelines/new");
 
-  const serve = await screen.findByRole("checkbox", { name: /run serve/i });
-  expect(screen.queryByLabelText(/^Max Model Len/)).not.toBeInTheDocument();
-  await userEvent.click(serve);
-  await userEvent.type(screen.getByLabelText(/^Max Model Len/), "4096");
+  const speculate = await screen.findByRole("checkbox", { name: /run speculate/i });
+  expect(screen.queryByLabelText(/^Samples/)).not.toBeInTheDocument();
+  await userEvent.click(speculate);
+  await userEvent.type(screen.getByLabelText(/^Samples/), "4096");
   await userEvent.click(screen.getByRole("button", { name: /submit/i }));
 
   await screen.findByText(/Submitted Pipeline 5/);
   const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
-  expect(submitted.request.serve).toEqual({ max_model_len: 4096 });
+  expect(submitted.request.speculate).toEqual({ samples: 4096 });
 });
 
 test("the benchmark picker shows each benchmark's category, description and size", async () => {

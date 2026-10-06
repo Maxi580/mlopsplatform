@@ -2,7 +2,7 @@ import ast
 import json
 
 from jsonschema import Draft202012Validator, SchemaError
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 from sqlalchemy import Engine
 
 from mlp_api.datasets.registry import find_dataset_version
@@ -15,7 +15,7 @@ from mlp_api.pipelines.chat_template import assistant_mask_problem
 from mlp_api.pipelines.hugging_face import HuggingFace, find_base_model, pin_base_model
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core import config
-from mlp_core.endpoint_spec import EndpointName, ServingOptions
+from mlp_core.endpoint_spec import ServingOptions
 from mlp_core.pipeline_request.references import (
     dataset_reference,
     model_reference,
@@ -140,7 +140,7 @@ def validate_pipeline_request(
         )
 
     # 10. The model `evaluate` runs on, pinned; the Pipeline's last Model Version unless named. BFCL
-    # scores its tool calls as `serve` would parse them, with the parser of the model it came from.
+    # scores its tool calls as an Endpoint would parse them, with its source model's parser.
     evaluate = request.evaluate
     if evaluate:
         token = secrets.get("hf_token")
@@ -162,15 +162,6 @@ def validate_pipeline_request(
                     errors.append(error(["evaluate", "benchmarks"], str(reason)))
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
-
-    # 11. The Endpoint `serve` starts: named after the Pipeline unless named, and free for now.
-    if request.serve:
-        name = request.serve.name = request.serve.name or request.name
-        if not is_endpoint_name(name):
-            errors.append(error(["serve", "name"], f"`{name}` can't name an Endpoint; name one"))
-        elif find_endpoint(engine, name) is not None:
-            msg = f"Endpoint {name} is already running; stop it or name another"
-            errors.append(error(["serve", "name"], msg))
 
     if errors:
         return None, errors
@@ -721,11 +712,3 @@ def pin_evaluated_model(
         if request.evaluate.performance:
             raise ValueError(f"`performance` is measured on a vLLM of its own, not Endpoint {name}")
     return pin_served_model(model, token, hugging_face, engine, model_registry)
-
-
-def is_endpoint_name(name: str) -> bool:
-    try:
-        TypeAdapter(EndpointName).validate_python(name)
-    except ValidationError:
-        return False
-    return True

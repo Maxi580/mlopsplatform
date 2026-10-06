@@ -18,7 +18,6 @@ STEPS = {
     "quantize": "mlp_stages.quantize.main:quantize",
     "speculate": "mlp_stages.speculate.main:speculate",
     "evaluate": "mlp_stages.evaluate.main:evaluate",
-    "serve": "mlp_stages.operations.serve:serve",
     # The Smoke Test's sandbox case.
     "check-sandbox": "mlp_stages.operations.check_sandbox:check_sandbox",
 }

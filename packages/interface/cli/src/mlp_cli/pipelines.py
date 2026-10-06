@@ -11,7 +11,6 @@ from mlp_core import api_paths
 FinetunePhases = Annotated[str, typer.Option(help="Phases from the CLI Profile, e.g. sft,dpo")]
 PipelineName = Annotated[str | None, typer.Option(help="Pipeline name; default: the Profile's")]
 DryRun = Annotated[bool, typer.Option(help="Only list what the Pipeline would download")]
-Serve = Annotated[bool, typer.Option(help="End with an Endpoint for the last Model Version")]
 Evaluate = Annotated[bool, typer.Option(help="Run the Profile's benchmarks on its model")]
 Distill = Annotated[bool, typer.Option(help="First distill the Profile's prompts with its Teacher")]
 Quantize = Annotated[
@@ -29,14 +28,13 @@ def validate(
     finetune: FinetunePhases = "",
     name: PipelineName = None,
     evaluate: Evaluate = False,
-    serve: Serve = False,
     distill: Distill = False,
     quantize: Quantize = False,
     speculate: Speculate = False,
     sweep: Sweep = False,
 ) -> None:
     """Check the Pipeline Request built from the CLI Profile, without running anything."""
-    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate, sweep)
+    chosen = (finetune, name, evaluate, distill, quantize, speculate, sweep)
     resolved = send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen)
     typer.echo(yaml.safe_dump(resolved["request"], sort_keys=False))
     typer.echo("Valid")
@@ -46,7 +44,6 @@ def run(
     finetune: FinetunePhases = "",
     name: PipelineName = None,
     evaluate: Evaluate = False,
-    serve: Serve = False,
     distill: Distill = False,
     quantize: Quantize = False,
     speculate: Speculate = False,
@@ -54,7 +51,7 @@ def run(
     dry_run: DryRun = False,
 ) -> None:
     """Submit the Pipeline Request built from the CLI Profile; returns once it is queued."""
-    chosen = (finetune, name, evaluate, serve, distill, quantize, speculate, sweep)
+    chosen = (finetune, name, evaluate, distill, quantize, speculate, sweep)
     if dry_run:
         print_downloads(send_pipeline_request(api_paths.VALIDATE_PIPELINE, *chosen))
         return
@@ -124,7 +121,6 @@ def send_pipeline_request(
     finetune: str,
     name: str | None,
     evaluate: bool,
-    serve: bool,
     distill: bool,
     quantize: bool,
     speculate: bool,
@@ -136,7 +132,7 @@ def send_pipeline_request(
     try:
         phases = [p for p in finetune.split(",") if p]
         request = build_pipeline_request(
-            profile, name, phases, serve, evaluate, distill, quantize, speculate, sweep
+            profile, name, phases, evaluate, distill, quantize, speculate, sweep
         )
     except ValueError as error:
         typer.echo(error, err=True)

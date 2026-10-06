@@ -41,7 +41,7 @@ from mlp_core.config import (
     UNCALIBRATED_SCHEMES,
     WEIGHT_METHODS,
 )
-from mlp_core.endpoint_spec import ENDPOINT_NAME_PATTERN, EndpointName, ServingOptions
+from mlp_core.endpoint_spec import ENDPOINT_NAME_PATTERN, ServingOptions
 from mlp_core.pipeline_request.references import (
     MODEL_NAME_PATTERN,
     BaseModelReference,
@@ -402,13 +402,6 @@ class Evaluate(Strict):
         return self
 
 
-class Serve(ServingOptions):
-    """An Endpoint for the Pipeline's last Model Version, started once the Pipeline made it."""
-
-    # Validation pins the Pipeline's name when none is given.
-    name: EndpointName | None = Field(None, title="Endpoint name")
-
-
 class PipelineRequest(Strict):
     schema_version: Literal[1] = 1
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
@@ -418,7 +411,6 @@ class PipelineRequest(Strict):
     quantize: Quantize | None = None
     speculate: Speculate | None = None
     evaluate: Evaluate | None = None
-    serve: Serve | None = None
 
     @model_validator(mode="after")
     def check_stages(self) -> "PipelineRequest":
@@ -428,6 +420,4 @@ class PipelineRequest(Strict):
                 "enable at least one of `distill`, `sweep`, `finetune`, `quantize`, `speculate` "
                 "and `evaluate`"
             )
-        if self.serve and not (self.finetune or self.quantize):
-            raise ValueError("`serve` serves the output of `finetune` or `quantize`; enable either")
         return self

@@ -16,7 +16,6 @@ def build_pipeline_request(
     profile: dict,
     name: str | None,
     finetune_phases: list[str],
-    serve: bool = False,
     evaluate: bool = False,
     distill: bool = False,
     quantize: bool = False,
@@ -24,6 +23,10 @@ def build_pipeline_request(
     sweep: bool = False,
 ) -> dict:
     """A Pipeline Request holding only the named Stages and Phases, in the order named."""
+    if "serve" in profile:
+        raise ValueError(
+            "The CLI Profile's `serve:` is gone; start an Endpoint with `mlp endpoints start`"
+        )
     request = {"name": name or profile.get("name")}
     if distill:
         request["distill"] = profile.get("distill") or {}
@@ -44,6 +47,4 @@ def build_pipeline_request(
         request["speculate"] = profile.get("speculate") or {}
     if evaluate:
         request["evaluate"] = profile.get("evaluate") or {}
-    if serve:
-        request["serve"] = profile.get("serve") or {}
     return request

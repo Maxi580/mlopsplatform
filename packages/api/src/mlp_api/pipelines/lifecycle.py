@@ -69,7 +69,7 @@ def submit_pipeline(
 
     # 2. The Secret and the run; a failure leaves the Secret to the reconciler.
     try:
-        if request.distill or request.sweep or request.serve:
+        if request.distill or request.sweep:
             secrets = {**secrets, "step_token": issue_step_token(state.jwt_secret, pipeline_id)}
         cluster.create_secret(pipeline_secret_name(pipeline_id), secrets)
         settings = state.settings

@@ -144,8 +144,6 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "evaluate-evalscope",
         "evaluate-tool-calling",
         "evaluate-performance",
-        "finetune-serve-finetune-sft",
-        "finetune-serve",
     ]
     assert cluster.submitted["display_name"] == started["name"]
 
@@ -156,9 +154,8 @@ def test_every_case_runs_even_after_the_one_before_it_failed(
     start(logged_in_api)
 
     # Only a step that follows its case's earlier step waits for that to pass.
-    first, *later, serve = nodes(cluster)
+    first, *later = nodes(cluster)
     assert "triggerPolicy" not in first
-    assert "triggerPolicy" not in serve
     waiting = ("distill-tools", "sft-sweep", "sft-dpo-chain", "sft-lora-dpo-full-hf", "resume")
     for waits in waiting:
         assert "triggerPolicy" not in node(cluster, waits)
@@ -702,7 +699,6 @@ def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_wei
         "quantize-adapter",
         *SPECULATE_CASES,
         *EVALUATE_CASES,
-        "finetune-serve",
         *SERVING_CASES,
     ]
     assert running_endpoints(logged_in_api) == {
@@ -870,41 +866,7 @@ def test_a_cancelled_smoke_test_stops_its_endpoints(logged_in_api, qwen_on_the_h
     assert running_endpoints(logged_in_api) == {}
 
 
-def test_the_serve_stage_case_trains_like_the_first_finetune_case_then_serves_it(
-    logged_in_api, qwen_on_the_hub, cluster
-):
-    started = start(logged_in_api).json()
-
-    *_, finetune, serve = nodes(cluster)
-    parameters = finetune["inputs"]["parameters"]
-    request = json.loads(parameters["request"]["runtimeValue"]["constant"])
-    assert request["name"] == f"{started['name']}-finetune-serve"
-    assert request["serve"]["name"] == f"{started['name']}-finetune-serve"
-    assert request["finetune"]["phases"][0]["algorithm"] == "sft"
-    assert serve["dependentTasks"] == [next(k for k, t in tasks(cluster).items() if t is finetune)]
-    assert set(cluster.secrets[f"pipeline-{started['id']}"]) == {"step_token"}
-
-
-def tasks(cluster) -> dict:
-    return cluster.submitted["pipeline_spec"]["pipeline_spec"]["root"]["dag"]["tasks"]
-
-
-def test_the_serve_stage_case_stops_its_endpoint_once_it_has_a_result(
-    logged_in_api, qwen_on_the_hub, cluster
-):
-    name = start(logged_in_api).json()["name"]
-    # What its serve step did.
-    endpoint = {"name": f"{name}-finetune-serve", "model": f"hf:{QWEN}"}
-    logged_in_api.post(api_paths.ENDPOINTS, json=endpoint)
-    cluster.runs["run-1"] = KubeflowRun("RUNNING", None, {"finetune-serve": "SUCCEEDED"})
-
-    reconcile(logged_in_api)
-
-    assert smoke_test(logged_in_api)["cases"]["finetune-serve"] == "passed"
-    assert f"{name}-finetune-serve" not in running_endpoints(logged_in_api)
-
-
-def test_a_smoke_test_without_the_serve_stage_case_has_no_secret(
+def test_a_smoke_test_without_distill_or_sweep_has_no_secret(
     logged_in_api, qwen_on_the_hub, cluster
 ):
     start(logged_in_api, WITHOUT_SERVING)

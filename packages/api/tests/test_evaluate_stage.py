@@ -190,12 +190,11 @@ def test_fetch_downloads_the_base_model_and_the_benchmarks(logged_in_api, cluste
     assert references == f"{PINNED_BASE_MODEL},{GSM8K},lm_eval:ifeval"
 
 
-def test_evaluate_runs_after_finetune_and_before_serve(logged_in_api, cluster):
-    pipeline_id = submit(logged_in_api, {**evaluating(), "serve": {}}).json()["id"]
+def test_evaluate_runs_after_finetune(logged_in_api, cluster):
+    pipeline_id = submit(logged_in_api, evaluating()).json()["id"]
 
     evaluate = tasks(cluster)["evaluate"]
     assert evaluate["dependentTasks"] == ["finetune"]
-    assert tasks(cluster)["serve"]["dependentTasks"] == ["evaluate"]
     assert inputs(evaluate)["pipeline_id"] == str(pipeline_id)
     assert json.loads(inputs(evaluate)["request"])["evaluate"]["model"] == "@finetune"
     assert inputs(evaluate)["endpoint_url"] == ""

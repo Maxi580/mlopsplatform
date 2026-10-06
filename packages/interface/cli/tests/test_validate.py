@@ -113,13 +113,18 @@ def test_a_phase_missing_from_the_profile_is_an_error(profile, fake_api):
     assert fake_api.received == []
 
 
-def test_serve_adds_the_profiles_serve_block(home, fake_api, platform_ca):
+def test_a_profile_with_a_serve_block_is_an_error(home, fake_api, platform_ca):
     write_profile(home, fake_api.url, platform_ca, **PROFILE, serve={"max_model_len": 4096})
-    fake_api.answers[api_paths.VALIDATE_PIPELINE] = (200, {"request": {}})
 
-    mlp_validate("--finetune", "sft", "--serve")
+    result = mlp_validate("--finetune", "sft")
 
-    assert sent_submission(fake_api)["request"]["serve"] == {"max_model_len": 4096}
+    assert result.exit_code == 1
+    assert "mlp endpoints start" in result.output
+    assert fake_api.received == []
+
+
+def test_there_is_no_serve_option(profile, fake_api):
+    assert mlp_validate("--finetune", "sft", "--serve").exit_code == 2
 
 
 def test_evaluate_adds_the_profiles_evaluate_block(home, fake_api, platform_ca):
@@ -130,12 +135,6 @@ def test_evaluate_adds_the_profiles_evaluate_block(home, fake_api, platform_ca):
     mlp_validate("--evaluate")
 
     assert sent_submission(fake_api)["request"] == {"name": PROFILE["name"], "evaluate": evaluate}
-
-
-def test_serve_works_without_a_serve_block_in_the_profile(profile, fake_api):
-    mlp_validate("--finetune", "sft", "--serve")
-
-    assert sent_submission(fake_api)["request"]["serve"] == {}
 
 
 def test_distill_adds_the_profiles_distill_block(home, fake_api, platform_ca):

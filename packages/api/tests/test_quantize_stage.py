@@ -172,21 +172,14 @@ def test_quantize_loads_the_model_offline_on_the_platforms_gpus(logged_in_api, c
     assert {"name": "S3_BUCKET", "value": "platform"} in step["env"]
 
 
-def test_evaluate_and_serve_take_the_quantized_model(logged_in_api, cluster):
-    request = {**quantizing(), "evaluate": {"benchmarks": [GSM8K]}, "serve": {}}
+def test_evaluate_takes_the_quantized_model(logged_in_api, cluster):
+    request = {**quantizing(), "evaluate": {"benchmarks": [GSM8K]}}
 
     submit(logged_in_api, request)
 
     assert tasks(cluster)["evaluate"]["dependentTasks"] == ["quantize"]
     evaluated = json.loads(parameters(tasks(cluster)["evaluate"])["request"])
     assert evaluated["evaluate"]["model"] == "@quantize"
-    assert tasks(cluster)["serve"]["dependentTasks"] == ["evaluate"]
-
-
-def test_serve_can_serve_a_quantized_model_without_finetune(logged_in_api):
-    request = {**quantize_only(f"hf:{BASE_MODEL}"), "serve": {}}
-
-    assert resolved(logged_in_api, request)["serve"]["name"] == "qwen-fp8"
 
 
 @pytest.mark.parametrize(

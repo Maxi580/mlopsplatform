@@ -178,6 +178,7 @@ def test_the_hf_token_secret_is_used_to_look_up_the_base_model(validate, hugging
     "request_",
     [
         {**pipeline_request(), "gpus": 2},
+        {**pipeline_request(), "serve": {}},
         pipeline_request(phase={"epochs": 3}),
         pipeline_request(gpus=1),
     ],

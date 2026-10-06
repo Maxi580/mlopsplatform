@@ -58,9 +58,7 @@ export default function ServingPage() {
         </p>
       )}
 
-      {endpoints.data?.length === 0 && (
-        <p className="muted">No Endpoints yet; start one below or add `serve` to a Pipeline.</p>
-      )}
+      {endpoints.data?.length === 0 && <p className="muted">No Endpoints yet; start one below.</p>}
       {!!endpoints.data?.length && (
         <div className="card table-card">
           <table>
@@ -180,13 +178,14 @@ function EndpointRow({
   );
 }
 
-/** The model to serve, its Endpoint name, the `serve` Stage's options, and how it drafts. */
+/** The model to serve, its Endpoint name, the serving options, and how it drafts. */
 function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   const schema = useApi<PublishedSchema>(SCHEMA).data;
   const models = useApi<RegisteredModel[]>(MODELS).data;
   const cache = useApi<ModelCache>(MODEL_CACHE).data;
   const form = useMemo(() => schema && servingOptionsForm(schema), [schema]);
   const [model, setModel] = useState("");
+  const [name, setName] = useState("");
   const [speculative, setSpeculative] = useState<Speculative | null>(null);
   const [values, setValues] = useState<FormValues>({ fields: {}, more: {} });
   const [errors, setErrors] = useState<ReturnType<typeof placeErrors>>();
@@ -207,6 +206,7 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
     setErrors(undefined);
     const body = {
       model: model.trim(),
+      name: name.trim(),
       ...pipelineRequestFromForm(form, values),
       ...(speculative && { speculative }),
     };
@@ -258,6 +258,17 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
             ))}
           </datalist>
         </div>
+        <div className="field">
+          <label className="field-label" htmlFor="endpoint-name">
+            Endpoint name <code>name</code>
+          </label>
+          <input
+            id="endpoint-name"
+            value={name}
+            autoComplete="off"
+            onChange={(event) => setName(event.target.value)}
+          />
+        </div>
       </div>
       <FormSectionView
         section={form}
@@ -282,7 +293,7 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   );
 }
 
-// The `serve` Stage's options are an Endpoint's, so the published schema describes both.
+// The serving options of `evaluate` and Teachers are an Endpoint's, so the schema publishes them.
 function servingOptionsForm(schema: PublishedSchema): FormSection {
-  return pipelineForm({ ...schema.$defs.Serve, $defs: schema.$defs });
+  return pipelineForm({ ...schema.$defs.ServingOptions, $defs: schema.$defs });
 }
