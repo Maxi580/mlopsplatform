@@ -1,5 +1,6 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { REWARD_TEMPLATE } from "../config";
 import { fakeApi, renderApp } from "../testApi";
 
 const schema = {
@@ -233,6 +234,9 @@ test("a setting with a description shows it as an infobox next to the setting", 
 
   const setting = await screen.findByLabelText(/^Assistant-only loss/);
   expect(setting).toHaveAccessibleDescription(infobox);
+  // Shown on hover and focus of its ⓘ, never printed inline.
+  expect(screen.getByText(infobox)).toHaveAttribute("role", "tooltip");
+  expect(screen.getByRole("button", { name: "About" })).toHaveAccessibleDescription(infobox);
   await userEvent.selectOptions(setting, "true");
   await userEvent.click(screen.getByRole("button", { name: /submit/i }));
 
@@ -277,8 +281,11 @@ test("rewards are named entries with Python source, explained by an infobox", as
   await userEvent.click(screen.getByRole("button", { name: /add reward/i }));
   await userEvent.type(screen.getByLabelText(/^Reward name/), "correct");
   await userEvent.type(screen.getByLabelText(/^Weight/), "0.8");
-  const source = screen.getByLabelText(/^Source/);
+  const source = screen.getByLabelText(/^Source/) as HTMLTextAreaElement;
   expect(source.tagName).toBe("TEXTAREA");
+  expect(source.rows).toBe(3);
+  expect(source.value).toBe(REWARD_TEMPLATE);
+  await userEvent.clear(source);
   await userEvent.type(source, "def reward(sample, item):{Enter}    return 1.0");
   await userEvent.click(screen.getByRole("button", { name: /submit/i }));
 

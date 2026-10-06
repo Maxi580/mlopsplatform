@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
-import { REFERENCE_PLACEHOLDERS } from "../config";
+import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE } from "../config";
+import InfoBox from "../fields/InfoBox";
 import { formatBytes } from "../formatBytes";
 import type { Benchmark } from "./pipeline";
 import {
@@ -40,7 +41,6 @@ export default function FormSectionView({
 
   return (
     <>
-      {section.description && <p className="field-info">{section.description}</p>}
       <FieldErrors messages={errors[section.name]} />
       {fixed.length > 0 && (
         <div className="fixed-values">
@@ -72,7 +72,9 @@ export default function FormSectionView({
       {section.entry && <Entries section={section} values={values} onChange={onChange} />}
       {subsections.flatMap(itemsOfList).map((subsection) => (
         <fieldset key={subsection.name} className="subsection">
-          <legend>{subsection.title}</legend>
+          <legend>
+            <SectionTitle section={subsection} />
+          </legend>
           <FormSectionView
             section={subsection}
             values={values}
@@ -122,11 +124,14 @@ function FieldInput({
 
   return (
     <div className={field.kind === "code" ? "field wide" : "field"}>
-      <label className="field-label" htmlFor={field.name}>
-        {field.title} <code>{lastPart(field.name)}</code>
-      </label>
+      <div className="field-heading">
+        <label className="field-label" htmlFor={field.name}>
+          {field.title} <code>{lastPart(field.name)}</code>
+        </label>
+        {field.description && <InfoBox id={`${field.name}-info`} text={field.description} />}
+      </div>
       {field.kind === "code" ? (
-        <textarea {...common} className="code-input" rows={8} spellCheck={false} />
+        <textarea {...common} className="code-input" rows={3} spellCheck={false} />
       ) : field.kind === "choice" ? (
         <select {...common}>
           <option value="">Choose…</option>
@@ -154,13 +159,20 @@ function FieldInput({
           ))}
         </datalist>
       )}
-      {field.description && (
-        <p className="field-info" id={`${field.name}-info`}>
-          {field.description}
-        </p>
-      )}
       <FieldErrors id={`${field.name}-error`} messages={errors} />
     </div>
+  );
+}
+
+/** A section's title, with its description as an infobox. */
+export function SectionTitle({ section }: { section: FormSection }) {
+  return (
+    <>
+      {section.title}
+      {section.description && (
+        <InfoBox id={`${section.name || "request"}-info`} text={section.description} />
+      )}
+    </>
   );
 }
 
@@ -339,12 +351,18 @@ function Entries({ section, values, onChange }: Pick<Props, "section" | "values"
       <button
         type="button"
         className="button ghost small"
-        onClick={() => setRows([...rows, { name: "", fields: {} }])}
+        onClick={() => setRows([...rows, { name: "", fields: newEntryFields(entry) }])}
       >
         <Plus size={14} /> Add {entry.title.toLowerCase()}
       </button>
     </div>
   );
+}
+
+// A code field, e.g. a reward's source, starts from a template that explains what to write.
+function newEntryFields(entry: FormSection): Record<string, string> {
+  const code = (entry.children as FormField[]).filter((field) => field.kind === "code");
+  return Object.fromEntries(code.map((field) => [field.name, REWARD_TEMPLATE]));
 }
 
 function FieldErrors({ id, messages }: { id?: string; messages?: string[] }) {

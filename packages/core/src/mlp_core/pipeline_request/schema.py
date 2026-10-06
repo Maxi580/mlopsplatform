@@ -54,22 +54,27 @@ InClusterTeacher = TypeAdapter(BaseModelReference | ModelReference | EndpointRef
 JobTeacher = TypeAdapter(BaseModelReference | ModelReference)
 
 
+# A field's docstring is its `description` in the published schema, which clients show as help.
 class Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
 
 class TrainerSettings(BaseModel):
     """Requires the basic values and allows every other field of its TRL/PEFT config class."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", use_attribute_docstrings=True)
 
 
 # Checked against the TRL config of the Phase's algorithm, which also requires its length setting.
 class PhaseSettings(TrainerSettings):
     learning_rate: float
+    """How far each optimizer step moves the weights."""
     num_train_epochs: float
+    """How many times training goes through the whole Dataset."""
     per_device_train_batch_size: int
+    """Rows each GPU trains on at once; lower it when a GPU runs out of memory."""
     gradient_accumulation_steps: int
+    """Batches added up before each optimizer step, for a larger effective batch."""
     # An SFTConfig setting, a field of its own for its infobox; validation checks the rest.
     assistant_only_loss: bool | None = Field(
         None, title="Assistant-only loss (sft)", description=ASSISTANT_ONLY_LOSS_INFOBOX
@@ -87,15 +92,21 @@ class PhaseSettings(TrainerSettings):
 # Checked against PEFT's LoraConfig.
 class LoraSettings(TrainerSettings):
     r: int = Field(gt=0)
+    """The Adapter's rank: higher learns more and takes more memory."""
     lora_alpha: int
+    """Scales the Adapter's update; often twice the rank."""
     lora_dropout: float
+    """The share of the Adapter's inputs dropped while training, against overfitting."""
     target_modules: str | list[str]
+    """The layers that get an Adapter; `all-linear` means every linear layer."""
 
 
 class Reward(Strict):
     weight: float
-    # Defines `def reward(sample, item)`; runs only in the Sandbox (#19).
+    """How much this reward counts in the sum the model learns from."""
+    # Runs only in the Sandbox (#19).
     source: str = Field(max_length=REWARD_SOURCE_MAX_LENGTH, json_schema_extra={"format": "python"})
+    """Python that defines `def reward(sample, item)`, returning a float or None."""
 
 
 # Names its rewards/<name>/… metrics.
@@ -106,13 +117,20 @@ class PhaseConfiguration(Strict):
     """What one training run needs: a Phase's, or each Trial's of a Sweep."""
 
     algorithm: Literal[tuple(ALGORITHMS)]
+    """How the model learns: `sft` imitates examples, `dpo` and `kto` learn preferences,
+    `distillation` a Teacher's token probabilities, `grpo` and `rloo` from rewards."""
     dataset: DatasetReference | Literal[DISTILL_OUTPUT]
+    """The Dataset it trains on, in a row format the algorithm reads."""
     method: Literal[WEIGHT_METHODS] = "lora"
+    """`lora` trains a small Adapter, `qlora` one on a 4-bit base to save memory, `full` every
+    weight."""
     settings: PhaseSettings
-    # A new Adapter's settings; after a kept Adapter, a Phase continues it as it is (#19).
+    """The algorithm's TRL settings."""
+    # After a kept Adapter, a Phase continues it as it is (#19).
     lora: LoraSettings | None = None
-    # The Base Model or Model Version a `distillation` Phase learns the token probabilities of.
+    """A new Adapter's settings, from PEFT's LoraConfig."""
     teacher: str | None = None
+    """The Base Model or Model Version whose token probabilities a `distillation` Phase learns."""
     rewards: dict[RewardName, Reward] | None = Field(None, description=REWARDS_INFOBOX)
 
     @model_validator(mode="after")
@@ -143,10 +161,11 @@ class PhaseConfiguration(Strict):
 
 
 class Phase(PhaseConfiguration):
-    # `merged` registers the Adapter merged into its base, as full weights; `full` ignores it.
     output: Literal["adapter", "merged"] = "adapter"
-    # The `sweep` Stage's best parameters, over the Phase's own `settings` and `lora`.
+    """`adapter` registers the Adapter; `merged` the Adapter merged into its base, as full weights
+    that stand alone."""
     params_from: Literal[SWEEP_OUTPUT] | None = None
+    """`@sweep` trains with the best parameters the `sweep` Stage found, over the Phase's own."""
 
     @property
     def keeps_adapter(self) -> bool:
@@ -166,11 +185,14 @@ class Phase(PhaseConfiguration):
 class SweepParameter(Strict):
     """A range to sample from, `{min, max, scale}`, or the `values` to choose between."""
 
-    # Both integers sample integers.
     min: int | float | None = None
+    """The smallest value to try; with an integer `max` too, only integers are tried."""
     max: int | float | None = None
+    """The largest value to try."""
     scale: Literal["linear", "log"] = "linear"
+    """`log` samples evenly across orders of magnitude, e.g. for learning rates."""
     values: list[bool | int | float | str] | None = Field(None, min_length=1)
+    """The values to choose between, instead of a range."""
 
     @model_validator(mode="after")
     def check_range_or_values(self) -> "SweepParameter":
@@ -188,13 +210,17 @@ class SweepParameters(Strict):
     """The settings Trials vary, by name: TRL config fields, and LoraConfig fields."""
 
     settings: dict[str, SweepParameter] = {}
+    """TRL settings the Trials vary, by name."""
     lora: dict[str, SweepParameter] = {}
+    """LoraConfig settings the Trials vary, by name."""
 
 
 class Objective(Strict):
     # From the catalog's list for the algorithm.
     metric: str
+    """The metric each Trial is judged by, one the algorithm logs."""
     goal: Literal["minimize", "maximize"]
+    """Whether a lower or a higher `metric` is better."""
 
 
 class Sweep(PhaseConfiguration):
@@ -202,16 +228,23 @@ class Sweep(PhaseConfiguration):
 
     # Validation names `finetune`'s starting model when none is given.
     model: BaseModelReference | ModelReference | None = None
+    """The model each Trial starts from; `finetune`'s starting model when left out."""
     backend: Literal[tuple(BACKENDS)] = "hf"
+    """`hf` trains with TRL and PEFT; `unsloth` with Unsloth, faster, on one GPU."""
     parameters: SweepParameters
+    """The settings the Trials vary, and their ranges."""
     objective: Objective
+    """What makes one Trial better than another."""
     trials: int = Field(gt=0)
-    # `grid` tries every combination of the parameters' `values`, at most `trials` of them.
+    """How many training runs to try; their weights are thrown away."""
     sampler: Literal[SWEEP_SAMPLERS] = "tpe"
-    # The share of the Dataset's rows held out to measure the objective on, unless `eval_dataset`
-    # is named; validation sets the default.
+    """`tpe` learns from earlier Trials, `random` samples blindly, `grid` tries every combination
+    of the parameters' `values`, at most `trials` of them."""
+    # Validation sets the default.
     eval_split: float | None = Field(None, gt=0, lt=1)
+    """The share of the Dataset's rows held out to measure the objective on."""
     eval_dataset: DatasetReference | None = None
+    """A Dataset to measure the objective on, instead of held-out rows."""
 
     @model_validator(mode="after")
     def check_search(self) -> "Sweep":
@@ -241,14 +274,18 @@ class Sweep(PhaseConfiguration):
 
 class Finetune(Strict):
     # `from` is a Python keyword, so the field has another name and is read and written as `from`.
-    model_config = ConfigDict(extra="forbid", serialize_by_alias=True)
+    model_config = ConfigDict(
+        extra="forbid", serialize_by_alias=True, use_attribute_docstrings=True
+    )
 
-    # The first Phase starts from a Base Model or from a full-weight Model Version.
     base_model: BaseModelReference | None = None
+    """The open-source model the first Phase starts from."""
     from_: ModelReference | None = Field(None, alias="from", title="From Model Version")
+    """A full-weight Model Version the first Phase starts from, instead of a Base Model."""
     backend: Literal[tuple(BACKENDS)] = "hf"
-    # Run in order, each starting from the Model Version the one before it registered.
+    """`hf` trains with TRL and PEFT; `unsloth` with Unsloth, faster, on one GPU."""
     phases: list[Phase] = Field(min_length=1)
+    """Run in order, each starting from the Model Version the one before it registered."""
 
     @model_validator(mode="after")
     def check_one_starting_model(self) -> "Finetune":
@@ -263,37 +300,44 @@ class Finetune(Strict):
 
 class ToolFunction(Strict):
     name: str = Field(pattern=r"^[\w-]{1,64}$")
+    """The name the Teacher calls the tool by."""
     description: str | None = None
-    # The JSON Schema of the arguments; validation checks that it is one.
+    """What the tool does, for the Teacher."""
+    # Validation checks that it is a JSON Schema.
     parameters: dict[str, Any] = {"type": "object", "properties": {}}
+    """The JSON Schema of the tool's arguments."""
 
 
 class Tool(Strict):
     """A function the Teacher may call, in the OpenAI `tools` format."""
 
     type: Literal["function"] = "function"
+    """Always `function`."""
     function: ToolFunction
+    """The function the Teacher may call."""
 
 
 class Distill(Strict):
     """A Distillation Dataset: each prompt's single Teacher reply, a text or tool calls (#17)."""
 
-    # A Dataset of `prompt` rows.
     dataset: DatasetReference
-    # A Base Model or Model Version run here, or a running Endpoint; with `api_url`, the name of
-    # the API's model.
+    """The prompts to ask the Teacher: a Dataset of `prompt` rows."""
     teacher: str
-    # An OpenAI-compatible API serving the Teacher, e.g. https://api.openai.com/v1; its key is the
-    # `teacher_api_key` Secret.
+    """A Base Model or Model Version run here, a running Endpoint, or the name of a model at
+    `api_url`."""
     api_url: str | None = Field(None, pattern=r"^https?://\S+$", title="API URL")
-    # Offered with every prompt; a reply may call them.
+    """An OpenAI-compatible API serving the Teacher, e.g. https://api.openai.com/v1; its key is
+    the Teacher API key Secret."""
     tools: list[Tool] | None = None
-    # Off: the Teacher is asked for one call per reply, and replies with several are dropped.
+    """Tools offered with every prompt; a reply may call them."""
     parallel_tool_calls: bool = False
+    """Off: the Teacher is asked for one call per reply, and replies with several are dropped."""
     max_tokens: int | None = Field(None, gt=0)
+    """The longest reply the Teacher may write, in tokens; a cut-off reply is dropped."""
     temperature: float | None = Field(None, ge=0)
-    # For the vLLM a Base Model or Model Version Teacher runs on.
+    """How varied the Teacher's replies are: 0 always picks the likeliest token."""
     serving: ServingOptions | None = None
+    """How vLLM serves a Base Model or Model Version Teacher."""
 
     @model_validator(mode="after")
     def check_teacher(self) -> "Distill":
@@ -312,22 +356,28 @@ class Distill(Strict):
 class Calibration(Strict):
     """The rows a scheme measures activations on, to choose its scales."""
 
-    # A Dataset of messages or text rows; the install registers the default one.
+    # The install registers the default one.
     dataset: DatasetReference = f"dataset:{CALIBRATION_DATASET}"
+    """A Dataset of messages or text rows like the traffic the model will see."""
     samples: int = Field(CALIBRATION_SAMPLES, gt=0)
-    # Tokens per sample; longer rows are cut.
+    """How many rows to measure on."""
     max_length: int = Field(CALIBRATION_MAX_LENGTH, gt=0)
+    """Tokens per row; longer rows are cut."""
 
 
 class Quantize(Strict):
     """A quantized copy of a model by llm-compressor, registered as full weights."""
 
-    # Validation names `@finetune` when none is given; an Adapter is merged into its base first.
+    # Validation names `@finetune` when none is given.
     model: BaseModelReference | ModelReference | Literal[FINETUNE_OUTPUT] | None = None
+    """The model to quantize, `@finetune`'s output when left out; an Adapter is merged first."""
     scheme: Literal[tuple(QUANTIZATION_SCHEMES)]
-    # Layers kept unquantized.
+    """`fp8-dynamic` needs no data and suits recent GPUs; the `w4a16` ones make 4-bit weights,
+    the smallest; `w8a8-int8` makes 8-bit weights and activations."""
     ignore: list[str] = QUANTIZE_IGNORE
+    """Layers kept unquantized."""
     calibration: Calibration | None = None
+    """The rows a calibrated scheme measures activations on."""
 
     @model_validator(mode="after")
     def check_calibration(self) -> "Quantize":
@@ -343,43 +393,52 @@ class Quantize(Strict):
 
 
 class SpeculateSettings(Strict):
-    # Conversations rendered through the verifier; their hidden states fill the step's disk.
+    # Their hidden states fill the step's disk.
     samples: int = Field(SPECULATE_SAMPLES, gt=0)
-    # Tokens per conversation, and the length batches are packed to.
+    """Conversations rendered through the verifier to learn from."""
     seq_length: int = Field(SPECULATE_SEQ_LENGTH, gt=0)
+    """Tokens per conversation, and the length batches are packed to."""
     epochs: int = Field(SPECULATE_EPOCHS, gt=0)
+    """How many times training goes through the conversations."""
     learning_rate: float = Field(SPECULATE_LEARNING_RATE, gt=0)
-    # The tokens the Speculator may propose, picked by frequency.
+    """How far each optimizer step moves the Speculator's weights."""
     draft_vocab_size: int = Field(SPECULATE_DRAFT_VOCAB_SIZE, gt=0)
+    """The tokens the Speculator may propose, the most frequent ones."""
 
 
 class Speculate(Strict):
     """A Speculator trained with `speculators` on the verifier's hidden states, for it alone."""
 
     speculator: Literal[SPECULATORS] = "eagle3"
-    # The verifier; validation names `@quantize`, else `@finetune`, when none is given.
+    """The Speculator type; each is served with its own speculative method."""
+    # Validation names `@quantize`, else `@finetune`, when none is given.
     model: (
         BaseModelReference | ModelReference | Literal[FINETUNE_OUTPUT, QUANTIZE_OUTPUT] | None
     ) = None
-    # Conversations like the traffic the Endpoint will see; `@distill`'s replies count as ones.
+    """The model it drafts for, as full weights; the Pipeline's last one when left out."""
     dataset: DatasetReference | Literal[DISTILL_OUTPUT]
+    """Conversations like the traffic the Endpoint will see; `@distill`'s replies count."""
     settings: SpeculateSettings = SpeculateSettings()
+    """How the Speculator trains."""
 
 
 class Performance(Strict):
     """Serving performance by GuideLLM: synthetic chat requests, a fixed number at once."""
 
     prompt_tokens: int = Field(PERFORMANCE_PROMPT_TOKENS, gt=0)
+    """Tokens in each request's prompt."""
     output_tokens: int = Field(PERFORMANCE_OUTPUT_TOKENS, gt=0)
+    """Tokens each request asks for."""
     concurrency: int = Field(PERFORMANCE_CONCURRENCY, gt=0)
+    """Requests sent at once."""
     requests: int = Field(PERFORMANCE_REQUESTS, gt=0)
+    """Requests in all."""
 
 
 class Evaluate(Strict):
     """Benchmarks from the catalog, run against a model or a running Endpoint."""
 
-    # Validation names the Pipeline's last Model Version, `@quantize` or `@finetune`, when none is
-    # given.
+    # Validation names `@quantize` or `@finetune` when none is given.
     model: (
         BaseModelReference
         | ModelReference
@@ -387,13 +446,16 @@ class Evaluate(Strict):
         | Literal[FINETUNE_OUTPUT, QUANTIZE_OUTPUT]
         | None
     ) = None
+    """The model to evaluate; the Pipeline's last Model Version when left out."""
     benchmarks: list[Literal[tuple(BENCHMARKS)]] = []
-    # Samples per task, for a quick look; scores on fewer samples don't compare with full runs.
+    """Benchmarks from the catalog."""
     limit: int | None = Field(None, gt=0)
-    # For the vLLM `evaluate` starts; an Endpoint serves with its own.
+    """Samples per benchmark, for a quick look; such scores don't compare with full runs."""
     serving: ServingOptions | None = None
+    """How vLLM serves the model; an Endpoint serves with its own."""
     # Measured only when set, so evaluations stay fast by default.
     performance: Performance | None = None
+    """Serving speed, measured with synthetic chat requests."""
 
     @model_validator(mode="after")
     def check_something_to_run(self) -> "Evaluate":
@@ -404,13 +466,21 @@ class Evaluate(Strict):
 
 class PipelineRequest(Strict):
     schema_version: Literal[1] = 1
+    """The version of this schema."""
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
+    """Names the Pipeline, and the Registered Model and Dataset it makes."""
     distill: Distill | None = None
+    """Asks a Teacher about prompts and keeps its replies as a Distillation Dataset."""
     sweep: Sweep | None = None
+    """Searches the best settings for one Phase, Trial after Trial."""
     finetune: Finetune | None = None
+    """Trains Phases one after another, each registering a Model Version."""
     quantize: Quantize | None = None
+    """Makes a smaller, faster copy of a model with fewer bits per weight."""
     speculate: Speculate | None = None
+    """Trains a Speculator, a small draft model that speeds up serving one model."""
     evaluate: Evaluate | None = None
+    """Scores a model on benchmarks, and optionally its serving speed."""
 
     @model_validator(mode="after")
     def check_stages(self) -> "PipelineRequest":

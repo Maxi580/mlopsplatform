@@ -10,23 +10,28 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The output directory where the model predictions and checkpoints will be written."
   },
   "per_device_train_batch_size": {
    "type": "integer",
-   "default": 8
+   "default": 8,
+   "description": "The batch size per device for training."
   },
   "num_train_epochs": {
    "type": "number",
-   "default": 3.0
+   "default": 3.0,
+   "description": "Total number of training epochs to perform."
   },
   "max_steps": {
    "type": "integer",
-   "default": -1
+   "default": -1,
+   "description": "Overrides `num_train_epochs`. If set to a positive number, the total number of training steps to perform. Must be set when the training dataset does not implement `__len__` (e.g. a streaming dataset)."
   },
   "learning_rate": {
    "type": "number",
-   "default": 1e-06
+   "default": 1e-06,
+   "description": "The initial learning rate for AdamW."
   },
   "lr_scheduler_type": {
    "anyOf": [
@@ -51,7 +56,8 @@
      "type": "string"
     }
    ],
-   "default": "linear"
+   "default": "linear",
+   "description": "The learning rate scheduler type to use. See `SchedulerType` for all possible values."
   },
   "lr_scheduler_kwargs": {
    "anyOf": [
@@ -66,11 +72,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Additional parameters for the lr_scheduler, such as {'num_cycles': 1} for cosine with hard restarts. See the documentation of each scheduler for possible values."
   },
   "warmup_steps": {
    "type": "number",
-   "default": 0
+   "default": 0,
+   "description": "Number of steps for a linear warmup from 0 to `learning_rate`. Can be an integer (exact steps) or a float in [0, 1) (ratio of total steps)."
   },
   "optim": {
    "anyOf": [
@@ -124,7 +132,8 @@
      "type": "string"
     }
    ],
-   "default": "adamw_torch_fused"
+   "default": "adamw_torch_fused",
+   "description": "The optimizer to use. See `OptimizerNames` for the complete list."
   },
   "optim_args": {
    "anyOf": [
@@ -135,23 +144,28 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Optional arguments supplied to optimizers such as AnyPrecisionAdamW, AdEMAMix, and GaLore."
   },
   "weight_decay": {
    "type": "number",
-   "default": 0.0
+   "default": 0.0,
+   "description": "Weight decay coefficient applied by the optimizer. Automatically excluded from bias and LayerNorm parameters."
   },
   "adam_beta1": {
    "type": "number",
-   "default": 0.9
+   "default": 0.9,
+   "description": "The exponential decay rate for the first moment estimates (momentum) in Adam-based optimizers."
   },
   "adam_beta2": {
    "type": "number",
-   "default": 0.999
+   "default": 0.999,
+   "description": "The exponential decay rate for the second moment estimates (variance) in Adam-based optimizers."
   },
   "adam_epsilon": {
    "type": "number",
-   "default": 1e-08
+   "default": 1e-08,
+   "description": "Epsilon value for numerical stability in Adam-based optimizers."
   },
   "optim_target_modules": {
    "anyOf": [
@@ -168,23 +182,28 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The target modules to optimize. Currently used for the GaLore and APOLLO algorithms."
   },
   "gradient_accumulation_steps": {
    "type": "integer",
-   "default": 1
+   "default": 1,
+   "description": "Number of update steps to accumulate gradients before performing a backward/update pass. Effective batch size = per_device_train_batch_size * num_devices * gradient_accumulation_steps."
   },
   "average_tokens_across_devices": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "Whether or not to average tokens across devices. If enabled, will use all_reduce to synchronize num_tokens_in_batch for precise loss calculation. Reference: https://github.com/huggingface/transformers/issues/34242"
   },
   "max_grad_norm": {
    "type": "number",
-   "default": 1.0
+   "default": 1.0,
+   "description": "Maximum gradient norm for gradient clipping. Set to 0 to disable."
   },
   "label_smoothing_factor": {
    "type": "number",
-   "default": 0.0
+   "default": 0.0,
+   "description": "Label smoothing factor to prevent overconfidence. Zero means no smoothing."
   },
   "bf16": {
    "anyOf": [
@@ -195,19 +214,23 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Whether to use bf16 (mixed) precision instead of 32-bit. Requires Ampere or higher NVIDIA architecture or Intel XPU or using CPU (use_cpu) or Ascend NPU. If not set, it defaults to `True` if `fp16` is not set."
   },
   "fp16": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Enable float16 (FP16) mixed precision training. Consider using BF16 instead if your hardware supports it."
   },
   "bf16_full_eval": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Use full BF16 precision for evaluation (not just mixed precision). Faster and saves memory."
   },
   "fp16_full_eval": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Use full FP16 precision for evaluation (not just mixed precision). Faster and saves memory."
   },
   "tf32": {
    "anyOf": [
@@ -218,11 +241,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Enable TF32 mode on Ampere and newer GPUs. Provides up to 8x speedup with negligible accuracy loss."
   },
   "gradient_checkpointing": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "Enable gradient checkpointing to trade compute for memory. Reduces memory at the cost of ~20%% slower training."
   },
   "gradient_checkpointing_kwargs": {
    "anyOf": [
@@ -237,11 +262,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Keyword arguments passed to `gradient_checkpointing_enable()`. `every_n_layers` checkpoints only every n-th decoder layer instead of all of them; `1` is the usual all-or-nothing behavior, and larger values give some memory back to speed. `offload` holds the saved activations in pinned host memory, which frees device memory and makes the step slower. Any other key is forwarded to `torch.utils.checkpoint.checkpoint`."
   },
   "torch_compile": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Compile the model using `torch.compile()` for faster training."
   },
   "torch_compile_backend": {
    "anyOf": [
@@ -252,7 +279,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Backend for `torch.compile()`. If set, automatically enables `torch_compile`."
   },
   "torch_compile_mode": {
    "anyOf": [
@@ -263,11 +291,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Compilation mode for `torch.compile()`. If set, automatically enables `torch_compile`."
   },
   "use_liger_kernel": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Enable Liger Kernel optimizations. In DPO, GRPO and KTO, also selects the chunked log-probability path."
   },
   "liger_kernel_config": {
    "anyOf": [
@@ -281,11 +311,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Configuration for Liger Kernel. Passed as kwargs to `_apply_liger_kernel_to_instance()`. If None, uses default configuration."
   },
   "use_cache": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
   },
   "neftune_noise_alpha": {
    "anyOf": [
@@ -296,7 +328,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "If not None, activates NEFTune noise embeddings. Can drastically improve performance for instruction fine-tuning. Typical range: [5.0, 15.0]."
   },
   "torch_empty_cache_steps": {
    "anyOf": [
@@ -307,11 +340,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Number of steps to wait before calling `torch.<device>.empty_cache()`. Helps avoid CUDA OOM at a cost of ~10%% slower performance. If None, cache will not be emptied."
   },
   "auto_find_batch_size": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to find a training batch size that will fit into memory automatically through exponential decay, avoiding CUDA Out-of-Memory errors. The evaluation batch size is not adjusted."
   },
   "logging_strategy": {
    "anyOf": [
@@ -327,23 +362,28 @@
      "type": "string"
     }
    ],
-   "default": "steps"
+   "default": "steps",
+   "description": "The logging strategy to adopt during training. Options: 'no', 'epoch', 'steps'."
   },
   "logging_steps": {
    "type": "number",
-   "default": 10
+   "default": 10,
+   "description": "Log every X updates steps. Should be an integer or a float in range `[0,1)`. If smaller than 1, will be interpreted as ratio of total training steps."
   },
   "logging_first_step": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to log the first `global_step` or not."
   },
   "log_on_each_node": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "When doing a multinode distributed training, whether to log once per node or just once on the main node."
   },
   "logging_nan_inf_filter": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "Filter out NaN and Inf losses when logging. Does not affect gradient computation, only logging."
   },
   "include_num_input_tokens_seen": {
    "anyOf": [
@@ -354,15 +394,18 @@
      "type": "boolean"
     }
    ],
-   "default": "no"
+   "default": "no",
+   "description": "Whether to track the number of input tokens seen. Must be one of [`all`, `non_padding`, `no`] or a boolean value which map to `all` or `no`"
   },
   "log_level": {
    "type": "string",
-   "default": "passive"
+   "default": "passive",
+   "description": "Logging level for the main process. Options: 'debug', 'info', 'warning', 'error', 'critical', 'passive'."
   },
   "log_level_replica": {
    "type": "string",
-   "default": "warning"
+   "default": "warning",
+   "description": "Logging level for replica processes in distributed training. Same options as `log_level`."
   },
   "disable_tqdm": {
    "anyOf": [
@@ -373,7 +416,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Disable tqdm progress bars. Defaults to True if log_level is warning or lower."
   },
   "report_to": {
    "anyOf": [
@@ -390,7 +434,8 @@
      "type": "null"
     }
    ],
-   "default": "none"
+   "default": "none",
+   "description": "The list of integrations to report the results and logs to. Use 'all' for all installed integrations, 'none' for no integrations."
   },
   "run_name": {
    "anyOf": [
@@ -401,11 +446,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "An optional descriptor for the run. Notably used for trackio, wandb, mlflow comet and swanlab logging."
   },
   "project": {
    "type": "string",
-   "default": "huggingface"
+   "default": "huggingface",
+   "description": "The name of the project to use for logging. Currently, only used by Trackio."
   },
   "trackio_space_id": {
    "anyOf": [
@@ -416,7 +463,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Hugging Face Space id for live Gradio-based Trackio logging (read/write Bucket access). Use 'username/reponame', 'orgname/reponame', or 'reponame' (current user's namespace). None: log only locally, no Space. Prefer trackio_static_space_id for stable post-training dashboard links. Public unless hub_private_repo=True or org default."
   },
   "trackio_bucket_id": {
    "anyOf": [
@@ -427,7 +475,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Optional HF Bucket id when using a Trackio Space; if unset, Trackio picks a default."
   },
   "trackio_static_space_id": {
    "anyOf": [
@@ -442,7 +491,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Static read-only Trackio Space over the Bucket (stable model-card links). False: no static sync on Hub push and no freeze after training. None/str: allow static Space; for local-only logging, Hub push runs sync(static); after training, freeze runs only if trackio_space_id was set (Gradio Space). str sets explicit static Space id. Public unless hub_private_repo=True or org default."
   },
   "eval_strategy": {
    "anyOf": [
@@ -458,7 +508,8 @@
      "type": "string"
     }
    ],
-   "default": "no"
+   "default": "no",
+   "description": "When to run evaluation. Options: 'no', 'steps', 'epoch'."
   },
   "eval_steps": {
    "anyOf": [
@@ -469,31 +520,38 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Number of update steps between evaluations if `eval_strategy='steps'`. Defaults to `logging_steps` if not set. Should be an integer or a float in range `[0,1)`. If smaller than 1, will be interpreted as ratio of total training steps."
   },
   "eval_delay": {
    "type": "number",
-   "default": 0
+   "default": 0,
+   "description": "Number of epochs or steps to wait for before the first evaluation can be performed, depending on the eval_strategy."
   },
   "per_device_eval_batch_size": {
    "type": "integer",
-   "default": 8
+   "default": 8,
+   "description": "The batch size per device (GPU/TPU core/CPU) for evaluation."
   },
   "prediction_loss_only": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "When performing evaluation and generating predictions, only returns the loss."
   },
   "eval_on_start": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to run through the entire `evaluation` step at the very beginning of training as a sanity check."
   },
   "eval_do_concat_batches": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "Whether to recursively concat inputs/losses/labels/predictions across batches. If `False`, will instead store them as lists, with each batch kept separate."
   },
   "eval_use_gather_object": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to run recursively gather object in a nested list/tuple/dictionary of objects from all devices."
   },
   "eval_accumulation_steps": {
    "anyOf": [
@@ -504,22 +562,26 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Number of predictions steps to accumulate the output tensors for, before moving the results to the CPU. If unset, predictions are accumulated on the accelerator before being moved to the CPU."
   },
   "include_for_metrics": {
    "items": {
     "type": "string"
    },
    "type": "array",
-   "default": []
+   "default": [],
+   "description": "Include additional data in the `compute_metrics` function. Options: 'inputs', 'loss'."
   },
   "batch_eval_metrics": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Break eval metrics calculation into batches to save memory."
   },
   "save_only_model": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Save only model weights, not optimizer/scheduler/RNG state. Prevents resuming training from checkpoint."
   },
   "save_strategy": {
    "anyOf": [
@@ -536,15 +598,18 @@
      "type": "string"
     }
    ],
-   "default": "steps"
+   "default": "steps",
+   "description": "The checkpoint save strategy to adopt during training. Options: 'no', 'epoch', 'steps', 'best'."
   },
   "save_steps": {
    "type": "number",
-   "default": 500
+   "default": 500,
+   "description": "Save checkpoint every X updates steps. Should be an integer or a float in range `[0,1)`. If smaller than 1, will be interpreted as ratio of total training steps."
   },
   "save_on_each_node": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "When doing multi-node distributed training, whether to save models and checkpoints on each node, or only on the main one"
   },
   "save_total_limit": {
    "anyOf": [
@@ -555,15 +620,18 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Maximum number of checkpoints to keep. Deletes older checkpoints in `output_dir`. The best checkpoint is always retained when `load_best_model_at_end=True`."
   },
   "enable_jit_checkpoint": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Enable JIT checkpointing on SIGTERM signal for graceful termination on preemptible workloads. Configure your orchestrator's graceful shutdown period accordingly."
   },
   "push_to_hub": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether or not to push the model to the Hub every time the model is saved."
   },
   "hub_token": {
    "anyOf": [
@@ -574,7 +642,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The token to use to push the model to the Hub. Defaults to the token from `hf auth login`."
   },
   "hub_private_repo": {
    "anyOf": [
@@ -585,7 +654,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Whether to make the repo private. If `None` (default), the repo will be public unless the organization's default is private. This value is ignored if the repo already exists. If reporting to Trackio Spaces created or synced (including on Hub push when `trackio_space_id` is None) use the same logic for whether the Space is private."
   },
   "hub_model_id": {
    "anyOf": [
@@ -596,7 +666,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The name of the repository to keep in sync with the local `output_dir`."
   },
   "hub_strategy": {
    "anyOf": [
@@ -613,11 +684,13 @@
      "type": "string"
     }
    ],
-   "default": "every_save"
+   "default": "every_save",
+   "description": "Defines what and when to push to Hub. Options: 'end', 'every_save', 'checkpoint', 'all_checkpoints'."
   },
   "hub_always_push": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Unless `True`, the Trainer will skip pushes if the previous one wasn't finished yet."
   },
   "hub_revision": {
    "anyOf": [
@@ -628,11 +701,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The revision to use when pushing to the Hub. Can be a branch name, a tag, or a commit hash."
   },
   "load_best_model_at_end": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Load the best checkpoint at the end of training. Requires `eval_strategy` to be set."
   },
   "metric_for_best_model": {
    "anyOf": [
@@ -643,7 +718,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Metric to use for comparing models when `load_best_model_at_end=True`. Defaults to 'loss'."
   },
   "greater_is_better": {
    "anyOf": [
@@ -654,23 +730,28 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Whether higher metric values are better. Defaults based on `metric_for_best_model`."
   },
   "ignore_data_skip": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "When resuming training, skip fast-forwarding through the dataset to reach the previous state. If True, training starts from the beginning of the dataset."
   },
   "restore_callback_states_from_checkpoint": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to restore the callback states from the checkpoint. If `True`, will override callbacks passed to the `Trainer` if they exist in the checkpoint."
   },
   "full_determinism": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to call enable_full_determinism instead of set_seed for reproducibility in distributed training. Important: this will negatively impact the performance, so only use it for debugging."
   },
   "seed": {
    "type": "integer",
-   "default": 42
+   "default": 42,
+   "description": "Random seed that will be set at the beginning of training."
   },
   "data_seed": {
    "anyOf": [
@@ -681,11 +762,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Random seed to be used with data samplers. If not set, uses the same seed as `seed`."
   },
   "use_cpu": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether or not to use cpu. If set to False, we will use the available torch device/backend."
   },
   "accelerator_config": {
    "anyOf": [
@@ -700,7 +783,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Configuration for the internal Accelerate integration. Can be a path to a JSON config file or a dict."
   },
   "parallelism_config": {
    "anyOf": [
@@ -865,23 +949,28 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Parallelism configuration for the training run. Requires Accelerate `1.10.1`."
   },
   "dataloader_drop_last": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Drop the last incomplete batch if it is not divisible by the batch size."
   },
   "dataloader_num_workers": {
    "type": "integer",
-   "default": 0
+   "default": 0,
+   "description": "Number of subprocesses to use for data loading (PyTorch only). 0 means that the data will be loaded in the main process."
   },
   "dataloader_pin_memory": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "Whether or not to pin memory for DataLoader."
   },
   "dataloader_persistent_workers": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "If True, the data loader will not shut down the worker processes after a dataset has been consumed once. This allows to maintain the workers Dataset instances alive. Can potentially speed up training, but will increase RAM usage."
   },
   "dataloader_prefetch_factor": {
    "anyOf": [
@@ -892,7 +981,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Number of batches loaded in advance by each worker. 2 means there will be a total of 2 * num_workers batches prefetched across all workers. "
   },
   "dataloader_multiprocessing_context": {
    "anyOf": [
@@ -903,11 +993,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The multiprocessing start method to use for data loading workers ('fork', 'spawn', or 'forkserver'). Defaults to PyTorch's default, except on MPS with dataloader_num_workers > 1, where it defaults to 'fork'. Use 'spawn' when streaming from sources whose objects are not fork-safe (e.g. HDFS via pyarrow). Under 'spawn', any custom collate_fn / dataset code must be importable at module level (no lambdas/closures)."
   },
   "dataloader_in_order": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "If True (default), the data loader yields batches in the order workers were dispatched. Set to False to yield batches as soon as they are ready, reducing tail latency for IterableDataset streaming workloads. Requires PyTorch >= 2.6."
   },
   "remove_unused_columns": {
    "anyOf": [
@@ -918,7 +1010,8 @@
      "type": "null"
     }
    ],
-   "default": false
+   "default": false,
+   "description": "Whether to only keep the column 'prompt' in the dataset. If you use a custom reward function that requires any column other than 'prompts' and 'completions', you should keep this to `False`."
   },
   "label_names": {
    "anyOf": [
@@ -932,15 +1025,18 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The list of keys in your dictionary of inputs that correspond to the labels."
   },
   "train_sampling_strategy": {
    "type": "string",
-   "default": "random"
+   "default": "random",
+   "description": "Sampler for training: 'random' (default), 'sequential', 'group_by_length', or 'batch_rebalance'."
   },
   "length_column_name": {
    "type": "string",
-   "default": "length"
+   "default": "length",
+   "description": "Column name for precomputed lengths. Ignored unless `train_sampling_strategy` is 'group_by_length' or 'batch_rebalance'."
   },
   "ddp_find_unused_parameters": {
    "anyOf": [
@@ -951,7 +1047,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "When using distributed training, the value of the flag `find_unused_parameters` passed to `DistributedDataParallel`."
   },
   "ddp_bucket_cap_mb": {
    "anyOf": [
@@ -962,7 +1059,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "When using distributed training, the value of the flag `bucket_cap_mb` passed to `DistributedDataParallel`."
   },
   "ddp_broadcast_buffers": {
    "anyOf": [
@@ -973,7 +1071,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "When using distributed training, the value of the flag `broadcast_buffers` passed to `DistributedDataParallel`."
   },
   "ddp_static_graph": {
    "anyOf": [
@@ -984,7 +1083,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "When using distributed training, the value of the flag `static_graph` passed to `DistributedDataParallel`."
   },
   "ddp_backend": {
    "anyOf": [
@@ -995,11 +1095,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The backend to use for distributed training. Must be one of 'nccl', 'mpi', 'xccl', 'gloo', 'hccl'."
   },
   "ddp_timeout": {
    "type": "integer",
-   "default": 1800
+   "default": 1800,
+   "description": "The timeout for `torch.distributed.init_process_group` calls (in seconds)."
   },
   "fsdp": {
    "anyOf": [
@@ -1010,7 +1112,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Enable PyTorch Fully Sharded Data Parallel (FSDP) for distributed training. Pass `--fsdp` (or `fsdp=True`) to turn FSDP on."
   },
   "fsdp_config": {
    "anyOf": [
@@ -1025,7 +1128,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Tuning for FSDP (used only when `fsdp` is enabled). Either a path to a JSON config file (e.g., `fsdp_config.json`) or an already loaded dict."
   },
   "deepspeed": {
    "anyOf": [
@@ -1040,7 +1144,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Enable DeepSpeed integration. Value is a path to a JSON config file or a dict."
   },
   "debug": {
    "anyOf": [
@@ -1058,23 +1163,28 @@
      "type": "array"
     }
    ],
-   "default": ""
+   "default": "",
+   "description": "Enable one or more debug features. Options: 'underflow_overflow' (detect overflow in model I/O), 'tpu_metrics_debug' (print TPU metrics)."
   },
   "skip_memory_metrics": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "Whether to skip adding memory profiler reports to metrics. Skipped by default because it slows down training."
   },
   "do_train": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to run training. Not directly used by Trainer; intended for training/evaluation scripts."
   },
   "do_eval": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to run evaluation. Not directly used by Trainer; intended for training/evaluation scripts."
   },
   "do_predict": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to run predictions on the test set. Not directly used by Trainer; intended for training/evaluation scripts."
   },
   "resume_from_checkpoint": {
    "anyOf": [
@@ -1085,11 +1195,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Path to a folder with a valid checkpoint for your model. Not directly used by Trainer; intended for training/evaluation scripts."
   },
   "local_rank": {
    "type": "integer",
-   "default": -1
+   "default": -1,
+   "description": "When using torch.distributed.launch (Deprecated), it will pass `local_rank` in the script, so we need this for the parser. To get the local rank, prefer using the property `local_process_index`"
   },
   "model_init_kwargs": {
    "anyOf": [
@@ -1104,11 +1216,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Keyword arguments for `transformers.AutoModelForCausalLM.from_pretrained`, used when the `model` argument of the `RLOOTrainer` is provided as a string. The `revision` value is also used when loading processing classes."
   },
   "trust_remote_code": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to allow loading models and tokenizers that ship custom Python code from the Hub. Forwarded to `AutoModelForCausalLM.from_pretrained` and `AutoProcessor.from_pretrained`. Also applied to reward-model and reward-tokenizer loads."
   },
   "router_aux_loss_coef": {
    "anyOf": [
@@ -1119,11 +1233,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Coefficient of the load-balancing auxiliary loss for Mixture-of-Experts (MoE) models, added to the training loss with this weight. When not set, the value declared by the model config is used. Set to `0.0` to disable it. Fails when used with a non-MoE model."
   },
   "disable_dropout": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to disable dropout in the model. This is useful for training with a reference model, as it prevents the model from generating different logprobs for the same input."
   },
   "num_generations": {
    "anyOf": [
@@ -1134,7 +1250,8 @@
      "type": "null"
     }
    ],
-   "default": 2
+   "default": 2,
+   "description": "Number of generations to sample. The effective batch size (num_processes * per_device_batch_size * gradient_accumulation_steps) must be evenly divisible by this value."
   },
   "num_generations_eval": {
    "anyOf": [
@@ -1145,7 +1262,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Number of generations to sample during evaluation. This allows using fewer generations during evaluation to save computation. If `None`, uses the value of `num_generations`."
   },
   "max_completion_length": {
    "anyOf": [
@@ -1156,11 +1274,13 @@
      "type": "null"
     }
    ],
-   "default": 512
+   "default": 512,
+   "description": "Maximum length of the generated completion."
   },
   "ds3_gather_for_generation": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "This setting applies to DeepSpeed ZeRO-3. If enabled, the policy model weights are gathered for generation, improving generation speed. However, disabling this option allows training models that exceed the VRAM capacity of a single GPU, albeit at the cost of slower generation. Disabling this option is not compatible with vLLM generation."
   },
   "shuffle_dataset": {
    "anyOf": [
@@ -1171,7 +1291,8 @@
      "type": "null"
     }
    ],
-   "default": true
+   "default": true,
+   "description": "Whether to shuffle the training dataset."
   },
   "pad_to_multiple_of": {
    "anyOf": [
@@ -1182,7 +1303,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "If set, the prompts ids and completions ids will be padded to a multiple of this value."
   },
   "generation_batch_size": {
    "anyOf": [
@@ -1193,7 +1315,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Batch size to use for generation. If `None`, it defaults to the effective training batch size: `per_device_train_batch_size * num_processes * steps_per_generation`."
   },
   "steps_per_generation": {
    "anyOf": [
@@ -1204,19 +1327,23 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Number of steps per generation. If `None`, it defaults to `gradient_accumulation_steps`."
   },
   "temperature": {
    "type": "number",
-   "default": 1.0
+   "default": 1.0,
+   "description": "Temperature for sampling. The higher the temperature, the more random the completions."
   },
   "top_p": {
    "type": "number",
-   "default": 1.0
+   "default": 1.0,
+   "description": "Float that controls the cumulative probability of the top tokens to consider. Must be in (0, 1]. Set to 1.0 to consider all tokens."
   },
   "top_k": {
    "type": "integer",
-   "default": 0
+   "default": 0,
+   "description": "Number of highest probability vocabulary tokens to keep for top-k-filtering. If `0`, top-k-filtering is disabled and all tokens are considered."
   },
   "min_p": {
    "anyOf": [
@@ -1227,7 +1354,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Minimum token probability, which will be scaled by the probability of the most likely token. It must be a value between 0.0 and 1.0. Typical values are in the 0.01-0.2 range."
   },
   "generation_kwargs": {
    "anyOf": [
@@ -1242,7 +1370,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Additional keyword arguments to pass to `GenerationConfig` (if using transformers) or `SamplingParams` (if using vLLM) when sampling completions. This can be used to further customize the generation behavior, such as setting `suppress_tokens`, `num_beams`, etc. If it contains keys that conflict with the other generation parameters (like `min_p`, `top_p`, etc.), they will override them."
   },
   "chat_template_kwargs": {
    "anyOf": [
@@ -1257,11 +1386,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Additional keyword arguments to pass to the `apply_chat_template` function when generating completions."
   },
   "repetition_penalty": {
    "type": "number",
-   "default": 1.0
+   "default": 1.0,
+   "description": "Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far. Values > 1.0 encourage the model to use new tokens, while values < 1.0 encourage the model to repeat tokens."
   },
   "cache_implementation": {
    "anyOf": [
@@ -1272,23 +1403,28 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Implementation of the cache method for faster generation when use_vllm is set to False."
   },
   "use_vllm": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to use vLLM for generating completions. If set to `True`, the trainer will use vLLM for generation instead of the default model.generate(). Requires `vllm` to be installed."
   },
   "vllm_mode": {
    "type": "string",
-   "default": "colocate"
+   "default": "colocate",
+   "description": "Mode to use for vLLM integration when `use_vllm` is set to `True`. Must be one of `'server'` or `'colocate'`. `'server'`: The trainer will send generation requests to a separate vLLM server. Make sure a vLLM server is running (start with `vllm serve`). `'colocate'`: vLLM will run in the same process and share the training GPUs. This avoids the need for a separate server but may cause resource contention with training."
   },
   "vllm_model_impl": {
    "type": "string",
-   "default": "vllm"
+   "default": "vllm",
+   "description": "Model implementation to use for vLLM. Must be one of `transformers` or `vllm`. `transformers`: Use the `transformers` backend for model implementation. `vllm`: Use the `vllm` library for model implementation."
   },
   "vllm_enable_sleep_mode": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Enable vLLM sleep mode to offload weights/cache during the optimizer step. Keeps GPU memory usage low, but waking the engine adds host\u2013device transfer latency."
   },
   "vllm_structured_outputs_regex": {
    "anyOf": [
@@ -1299,7 +1435,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Regex for vLLM structured outputs. If `None` (default), structured outputs is disabled."
   },
   "vllm_server_base_url": {
    "anyOf": [
@@ -1310,27 +1447,33 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Base URL for the vLLM server (e.g., 'http://localhost:8000'). If provided, `vllm_server_host` and `vllm_server_port` are ignored."
   },
   "vllm_server_host": {
    "type": "string",
-   "default": "0.0.0.0"
+   "default": "0.0.0.0",
+   "description": "Host of the vLLM server to connect to. Ignored if vllm_server_base_url is provided."
   },
   "vllm_server_port": {
    "type": "integer",
-   "default": 8000
+   "default": 8000,
+   "description": "Port of the vLLM server to connect to. Ignored if vllm_server_base_url is provided."
   },
   "vllm_server_timeout": {
    "type": "number",
-   "default": 240.0
+   "default": 240.0,
+   "description": "Total timeout duration in seconds to wait for the vLLM server to be up. If the server is not up after the timeout, a `ConnectionError` is raised."
   },
   "vllm_group_port": {
    "type": "integer",
-   "default": 51216
+   "default": 51216,
+   "description": "Port number for the weight update group. This is used to communicate with the vLLM server. Unless the port is occupied, there is no need to change it."
   },
   "vllm_gpu_memory_utilization": {
    "type": "number",
-   "default": 0.3
+   "default": 0.3,
+   "description": "Control the GPU memory utilization for vLLM. This setting only applies when `vllm_mode` is set to `'colocate'`. If you are using `vllm_mode='server'`, this parameter must be passed separately when launching the vLLM server via the `--vllm_gpu_memory_utilization` flag."
   },
   "vllm_max_model_length": {
    "anyOf": [
@@ -1341,23 +1484,28 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Context window for vLLM. Set it to at least the maximum prompt length in the dataset plus `max_completion_length`; if omitted, it is inferred from the model config."
   },
   "vllm_tensor_parallel_size": {
    "type": "integer",
-   "default": 1
+   "default": 1,
+   "description": "Control the tensor parallel size for vLLM. This setting only applies when `vllm_mode` is set to `'colocate'`. If you are using `vllm_mode='server'`, this parameter must be passed separately when launching the vLLM server via the `--vllm_tensor_parallel_size` flag."
   },
   "beta": {
    "type": "number",
-   "default": 0.05
+   "default": 0.05,
+   "description": "KL coefficient. If `0.0`, the reference model is not loaded, reducing memory usage and improving training speed."
   },
   "num_iterations": {
    "type": "integer",
-   "default": 1
+   "default": 1,
+   "description": "Number of iterations per batch (denoted as \u03bc in the algorithm)."
   },
   "epsilon": {
    "type": "number",
-   "default": 0.2
+   "default": 0.2,
+   "description": "Epsilon value for clipping."
   },
   "epsilon_high": {
    "anyOf": [
@@ -1368,7 +1516,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Upper-bound epsilon value for clipping. If not specified, it defaults to the same value as the lower-bound specified in argument `epsilon`. Paper DAPO recommends `0.28`."
   },
   "reward_weights": {
    "anyOf": [
@@ -1382,11 +1531,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Weights for each reward function. Must match the number of reward functions. If `None`, all rewards are weighted equally with weight `1.0`."
   },
   "normalize_advantages": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to normalize advantages. Normalization is done per generation batch to have mean `0.0` and standard deviation of `1.0`."
   },
   "reward_clip_range": {
    "anyOf": [
@@ -1407,31 +1558,38 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Clip range for rewards as (min, max). If None, no clipping is applied."
   },
   "mask_truncated_completions": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "When enabled, truncated completions are excluded from the loss calculation, preventing them from being incorrectly penalized and introducing noise during training. According to the DAPO paper, this is a good practice for training stability."
   },
   "sync_ref_model": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to synchronize the reference model with the active model every `ref_model_sync_steps` steps, using the `ref_model_mixup_alpha` parameter."
   },
   "ref_model_mixup_alpha": {
    "type": "number",
-   "default": 0.6
+   "default": 0.6,
+   "description": "\u03b1 parameter from the TR-DPO paper, which controls the mix between the current policy and the previous reference policy during updates. The reference policy is updated according to the equation: `\u03c0_ref = \u03b1 * \u03c0_\u03b8 + (1 - \u03b1) * \u03c0_ref_prev`. To use this parameter, you must set `sync_ref_model=True`."
   },
   "ref_model_sync_steps": {
    "type": "integer",
-   "default": 512
+   "default": 512,
+   "description": "\u03c4 parameter from the TR-DPO paper, which determines how frequently the current policy is synchronized with the reference policy. To use this parameter, you must set `sync_ref_model=True`."
   },
   "log_completions": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to log a sample of (prompt, completion) pairs every `logging_steps` steps. If `rich` is installed, it prints the sample. If `wandb` logging is enabled, it logs it to `wandb`."
   },
   "log_multimodal": {
    "type": "boolean",
-   "default": true
+   "default": true,
+   "description": "Whether to log multimodal content (images, videos, etc.) together with completions. Disable this to reduce log size when using high-resolution multimodal data."
   },
   "num_completions_to_print": {
    "anyOf": [
@@ -1442,15 +1600,18 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Number of completions to print with `rich`. If `None`, all completions are logged."
   },
   "log_unique_prompts": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to log unique prompts. If `True`, only unique prompts are logged. If `False`, all prompts are logged."
   },
   "use_transformers_continuous_batching": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to use transformers' continuous batching engine for generating completions. Requires transformers>=5.8.0."
   },
   "transformers_continuous_batching_config": {
    "anyOf": [
@@ -1465,11 +1626,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Keyword arguments for `transformers.generation.ContinuousBatchingConfig`."
   },
   "use_transformers_paged": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Deprecated. Use `use_transformers_continuous_batching` instead."
   }
  },
  "additionalProperties": false

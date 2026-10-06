@@ -19,7 +19,7 @@ export type FormSection = {
   moreSettings: boolean;
   // Whether the request may leave it out, e.g. a Stage; it is in once switched on.
   optional: boolean;
-  // Shown under its title, e.g. how rewards work.
+  // Shown as an infobox beside its title, e.g. how rewards work.
   description?: string;
   // A map's entries, each a name and these fields, e.g. a Phase's rewards; in once one is named.
   entry?: FormSection;
@@ -32,7 +32,7 @@ export type FormField = {
   fixed?: unknown;
   choices?: unknown[];
   pattern?: string;
-  // Shown next to the field, e.g. what `assistant_only_loss` does.
+  // Shown as an infobox beside the field, e.g. what `assistant_only_loss` does.
   description?: string;
 };
 
@@ -158,6 +158,7 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
       children,
       moreSettings: node.additionalProperties === true,
       optional,
+      ...(description && { description }),
     };
   }
   if (node.type === "array" && resolveRef(node.items, defs).type === "object") {

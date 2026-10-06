@@ -67,6 +67,9 @@ def config_schema(config: type) -> dict:
         default = default_value(field)
         if default is not dataclasses.MISSING:
             properties[field.name]["default"] = default
+        # TRL, PEFT and transformers' TrainingArguments explain each field; clients show it.
+        if field.metadata.get("help"):
+            properties[field.name]["description"] = field.metadata["help"]
     return {"type": "object", "properties": properties, "additionalProperties": False}
 
 
@@ -77,9 +80,9 @@ def main() -> None:
             print(f"{name} is in neither trl nor peft; its settings stay unchecked")
             continue
         schema = json.dumps(config_schema(config), indent=1)
-        (TRAINER_CONFIGS_DIRECTORY / f"{name}.json").write_text(schema + "\n")
+        (TRAINER_CONFIGS_DIRECTORY / f"{name}.json").write_text(schema + "\n", newline="\n")
     templates = training_chat_template_hashes(Path(trl.__file__).parent / "chat_templates")
-    TRAINING_CHAT_TEMPLATES.write_text(json.dumps(templates, indent=1) + "\n")
+    TRAINING_CHAT_TEMPLATES.write_text(json.dumps(templates, indent=1) + "\n", newline="\n")
 
 
 # TRL swaps `<family>.jinja` for `<family>_training.jinja`, which marks assistant turns.

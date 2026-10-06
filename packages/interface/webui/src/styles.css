@@ -162,7 +162,7 @@ code,
   gap: 8px;
   margin-top: 8px;
   padding: 8px 12px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .user-card span {
@@ -673,6 +673,11 @@ textarea[aria-invalid="true"] {
   tab-size: 4;
 }
 
+/* Compact until it is being edited. */
+.code-input:focus {
+  min-height: 18em;
+}
+
 .entries {
   display: grid;
   gap: 12px;
@@ -682,12 +687,57 @@ textarea[aria-invalid="true"] {
   justify-self: start;
 }
 
-.field-info {
-  margin: 0;
+.field-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* An infobox floats over the form, so showing it moves nothing. */
+.info {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.info-button {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.info-button:hover,
+.info-button:focus-visible {
+  color: var(--accent);
+}
+
+.info-text {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -8px;
+  z-index: 20;
+  display: none;
+  width: max-content;
+  max-width: min(360px, 80vw);
   padding: 8px 10px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--accent-soft);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
   font-size: 13px;
+  font-weight: normal;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.info:hover .info-text,
+.info-button:focus-visible + .info-text {
+  display: block;
 }
 
 .field-error,

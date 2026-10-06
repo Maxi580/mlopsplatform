@@ -1,4 +1,5 @@
 import { NGRAM_LOOKUP, SPECULATIVE_TOKENS } from "../config";
+import InfoBox from "../fields/InfoBox";
 import type { RegisteredModel } from "../storage/storage";
 
 // The `speculative` block of an Endpoint start.
@@ -61,10 +62,21 @@ export default function SpeculatorPicker({
   return (
     <div className="field-grid">
       <div className="field">
-        <label className="field-label" htmlFor="speculative">
-          Speculative decoding <code>speculative</code>
-        </label>
-        <select id="speculative" value={chosen} onChange={(event) => choose(event.target.value)}>
+        <div className="field-heading">
+          <label className="field-label" htmlFor="speculative">
+            Speculative decoding <code>speculative</code>
+          </label>
+          <InfoBox
+            id="speculative-info"
+            text="A Speculator drafts only for the pinned model it was trained for; n-gram needs none."
+          />
+        </div>
+        <select
+          id="speculative"
+          value={chosen}
+          aria-describedby="speculative-info"
+          onChange={(event) => choose(event.target.value)}
+        >
           <option value={OFF}>Off</option>
           <option value={NGRAM}>n-gram, from the context</option>
           {found.map((speculator) => (
@@ -77,9 +89,6 @@ export default function SpeculatorPicker({
             </option>
           ))}
         </select>
-        <p className="field-info">
-          A Speculator drafts only for the pinned model it was trained for; n-gram needs none.
-        </p>
       </div>
       {value && (
         <div className="field">

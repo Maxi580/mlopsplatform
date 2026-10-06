@@ -21,7 +21,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Task type"
   },
   "peft_type": {
    "anyOf": [
@@ -82,7 +83,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Peft type"
   },
   "auto_mapping": {
    "anyOf": [
@@ -94,7 +96,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "An auto mapping dict to help retrieve the base model class if needed."
   },
   "peft_version": {
    "anyOf": [
@@ -105,7 +108,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "PEFT version, leave empty to auto-fill."
   },
   "base_model_name_or_path": {
    "anyOf": [
@@ -116,7 +120,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The name of the base model to use."
   },
   "revision": {
    "anyOf": [
@@ -127,15 +132,18 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The specific base model version to use."
   },
   "inference_mode": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to use inference mode"
   },
   "r": {
    "type": "integer",
-   "default": 8
+   "default": 8,
+   "description": "Lora attention dimension"
   },
   "target_modules": {
    "anyOf": [
@@ -152,7 +160,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "List of module names of the module names to replace with LoRA. For example, ['q', 'v'] or '.*decoder.*(SelfAttention|EncDecAttention).*(q|v)$'. This can also be a wildcard 'all-linear' which matches all linear/Conv1D (if the model is a PreTrainedModel, the output layer excluded). If not specified, modules will be chosen according to the model architecture, If the architecture is not known, an error will be raised -- in this case, you should specify the target modules manually. To avoid targeting any modules (because you want to apply `target_parameters`), set `target_modules=[]`."
   },
   "exclude_modules": {
    "anyOf": [
@@ -169,19 +178,23 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "List of module names or regex expression of the module names to exclude from Lora."
   },
   "lora_alpha": {
    "type": "integer",
-   "default": 8
+   "default": 8,
+   "description": "Lora alpha"
   },
   "lora_dropout": {
    "type": "number",
-   "default": 0.0
+   "default": 0.0,
+   "description": "Lora dropout"
   },
   "fan_in_fan_out": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Set this to True if the layer to replace stores weight like (fan_in, fan_out)"
   },
   "bias": {
    "enum": [
@@ -190,11 +203,13 @@
     "lora_only"
    ],
    "type": "string",
-   "default": "none"
+   "default": "none",
+   "description": "Bias type for Lora. Can be 'none', 'all' or 'lora_only'"
   },
   "use_rslora": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "When set to True, uses [Rank-Stabilized LoRA](https://huggingface.co/papers/2312.03732) which sets the adapter scaling factor to `lora_alpha/math.sqrt(r)`, since it was proven to work better. Otherwise, it will use the original default value of `lora_alpha/r`."
   },
   "modules_to_save": {
    "anyOf": [
@@ -208,7 +223,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "List of modules apart from LoRA layers to be set as trainable and saved in the final checkpoint. For example, in Sequence Classification or Token Classification tasks, the final layer `classifier/score` are randomly initialized and as such need to be trainable and saved."
   },
   "init_lora_weights": {
    "anyOf": [
@@ -230,7 +246,8 @@
      "type": "string"
     }
    ],
-   "default": true
+   "default": true,
+   "description": "How to initialize the weights of the LoRA layers. Passing True (default) results in the default initialization from the reference implementation from Microsoft, with the LoRA B weight being set to 0. This means that without further training, the LoRA adapter will be a no-op. Setting the initialization to False leads to random initialization of LoRA A and B, meaning that LoRA is not a no-op before training; this setting is intended for debugging purposes. Passing `'gaussian'` results in Gaussian initialization scaled by the LoRA rank for linear and layers. Passing `'eva'` results in a data-driven initialization of Explained Variance Adaptation. Passing `'olora'` results in OLoRA initialization. Passing `'pissa'` results in PiSSA initialization. Passing `'pissa_niter_[number of iters]'` initiates Fast-SVD-based PiSSA initialization, where [number of iters] indicates the number of subspace iterations to perform fsvd, and must be a nonnegative integer. Passing `'corda'` results in CorDA initialization. Pass `'loftq'` to use LoftQ initialization. Pass `'orthogonal'` for orthogonal initialization of LoRA A and B. Pass `'mica'` to use MiCA initialization, where B is set to the r left singular vectors of the base weight associated with the smallest singular values, A is set to zero, and B is frozen during training (only A is updated)."
   },
   "layers_to_transform": {
    "anyOf": [
@@ -247,7 +264,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The layer indexes to transform, is this argument is specified, PEFT will transform only the layers indexes that are specified inside this list. If a single integer is passed, PEFT will transform only the layer at this index. This only works when target_modules is a list of str."
   },
   "layers_pattern": {
    "anyOf": [
@@ -264,7 +282,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The layer pattern name, used only if `layers_to_transform` is different to None and if the layer pattern is not in the common layers pattern.This only works when target_modules is a list of str. This should target the `nn.ModuleList` of the model, which is often called `'layers'` or `'h'`."
   },
   "rank_pattern": {
    "anyOf": [
@@ -276,7 +295,8 @@
      "type": "null"
     }
    ],
-   "default": {}
+   "default": {},
+   "description": "The mapping from layer names or regexp expression to ranks which are different from the default rank specified by `r`. For example, `{'^model.decoder.layers.0.encoder_attn.k_proj': 16}`."
   },
   "alpha_pattern": {
    "anyOf": [
@@ -288,7 +308,8 @@
      "type": "null"
     }
    ],
-   "default": {}
+   "default": {},
+   "description": "The mapping from layer names or regexp expression to alphas which are different from the default alpha specified by `lora_alpha`. For example, `{'^model.decoder.layers.0.encoder_attn.k_proj': 16}`."
   },
   "megatron_config": {
    "anyOf": [
@@ -300,7 +321,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The TransformerConfig from Megatron. It is used to create LoRA's parallel linear layer.You can get it like this, `core_transformer_config_from_args(get_args())`, these two functions being from Megatron.You need to specify this parameter when you want to apply LoRA to the ColumnParallelLinear and RowParallelLinear layers of megatron.It should be noted that we may not be able to use the `save_pretrained` and `from_pretrained` functions, because TransformerConfig may not necessarily be serialized.But when using megatron, we can use `get_peft_model_state_dict` function and megatron's framework, they can also save and load models and configurations."
   },
   "megatron_core": {
    "anyOf": [
@@ -311,7 +333,8 @@
      "type": "null"
     }
    ],
-   "default": "megatron.core"
+   "default": "megatron.core",
+   "description": "The core module from Megatron, it is used to create LoRA's parallel linear layer. It only needs to be passed in when you need to use your own modified megatron core module. Otherwise, it will use the default value `megatron.core`. "
   },
   "trainable_token_indices": {
    "anyOf": [
@@ -334,7 +357,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Lets you specify which token indices to selectively fine-tune without requiring to re-train the whole embedding matrix using the `peft.TrainableTokensModel` method. You can specify token indices in two ways. Either you specify a list of indices which will then target the model's input embedding layer (or, if not found, `embed_tokens`). Alternatively, you can specify a dictionary where the key is the name of the embedding module and the values are the list of token indices, e.g. `{'embed_tokens': [0, 1, ...]}`. Note that training with FSDP requires `use_orig_params=True` to avoid issues with non-uniform `requires_grad`."
   },
   "loftq_config": {
    "anyOf": [
@@ -356,7 +380,8 @@
      "type": "object"
     }
    ],
-   "default": {}
+   "default": {},
+   "description": "The configuration of LoftQ. If this is passed, then LoftQ will be used to quantize the backbone weights and initialize Lora layers. Also set `init_lora_weights='loftq'` in this case."
   },
   "eva_config": {
    "anyOf": [
@@ -393,7 +418,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The configuration of EVA. If this is passed, then EVA will be used to initialize the LoRA layers. Also set `init_lora_weights='eva'` in this case. "
   },
   "corda_config": {
    "anyOf": [
@@ -448,7 +474,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The configuration of CorDA. If this is passed, then CorDA will be used to build the adapter layers. Also set `init_lora_weights='corda'` in this case."
   },
   "lora_ga_config": {
    "anyOf": [
@@ -485,11 +512,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The configuration of LoRA-GA. If this is passed, then LoRA-GA will be used to initialize the adapter layers. Also set `init_lora_weights='lora_ga'` in this case."
   },
   "use_dora": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Enable <a href='https://huggingface.co/papers/2402.09353'>'Weight-Decomposed Low-Rank Adaptation' (DoRA)</a>. This technique decomposes the updates of the weights into two parts, magnitude and direction. Direction is handled by normal LoRA, whereas the magnitude is handled by a separate learnable parameter. This can improve the performance of LoRA, especially at low ranks. Right now, DoRA only supports linear and Conv2D layers. DoRA introduces a biggeroverhead than pure LoRA, so it is recommended to merge weights for inference."
   },
   "velora_config": {
    "anyOf": [
@@ -523,7 +552,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Enable VeLoRA as a LoRA variant by providing a VeloraConfig. VeLoRA swaps in a custom backward pass for the LoRA A projection that stores compressed activations instead of the full input activations."
   },
   "alora_invocation_tokens": {
    "anyOf": [
@@ -537,15 +567,18 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "If not None, enable <a href='https://huggingface.co/papers/2504.12397'>'Activated LoRA' (aLoRA)</a>, with alora_invocation_tokens being the tokenized invocation string for the adapter (must be present in all model input strings). This technique selectively activates the adapter weights only on tokens during and after the alora_invocation_tokens. When used in a CausalLM, this means that the KV cache prior to invocation is interchangeable with that of the base model (and other aLoRA adapters operating this way). As a result, in inference pipelines involving switching between base model inference and adapter inference (e.g. agentic pipelines, see paper for examples), significant savings are realized (relative to LoRA) by saving prefill operations. Overall adapter inference speedups of an order of magnitude or more can occur on vLLM, depending on the length of the shared context. Note that merging is not possible due to the selective application of the weights."
   },
   "use_qalora": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "It is only implemented in GPTQ for now. Enable <a href='https://huggingface.co/papers/2309.14717'>Quantization-Aware Low-Rank Adaptation (QALoRA)</a>.This technique combines quantization-aware training with LoRA to improve performance for quantized models. This can improve the performance of LoRA, especially at low ranks. Right now, QALoRA only supports linear layers."
   },
   "qalora_group_size": {
    "type": "integer",
-   "default": 16
+   "default": 16,
+   "description": "Group size parameter for QALoRA pooling, controlling the dimension reduction factor. Input dimensions are pooled into groups of this size, reducing the computational cost. Higher values provide more compression but may reduce model quality. This parameter determines how many original features are averaged together to create one pooled feature. Only used when `use_qalora=True`."
   },
   "monteclora_config": {
    "anyOf": [
@@ -582,7 +615,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The configuration of Monteclora (Monte Carlo Low-Rank Adaptation). If passed, Monteclora will be used to add variational Monte Carlo sampling on top of the LoRA adapters. See `MontecloraConfig` for details on the individual hyperparameters."
   },
   "layer_replication": {
    "anyOf": [
@@ -606,7 +640,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "This enables using LoRA to effectively expand a transformer model to a larger size by repeating some layers. The transformation handles models (currently Llama, Bert or Falcon compatible architectures) with a module list in the model which it modifies to expand the number of modules. Base weights are shared so the memory usage is close to the original model. The intended use is these base weights remain fixed during finetuning but each layer has a separate LoRA adapter so the layers can be specialed via the adapter layers fit during fine tuning.The format is a list of [start, end) pairs which specify the layer ranges to stack. For example:\n   Original model has 5 layers labelled by their position in the model: `[0, 1, 2, 3, 4]`\n   layer_replication: `[[0, 4], [2, 5]]`\n   Final model will have this arrangement of original layers: `[0, 1, 2, 3, 2, 3, 4]`\nThis format is based on what is used for pass-through merges in mergekit. It makes it simple to select sequential ranges of a model and stack them while reusing layers at either end of each sequence."
   },
   "runtime_config": {
    "properties": {
@@ -615,11 +650,13 @@
      "type": "boolean"
     }
    },
-   "type": "object"
+   "type": "object",
+   "description": "Runtime configurations"
   },
   "lora_bias": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to enable the bias term for the LoRA B parameter. Typically, this should be disabled. The main use case for this is when the LoRA weights were extracted from fully fine-tuned parameters so the bias of those parameters can be taken into account."
   },
   "target_parameters": {
    "anyOf": [
@@ -633,7 +670,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "List of parameter names or regex expression of the parameter names to replace with LoRA. This argument behaves similarly to `target_modules`, except that the parameter name should be passed. Generally, you should use `target_modules` to target the module (e.g. `nn.Linear`). However, in some circumstances, this is not possible. E.g., in many mixture of expert (MoE) layers in HF Transformers, instead of using `nn.Linear`, an `nn.Parameter` is used. PEFT normally overwrites the `forward` method for LoRA, but for `nn.Parameter`, there is none. Therefore, to apply LoRA to that parameter, it needs to be targeted with `target_parameters`. As an example, for Llama4, you can pass: `target_parameters=['feed_forward.experts.gate_up_proj', 'feed_forward.experts.down_proj]`. Passing a string for regex matching is not implemented yet. Note that when the model is compiled and uses `target_parameters`, re-compilation and/or graph breaks are expected. It is recommended not to use both at the same time."
   },
   "use_bdlora": {
    "anyOf": [
@@ -682,7 +720,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Enable BD-LoRA (Block-Diagonal LoRA) by providing a BdLoraConfig. This technique uses block-diagonal matrices for LoRA-A or LoRA-B factors to enable faster multi-LoRA serving by eliminating communication overheads in distributed settings."
   },
   "arrow_config": {
    "anyOf": [
@@ -746,7 +785,8 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "The necessary config to apply arrow routing on the model."
   },
   "kasa_config": {
    "anyOf": [
@@ -767,11 +807,13 @@
      "type": "null"
     }
    ],
-   "default": null
+   "default": null,
+   "description": "Enable KaSA (Knowledge-aware Singular-value Adaptation) as a LoRA variant by providing a `KasaConfig`. KaSA truncates the `r` smallest singular components of the frozen base weight via a one-time SVD and parametrizes the trainable update with a learnable diagonal of singular values (`lora_diag`) inserted between the LoRA A and B factors. Currently only linear layers are supported. See `KasaConfig` for details on the individual hyperparameters."
   },
   "ensure_weight_tying": {
    "type": "boolean",
-   "default": false
+   "default": false,
+   "description": "Whether to tie weights or not after peft initialization. This will ensure that the adapters added to the tied layers are also tied. This is only applicable for layers passed via `modules_to_save`, `target_modules` and `trainable_token_indices`."
   }
  },
  "additionalProperties": false

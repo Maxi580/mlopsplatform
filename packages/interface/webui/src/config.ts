@@ -49,3 +49,10 @@ export const PERCENT_STATS = ["kv_cache_usage", "prefix_cache_hit_rate", "accept
 // The stats page's charts, and room for their y-axis labels such as "123 ms".
 export const CHART_HEIGHT_PX = 180;
 export const CHART_Y_AXIS_WIDTH_PX = 64;
+// A new reward's source: what `reward` receives and returns.
+export const REWARD_TEMPLATE = `def reward(sample, item):
+    # sample["output_text"] is the model's reply, sample["output_tools"] its tool calls;
+    # item is the Dataset row. Return a float, higher is better, or None to skip it.
+    # e.g. return float(item["answer"] in sample["output_text"])
+    return 0.0
+`;

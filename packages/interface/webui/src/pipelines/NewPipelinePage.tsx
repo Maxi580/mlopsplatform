@@ -15,7 +15,7 @@ import { ApiError, callApi, errorMessage, useApi } from "../api";
 import { BENCHMARKS, DATASETS, PIPELINES, SCHEMA, VALIDATE_PIPELINE } from "../apiPaths";
 import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS, SWITCHED_ON } from "../config";
 import { formatBytes } from "../formatBytes";
-import FormSectionView from "./FormSectionView";
+import FormSectionView, { SectionTitle } from "./FormSectionView";
 import type { Benchmark } from "./pipeline";
 import {
   type FieldError,
@@ -152,7 +152,7 @@ function PipelineBuilder({
           {stages.map((stage) => (
             <section key={stage.name} className="card">
               <h2>
-                {stage.title} <span className="chip">Stage</span>
+                <SectionTitle section={stage} /> <span className="chip">Stage</span>
                 {stage.optional && (
                   <label className="stage-switch">
                     <input

@@ -23,33 +23,46 @@ EndpointName = Annotated[
 class ServingOptions(BaseModel):
     """The curated serving options; GPUs come from platform settings, never from here."""
 
-    model_config = ConfigDict(extra="forbid")
+    # A field's docstring is its `description` in the published schema.
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
     max_model_len: int | None = Field(None, gt=0)
+    """The longest prompt plus reply, in tokens; vLLM reads it from the model when left empty."""
     prefix_caching: bool = True
+    """Reuses the work on prompt beginnings seen before, e.g. a shared system prompt."""
     dtype: Literal["auto", "half", "float16", "bfloat16", "float32"] | None = None
+    """The number format of weights and activations; `auto` takes the model's."""
     gpu_memory_utilization: float | None = Field(None, gt=0, le=1)
+    """The share of GPU memory vLLM may take, for the weights and the KV cache."""
     max_num_seqs: int | None = Field(None, gt=0)
+    """Requests generated at once; more wait."""
     max_num_batched_tokens: int | None = Field(None, gt=0)
+    """Tokens computed in one step: higher speeds up long prompts, lower keeps replies flowing."""
     async_scheduling: bool | None = None
+    """Plans the next step while the GPU computes, for lower latency."""
     kv_cache_dtype: Literal["auto", "fp8", "fp8_e4m3", "fp8_e5m2"] | None = None
-    # On the fly, at load time.
+    """The number format of the KV cache; `fp8` fits twice the requests at a small quality cost."""
     quantization: Literal["fp8", "bitsandbytes"] | None = None
-    # Overrides the parser the model's `model_type` maps to.
+    """Quantizes the weights on the fly, at load time, to fit a larger model."""
     tool_parser: Literal[VLLM_TOOL_PARSERS] | None = None
+    """How tool calls are read from replies; vLLM reads it from the model when left empty."""
 
 
 class Speculative(BaseModel):
     """Speculative decoding: `ngram` looks the next tokens up in the context, the others draft."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
     method: Literal[tuple(SPECULATIVE_METHODS)]
-    # A Speculator trained for the served model, or a small model for `draft`.
+    """`ngram` drafts from the context; the others with a draft model or a Speculator."""
     model: BaseModelReference | ModelReference | None = None
+    """A Speculator trained for the served model, or a small model for `draft`."""
     num_speculative_tokens: int = Field(SPECULATIVE_TOKENS, gt=0)
+    """Tokens drafted per step: more speed up predictable text and waste work on the rest."""
     prompt_lookup_min: int | None = Field(None, gt=0)
+    """The fewest last tokens `ngram` looks up in the context."""
     prompt_lookup_max: int | None = Field(None, gt=0)
+    """The most last tokens `ngram` looks up in the context."""
 
     @model_validator(mode="after")
     def check_method(self) -> "Speculative":
@@ -65,7 +78,9 @@ class Speculative(BaseModel):
 
 class EndpointSpec(ServingOptions):
     model: BaseModelReference | ModelReference
+    """The Model Version or Base Model to serve."""
     speculative: Speculative | None = None
+    """How the Endpoint drafts tokens to speed up decoding."""
 
 
 @dataclass(frozen=True)
