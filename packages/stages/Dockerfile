@@ -27,8 +27,8 @@ RUN if [ -n "$BFCL_VERSION" ]; then \
       uv venv /opt/bfcl && uv pip install --python /opt/bfcl/bin/python "bfcl-eval==$BFCL_VERSION" soundfile; \
     fi
 COPY packages ./packages
-RUN uv sync --frozen --no-dev --package mlp-stages ${STAGES_EXTRA:+--extra "$STAGES_EXTRA"}
-RUN if [ -n "$BFCL_VERSION" ]; then \
+RUN uv sync --frozen --no-dev --package mlp-stages ${STAGES_EXTRA:+--extra "$STAGES_EXTRA"} \
+    && if [ -n "$BFCL_VERSION" ]; then \
       uv pip install --python /opt/bfcl/bin/python --no-deps ./packages/core ./packages/stages; \
     fi
 ENV PATH="/app/.venv/bin:$PATH"
