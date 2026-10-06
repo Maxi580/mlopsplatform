@@ -33,6 +33,15 @@ spec:
         - name: ml-pipeline-ui
           namespace: {{ .Values.namespaces.kubeflow }}
           port: {{ .Values.ports.kfpUi }}
+    # The KFP UI reads run details from the metadata store at the domain root, not under /pipeline/.
+    - kind: Rule
+      match: {{ $host }} && PathPrefix(`/ml_metadata`)
+      middlewares:
+        - name: login
+      services:
+        - name: metadata-envoy-service
+          namespace: {{ .Values.namespaces.kubeflow }}
+          port: {{ .Values.ports.kfpMetadata }}
     # Presigned downloads and model part uploads; their signature is the login, so the path goes to
     # SeaweedFS as is. Matched by signature, as the mlflow bucket's paths overlap the MLflow UI's.
     - kind: Rule

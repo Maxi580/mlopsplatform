@@ -54,6 +54,7 @@ ports:
   postgres: 5432
   kfpUi: 80
   kfpApi: 8888
+  kfpMetadata: 9090
   mlflow: 80
   seaweedfs: 8333
 
