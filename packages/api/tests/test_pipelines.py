@@ -23,7 +23,17 @@ def test_schema_publishes_the_pipeline_request_and_its_basic_values(logged_in_ap
     assert response.status_code == 200
     schema = response.json()
     assert set(schema["properties"]) >= {"name", "finetune"}
-    assert "learning_rate" in schema["$defs"]["PhaseSettings"]["required"]
+    assert schema["$defs"]["Sweep"]["properties"]["trials"]["default"] == 10
+
+
+def test_schema_publishes_each_algorithms_defaults(logged_in_api):
+    algorithms = logged_in_api.get(api_paths.SCHEMA).json()["algorithms"]
+
+    assert algorithms["sft"]["default_settings"]["learning_rate"] == 2e-4
+    assert algorithms["dpo"]["default_settings"]["beta"] == 0.1
+    assert algorithms["rloo"]["default_lora"]["lora_dropout"] == 0.0
+    assert algorithms["grpo"]["objective"] == {"metric": "reward", "goal": "maximize"}
+    assert algorithms["sft"]["length_setting"] == "max_length"
 
 
 def test_validate_returns_the_resolved_request(logged_in_api, hugging_face):

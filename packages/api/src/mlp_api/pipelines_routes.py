@@ -13,6 +13,7 @@ from mlp_api.pipelines.lifecycle import (
     submit_pipeline,
 )
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
+from mlp_api.pipelines.published_schema import published_schema
 from mlp_api.pipelines.resume import plan_resume
 from mlp_api.pipelines.sweep_output import record_sweep_output
 from mlp_core import api_paths, config
@@ -46,7 +47,7 @@ class SweepOutput(BaseModel):
 
 @router.get(api_paths.SCHEMA)
 def schema() -> dict:
-    return PipelineRequest.model_json_schema()
+    return published_schema()
 
 
 # The catalog `evaluate` picks from, with what the Web UI shows beside each benchmark.

@@ -107,16 +107,16 @@ client = OpenAI(
 client.chat.completions.create(model="chat", messages=[{"role": "user", "content": "Hi"}])
 ```
 
-Serving options, all optional (`POST /endpoints` takes `name`, `model` and these; anything else, `tensor_parallel_size` included, is rejected):
+Serving options, all optional (`POST /endpoints` takes `name`, `model` and these; anything else, `tensor_parallel_size` included, is rejected). Where vLLM's default doesn't depend on the model, it is the option's default, so forms start from it; `max_model_len` and `tool_parser` are left to vLLM, which reads them from the model:
 
 | Option | vLLM flag |
 |---|---|
 | `max_model_len` | `--max-model-len` |
 | `prefix_caching` (default `true`) | `--[no-]enable-prefix-caching` |
-| `dtype`: `auto`, `half`, `float16`, `bfloat16`, `float32` | `--dtype` |
-| `gpu_memory_utilization`, `max_num_seqs`, `max_num_batched_tokens` | the same names |
+| `dtype` (default `auto`): `auto`, `half`, `float16`, `bfloat16`, `float32` | `--dtype` |
+| `gpu_memory_utilization` (default 0.9), `max_num_seqs` (default 256), `max_num_batched_tokens` | the same names |
 | `async_scheduling` | `--[no-]async-scheduling` |
-| `kv_cache_dtype`: `auto`, `fp8`, `fp8_e4m3`, `fp8_e5m2` | `--kv-cache-dtype` |
+| `kv_cache_dtype` (default `auto`): `auto`, `fp8`, `fp8_e4m3`, `fp8_e5m2` | `--kv-cache-dtype` |
 | `quantization`: `fp8` or `bitsandbytes`, on the fly | `--quantization` |
 | `tool_parser`: one of vLLM's built-in parsers | `--tool-call-parser` |
 | `speculative`: `method`, `model`, `num_speculative_tokens` (default 3), `prompt_lookup_min`/`max` | `--speculative-config` |
@@ -146,6 +146,7 @@ finetune:
                  gradient_accumulation_steps: 1, max_length: 1024}
       lora: {r: 16, lora_alpha: 32, lora_dropout: 0.05, target_modules: all-linear}
     dpo:  # no `lora`: as a later Phase it continues the Adapter
+      # `settings` and `lora` may be left out, in whole or in part: the algorithm's defaults fill them
       dataset: "dataset:preferences"
       method: lora
       settings: {learning_rate: 5.0e-6, num_train_epochs: 1, per_device_train_batch_size: 4,
@@ -189,7 +190,7 @@ distill:
     - type: function
       function: {name: get_weather, parameters: {type: object, properties: {city: {type: string}}, required: [city]}}
   parallel_tool_calls: false   # the default: one call per reply, replies with several are dropped
-  max_tokens: 1024             # optional, as is temperature
+  max_tokens: 1024             # default 4096; temperature defaults to 0.7
   serving: {max_model_len: 8192}  # optional: options for the Teacher's vLLM, as for Endpoints
 ```
 
@@ -211,8 +212,8 @@ sweep:
       learning_rate: {min: 1e-5, max: 1e-3, scale: log}   # two integers sample integers
     lora:
       r: {values: [8, 16, 32]}
-  objective: {metric: eval_loss, goal: minimize}
-  trials: 10
+  objective: {metric: eval_loss, goal: minimize}  # the default: the algorithm's first metric
+  trials: 10                    # the default
   sampler: tpe                  # the default; or random, or grid (every parameter then has `values`)
   eval_split: 0.1               # the default share of rows held out; or name an `eval_dataset`
 ```
@@ -226,7 +227,7 @@ With a `quantize` block (`mlp run --quantize` takes the Profile's `quantize:`), 
 ```yaml
 quantize:
   model: hf:Qwen/Qwen2.5-0.5B-Instruct  # or model:qwen-sft@2; default @finetune
-  scheme: w4a16-gptq        # fp8-dynamic, w4a16-gptq, w4a16-awq or w8a8-int8
+  scheme: w4a16-gptq        # fp8-dynamic (the default), w4a16-gptq, w4a16-awq or w8a8-int8
   ignore: [lm_head]         # the default: layers kept unquantized
   calibration: {}           # every scheme but fp8-dynamic; {} means these defaults:
   # calibration: {dataset: "dataset:llm-compression-calibration", samples: 512, max_length: 2048}
@@ -289,15 +290,24 @@ The only place untrusted Python runs: RL rewards (see [Writing rewards](#writing
 
 ## Phase algorithms
 
-Each algorithm is one row of `ALGORITHMS` in `packages/core/src/mlp_core/config.py`: its TRL trainer and config, the Dataset row formats it trains on, the setting bounding a row's tokens that every Phase must set, its blocked settings, the platform's defaults, which the Phase's `settings` override, and whether it learns from a Teacher or from rewards. A Dataset whose rows the algorithm can't train on is rejected at validation. Each Phase picks a weight method, which every algorithm supports:
+Each algorithm is one row of `ALGORITHMS` in `packages/core/src/mlp_core/config.py`: its TRL trainer and config, the Dataset row formats it trains on, the setting bounding a row's tokens, which always has a value, its blocked settings, what the platform sets, the defaults of its settings and Adapter, and whether it learns from a Teacher or from rewards. A Dataset whose rows the algorithm can't train on is rejected at validation. Each Phase picks a weight method, which every algorithm supports:
 
-- `lora` (the default): trains an Adapter on the base at its saved precision. A Phase training a new Adapter sets `lora`, which goes to PEFT's `LoraConfig` with `task_type: CAUSAL_LM` (blocked); `use_rslora: true` there gives rsLoRA.
+- `lora` (the default): trains an Adapter on the base at its saved precision. A Phase training a new Adapter takes `lora` over its algorithm's defaults, which goes to PEFT's `LoraConfig` with `task_type: CAUSAL_LM` (blocked); `use_rslora: true` there gives rsLoRA.
 - `qlora`: the same, on the base loaded in 4 bits (NF4, computing in bfloat16, via bitsandbytes), for less GPU memory.
 - `full`: trains every weight and takes no `lora`.
 
 Each Phase also picks its `output`: `adapter` (the default) registers the Adapter, `merged` registers only the Adapter merged into its base, as full weights tagged `merged: true`; the base is reloaded in bfloat16 before merging, so `qlora` merges into full precision weights, not 4 bits. `full` ignores `output`. Merge when the result must stand alone: to export it, to start another Pipeline `from` it, or to use options vLLM can't serve in an Adapter. An Adapter kept as an Adapter must be servable by vLLM, so with `output: adapter` validation rejects `use_dora`, `modules_to_save`, `bias` other than `none` and `r` above 512; with `output: merged` they are allowed, as the result is plain weights.
 
-Every algorithm takes TRL's defaults for its config, plus `report_to: mlflow`, `save_strategy: no` and `disable_tqdm: true`. Every algorithm blocks `output_dir`, `report_to`, `logging_dir` (the platform stores and logs the output), `save_strategy`, `save_steps`, `save_total_limit`, `resume_from_checkpoint` (the platform owns Checkpoints), `push_to_hub` and `hub_*` (outputs go to the Model Registry), and `model_init_kwargs` and `trust_remote_code` (could ask for remote code).
+A Phase's `settings` and `lora` go over its algorithm's defaults (`default_settings` and `default_lora` in `ALGORITHMS`, published by `GET /schema`), tuned for LoRA training of a 1-8B model; a Phase of only `algorithm` and `dataset` trains with them:
+
+| algorithm | `learning_rate` | `num_train_epochs` | batch × gradient accumulation | length setting | `warmup_steps` |
+|---|---|---|---|---|---|
+| `sft` | 2e-4 | 3 | 4 × 4 | `max_length: 2048` | 0.03 |
+| `dpo`, `kto` | 5e-6 | 1 | 2 × 8 | `max_length: 2048` | 0.1 |
+| `distillation` | 2e-5 | 1 | 4 × 4 | `max_completion_length: 1024` | 0.1 |
+| `grpo`, `rloo` | 2e-6 | 1 | 4 × 4 | `max_completion_length: 1024` | 0.1 |
+
+All of them also set `lr_scheduler_type: cosine` and `bf16: true`; `dpo` and `kto` `beta: 0.1`; `grpo` and `rloo` `num_generations: 8` and `vllm_gpu_memory_utilization: 0.3`, `rloo` also `beta: 0.05`. A new Adapter defaults to `r: 16`, `lora_alpha: 32`, `lora_dropout: 0.05` (0 for `grpo` and `rloo`) and `target_modules: all-linear`. Anything else is TRL's default for its config, plus `report_to: mlflow`, `save_strategy: no` and `disable_tqdm: true`. Every algorithm blocks `output_dir`, `report_to`, `logging_dir` (the platform stores and logs the output), `save_strategy`, `save_steps`, `save_total_limit`, `resume_from_checkpoint` (the platform owns Checkpoints), `push_to_hub` and `hub_*` (outputs go to the Model Registry), and `model_init_kwargs` and `trust_remote_code` (could ask for remote code).
 
 ### Phase chaining
 

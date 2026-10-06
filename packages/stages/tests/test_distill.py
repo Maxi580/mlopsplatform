@@ -161,7 +161,7 @@ def test_an_in_cluster_teacher_answers_from_vllm_with_its_tool_parser(step):
     assert first["tools"] == [WEATHER]
     assert first["parallel_tool_calls"] is False
     assert first["max_tokens"] == 64
-    assert "temperature" not in first
+    assert first["temperature"] == 0.7
 
 
 def test_replies_are_stored_as_prompt_completion_rows_with_tool_calls_as_dicts(step):

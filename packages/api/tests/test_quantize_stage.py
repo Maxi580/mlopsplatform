@@ -240,3 +240,10 @@ def test_the_install_registers_the_default_calibration_dataset_once(
     [version] = datasets(logged_in_api)[config.CALIBRATION_DATASET]
     assert (version["version"], version["row_format"]) == (1, "messages")
     assert object_store.objects[f"datasets/{config.CALIBRATION_DATASET}/1/data.jsonl"] == rows
+
+
+def test_quantize_defaults_to_fp8_dynamic(logged_in_api):
+    request = quantize_only(f"hf:{BASE_MODEL}")
+    del request["quantize"]["scheme"]
+
+    assert resolved(logged_in_api, request)["quantize"]["scheme"] == "fp8-dynamic"

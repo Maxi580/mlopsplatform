@@ -295,3 +295,56 @@ test("rewards are named entries with Python source, explained by an infobox", as
     correct: { weight: 0.8, source: "def reward(sample, item):\n    return 1.0" },
   });
 });
+
+test("a Phase starts with its algorithm's defaults, and × puts a changed one back", async () => {
+  const withPhase = {
+    type: "object",
+    properties: { finetune: { $ref: "#/$defs/Finetune" } },
+    $defs: {
+      Finetune: {
+        type: "object",
+        properties: { phases: { type: "array", minItems: 1, items: { $ref: "#/$defs/Phase" } } },
+      },
+      Phase: {
+        type: "object",
+        properties: {
+          algorithm: { enum: ["sft", "dpo"], type: "string", title: "Algorithm" },
+          settings: { $ref: "#/$defs/PhaseSettings", trainer_settings: "settings" },
+        },
+      },
+      PhaseSettings: { type: "object", additionalProperties: true, properties: {} },
+    },
+    algorithms: {
+      sft: {
+        settings: {
+          learning_rate: { type: "number", title: "Learning rate", default: 2e-4 },
+          num_train_epochs: { type: "number", title: "Epochs", default: 3 },
+        },
+      },
+      dpo: {
+        settings: {
+          learning_rate: { type: "number", title: "Learning rate", default: 5e-6 },
+          num_train_epochs: { type: "number", title: "Epochs", default: 1 },
+        },
+      },
+    },
+  };
+  fakeApi({
+    "GET /schema": [200, withPhase],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+  });
+  renderApp("/pipelines/new");
+
+  const learningRate = await screen.findByLabelText(/^Learning rate/);
+  expect(learningRate).toHaveValue("2e-4");
+  await userEvent.clear(screen.getByLabelText(/^Epochs/));
+  await userEvent.type(screen.getByLabelText(/^Epochs/), "5");
+  await userEvent.selectOptions(screen.getByLabelText(/^Algorithm/), "dpo");
+
+  expect(screen.getByLabelText(/^Learning rate/)).toHaveValue("5e-6");
+  expect(screen.getByLabelText(/^Epochs/)).toHaveValue("5");
+  await userEvent.click(screen.getByRole("button", { name: "Back to 1" }));
+  expect(screen.getByLabelText(/^Epochs/)).toHaveValue("1");
+  expect(screen.queryByRole("button", { name: "Back to 1" })).not.toBeInTheDocument();
+});

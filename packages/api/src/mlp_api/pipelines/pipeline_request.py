@@ -332,13 +332,9 @@ def phase_lora_errors(phases: list[Phase], index: int) -> list[str]:
             f"continues the Adapter of Phase {index}, keeping its rank and targets; leave out "
             f"`lora`, or set `output: merged` on Phase {index} to train a new Adapter"
         ]
-    if continues_adapter:
-        return []
-    if phase.lora is None:
-        base = f"the full weights of Phase {index}" if index else "the starting model"
-        return [f"trains a new Adapter on {base}; set its `lora`"]
-    # Only an Adapter kept as one must be servable by vLLM; merged, it is plain weights.
-    if phase.output == "merged":
+    # A new Adapter always has `lora`, its defaults at least. Only an Adapter kept as one must be
+    # servable by vLLM; merged, it is plain weights.
+    if continues_adapter or phase.output == "merged":
         return []
     return [
         f"{problem}; set `output: merged`" for problem in adapter_problems(phase.lora.model_dump())

@@ -1,5 +1,5 @@
-import { Plus, Trash2 } from "lucide-react";
-import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE } from "../config";
+import { Plus, Trash2, X } from "lucide-react";
+import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE, SWITCHED_ON } from "../config";
 import InfoBox from "../fields/InfoBox";
 import { formatBytes } from "../formatBytes";
 import type { Benchmark } from "./pipeline";
@@ -8,6 +8,8 @@ import {
   type FormField,
   type FormSection,
   type FormValues,
+  fieldValue,
+  isSwitchedOn,
   moreName,
 } from "./pipelineForm";
 
@@ -38,6 +40,11 @@ export default function FormSectionView({
   );
   const setField = (name: string, value: string) =>
     onChange({ ...values, fields: { ...values.fields, [name]: value } });
+  // Forgets the edit, so the field shows its default again.
+  const resetField = (name: string) => {
+    const { [name]: _, ...fields } = values.fields;
+    onChange({ ...values, fields });
+  };
 
   return (
     <>
@@ -57,11 +64,12 @@ export default function FormSectionView({
             <FieldInput
               key={field.name}
               field={field}
-              value={values.fields[field.name] ?? ""}
+              value={fieldValue(field, values)}
               errors={errors[field.name]}
               datasetReferences={datasetReferences}
               benchmarks={benchmarks}
               onChange={(value) => setField(field.name, value)}
+              onReset={field.name in values.fields ? () => resetField(field.name) : undefined}
             />
           ))}
         </div>
@@ -74,15 +82,29 @@ export default function FormSectionView({
         <fieldset key={subsection.name} className="subsection">
           <legend>
             <SectionTitle section={subsection} />
+            {subsection.optional && !subsection.entry && (
+              <label className="stage-switch">
+                <input
+                  type="checkbox"
+                  checked={isSwitchedOn(subsection, values)}
+                  onChange={(event) =>
+                    setField(subsection.name, event.target.checked ? SWITCHED_ON : "")
+                  }
+                />
+                Use
+              </label>
+            )}
           </legend>
-          <FormSectionView
-            section={subsection}
-            values={values}
-            errors={errors}
-            datasetReferences={datasetReferences}
-            benchmarks={benchmarks}
-            onChange={onChange}
-          />
+          {isSwitchedOn(subsection, values) || subsection.entry ? (
+            <FormSectionView
+              section={subsection}
+              values={values}
+              errors={errors}
+              datasetReferences={datasetReferences}
+              benchmarks={benchmarks}
+              onChange={onChange}
+            />
+          ) : null}
         </fieldset>
       ))}
     </>
@@ -96,6 +118,7 @@ function FieldInput({
   datasetReferences,
   benchmarks,
   onChange,
+  onReset,
 }: {
   field: FormField;
   value: string;
@@ -103,6 +126,8 @@ function FieldInput({
   datasetReferences: string[];
   benchmarks: Benchmark[];
   onChange: (value: string) => void;
+  // Given once the field was edited: puts its default back, or empties it if it has none.
+  onReset?: () => void;
 }) {
   if (field.kind === "choices")
     return <ChoicesInput {...{ field, value, errors, benchmarks, onChange }} />;
@@ -129,12 +154,25 @@ function FieldInput({
           {field.title} <code>{lastPart(field.name)}</code>
         </label>
         {field.description && <InfoBox id={`${field.name}-info`} text={field.description} />}
+        {onReset && (
+          <button
+            type="button"
+            className="reset-button"
+            aria-label={field.default ? `Back to ${field.default}` : `Clear ${field.title}`}
+            title={field.default ? `Back to ${field.default}` : "Clear"}
+            onClick={onReset}
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
       {field.kind === "code" ? (
         <textarea {...common} className="code-input" rows={3} spellCheck={false} />
       ) : field.kind === "choice" ? (
         <select {...common}>
-          <option value="">Choose…</option>
+          <option value="">
+            {field.placeholder ? `${field.placeholder} (default)` : "Choose…"}
+          </option>
           {field.choices?.map((choice) => (
             <option key={String(choice)}>{String(choice)}</option>
           ))}
@@ -144,9 +182,10 @@ function FieldInput({
           {...common}
           inputMode={field.kind === "integer" || field.kind === "number" ? "decimal" : undefined}
           placeholder={
-            field.kind === "list"
+            field.placeholder ??
+            (field.kind === "list"
               ? "one value, or several separated by commas"
-              : prefix && REFERENCE_PLACEHOLDERS[prefix]
+              : prefix && REFERENCE_PLACEHOLDERS[prefix])
           }
           list={isDataset ? "dataset-references" : undefined}
           autoComplete="off"

@@ -18,12 +18,15 @@ from mlp_core.config import (
     CALIBRATION_DATASET,
     CALIBRATION_MAX_LENGTH,
     CALIBRATION_SAMPLES,
+    DISTILL_MAX_TOKENS,
     DISTILL_OUTPUT,
+    DISTILL_TEMPERATURE,
     FINETUNE_OUTPUT,
     PERFORMANCE_CONCURRENCY,
     PERFORMANCE_OUTPUT_TOKENS,
     PERFORMANCE_PROMPT_TOKENS,
     PERFORMANCE_REQUESTS,
+    QUANTIZATION_SCHEME,
     QUANTIZATION_SCHEMES,
     QUANTIZE_IGNORE,
     QUANTIZE_OUTPUT,
@@ -38,6 +41,7 @@ from mlp_core.config import (
     SWEEP_EVAL_SPLIT,
     SWEEP_OUTPUT,
     SWEEP_SAMPLERS,
+    SWEEP_TRIALS,
     UNCALIBRATED_SCHEMES,
     WEIGHT_METHODS,
 )
@@ -65,16 +69,9 @@ class TrainerSettings(BaseModel):
     model_config = ConfigDict(extra="allow", use_attribute_docstrings=True)
 
 
-# Checked against the TRL config of the Phase's algorithm, which also requires its length setting.
+# Checked against the TRL config of the Phase's algorithm, which also requires its length setting;
+# the algorithm's defaults fill in what it leaves out.
 class PhaseSettings(TrainerSettings):
-    learning_rate: float
-    """How far each optimizer step moves the weights."""
-    num_train_epochs: float
-    """How many times training goes through the whole Dataset."""
-    per_device_train_batch_size: int
-    """Rows each GPU trains on at once; lower it when a GPU runs out of memory."""
-    gradient_accumulation_steps: int
-    """Batches added up before each optimizer step, for a larger effective batch."""
     # An SFTConfig setting, a field of its own for its infobox; validation checks the rest.
     assistant_only_loss: bool | None = Field(
         None, title="Assistant-only loss (sft)", description=ASSISTANT_ONLY_LOSS_INFOBOX
@@ -89,7 +86,7 @@ class PhaseSettings(TrainerSettings):
         return settings
 
 
-# Checked against PEFT's LoraConfig.
+# Checked against PEFT's LoraConfig; the algorithm's defaults fill in what it leaves out.
 class LoraSettings(TrainerSettings):
     r: int = Field(gt=0)
     """The Adapter's rank: higher learns more and takes more memory."""
@@ -124,14 +121,37 @@ class PhaseConfiguration(Strict):
     method: Literal[WEIGHT_METHODS] = "lora"
     """`lora` trains a small Adapter, `qlora` one on a 4-bit base to save memory, `full` every
     weight."""
-    settings: PhaseSettings
-    """The algorithm's TRL settings."""
-    # After a kept Adapter, a Phase continues it as it is (#19).
-    lora: LoraSettings | None = None
-    """A new Adapter's settings, from PEFT's LoraConfig."""
+    # Clients show the algorithm's published `settings` for it.
+    settings: PhaseSettings = Field(
+        default_factory=dict, json_schema_extra={"trainer_settings": "settings"}
+    )
+    """The algorithm's TRL settings, over its defaults."""
+    # After a kept Adapter, a Phase continues it as it is (#19); a new one takes the defaults.
+    lora: LoraSettings | None = Field(None, json_schema_extra={"trainer_settings": "lora_settings"})
+    """A new Adapter's settings, from PEFT's LoraConfig, over the algorithm's defaults."""
     teacher: str | None = None
     """The Base Model or Model Version whose token probabilities a `distillation` Phase learns."""
     rewards: dict[RewardName, Reward] | None = Field(None, description=REWARDS_INFOBOX)
+
+    @model_validator(mode="before")
+    @classmethod
+    def with_default_settings(cls, data):
+        """The data with its settings, and its Adapter's if it names any, over the defaults."""
+        algorithm = ALGORITHMS.get(data.get("algorithm")) if isinstance(data, dict) else None
+        if algorithm is None:
+            return data
+        data = {
+            **data,
+            "settings": {**algorithm["default_settings"], **(data.get("settings") or {})},
+        }
+        if isinstance(data.get("lora"), dict):
+            data["lora"] = {**algorithm["default_lora"], **data["lora"]}
+        return data
+
+    def with_default_lora(self, continues_adapter: bool) -> None:
+        """Gives a new Adapter its algorithm's LoRA defaults, unless the Phase names its own."""
+        if self.method != "full" and not continues_adapter and self.lora is None:
+            self.lora = LoraSettings(**ALGORITHMS[self.algorithm]["default_lora"])
 
     @model_validator(mode="after")
     def check_rewards(self) -> "PhaseConfiguration":
@@ -233,9 +253,10 @@ class Sweep(PhaseConfiguration):
     """`hf` trains with TRL and PEFT; `unsloth` with Unsloth, faster, on one GPU."""
     parameters: SweepParameters
     """The settings the Trials vary, and their ranges."""
-    objective: Objective
-    """What makes one Trial better than another."""
-    trials: int = Field(gt=0)
+    # Validation sets the algorithm's default, which clients find as its published `objective`.
+    objective: Objective | None = Field(None, json_schema_extra={"algorithm_defaults": "objective"})
+    """What makes one Trial better than another; the algorithm's first metric when left out."""
+    trials: int = Field(SWEEP_TRIALS, gt=0)
     """How many training runs to try; their weights are thrown away."""
     sampler: Literal[SWEEP_SAMPLERS] = "tpe"
     """`tpe` learns from earlier Trials, `random` samples blindly, `grid` tries every combination
@@ -253,7 +274,11 @@ class Sweep(PhaseConfiguration):
             raise ValueError("name at least one of `parameters.settings` or `parameters.lora`")
         if self.sampler == "grid" and any(p.values is None for p in parameters.values()):
             raise ValueError("`grid` tries listed values; give every parameter `values`")
-        objectives = ALGORITHMS[self.algorithm]["objectives"]
+        objectives, goal = (
+            ALGORITHMS[self.algorithm]["objectives"],
+            ALGORITHMS[self.algorithm]["goal"],
+        )
+        self.objective = self.objective or Objective(metric=objectives[0], goal=goal)
         if self.objective.metric not in objectives:
             raise ValueError(
                 f"a {self.algorithm} Sweep optimizes one of {', '.join(objectives)}, not "
@@ -263,6 +288,8 @@ class Sweep(PhaseConfiguration):
             raise ValueError("name `eval_split` or `eval_dataset`, not both")
         if self.eval_dataset is None and self.eval_split is None:
             self.eval_split = SWEEP_EVAL_SPLIT
+        # Its Trials train like a first Phase.
+        self.with_default_lora(continues_adapter=False)
         return self
 
     def trial_phase(self, parameters: dict) -> Phase:
@@ -291,6 +318,12 @@ class Finetune(Strict):
     def check_one_starting_model(self) -> "Finetune":
         if (self.base_model is None) == (self.from_ is None):
             raise ValueError("name exactly one of `base_model` and `from`")
+        return self
+
+    @model_validator(mode="after")
+    def with_default_loras(self) -> "Finetune":
+        for index, phase in enumerate(self.phases):
+            phase.with_default_lora(index > 0 and self.phases[index - 1].keeps_adapter)
         return self
 
     @property
@@ -332,9 +365,9 @@ class Distill(Strict):
     """Tools offered with every prompt; a reply may call them."""
     parallel_tool_calls: bool = False
     """Off: the Teacher is asked for one call per reply, and replies with several are dropped."""
-    max_tokens: int | None = Field(None, gt=0)
+    max_tokens: int | None = Field(DISTILL_MAX_TOKENS, gt=0)
     """The longest reply the Teacher may write, in tokens; a cut-off reply is dropped."""
-    temperature: float | None = Field(None, ge=0)
+    temperature: float | None = Field(DISTILL_TEMPERATURE, ge=0)
     """How varied the Teacher's replies are: 0 always picks the likeliest token."""
     serving: ServingOptions | None = None
     """How vLLM serves a Base Model or Model Version Teacher."""
@@ -371,7 +404,7 @@ class Quantize(Strict):
     # Validation names `@finetune` when none is given.
     model: BaseModelReference | ModelReference | Literal[FINETUNE_OUTPUT] | None = None
     """The model to quantize, `@finetune`'s output when left out; an Adapter is merged first."""
-    scheme: Literal[tuple(QUANTIZATION_SCHEMES)]
+    scheme: Literal[tuple(QUANTIZATION_SCHEMES)] = QUANTIZATION_SCHEME
     """`fp8-dynamic` needs no data and suits recent GPUs; the `w4a16` ones make 4-bit weights,
     the smallest; `w8a8-int8` makes 8-bit weights and activations."""
     ignore: list[str] = QUANTIZE_IGNORE

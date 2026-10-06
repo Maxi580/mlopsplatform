@@ -1,4 +1,11 @@
-import { type FormNode, pipelineForm, pipelineRequestFromForm, placeErrors } from "./pipelineForm";
+import {
+  type FormNode,
+  type FormValues,
+  fieldValue,
+  pipelineForm,
+  pipelineRequestFromForm,
+  placeErrors,
+} from "./pipelineForm";
 
 // A trimmed copy of `GET /schema`, with each shape the form must handle.
 const schema = {
@@ -160,7 +167,7 @@ test("empty values are left out and unreadable numbers stay text, so validation 
 
   expect(request).toEqual({
     schema_version: 1,
-    finetune: { phases: [{ algorithm: "sft", settings: { max_length: "long" } }] },
+    finetune: { backend: "hf", phases: [{ algorithm: "sft", settings: { max_length: "long" } }] },
   });
 });
 
@@ -187,7 +194,10 @@ test("an optional Stage is a section the request holds only once it is switched 
 
   expect(pipelineRequestFromForm(form, values)).not.toHaveProperty("serve");
   const switchedOn = { ...values, fields: { ...values.fields, serve: "on" } };
-  expect(pipelineRequestFromForm(form, switchedOn).serve).toEqual({ dtype: "half" });
+  expect(pipelineRequestFromForm(form, switchedOn).serve).toEqual({
+    prefix_caching: true,
+    dtype: "half",
+  });
 });
 
 test("booleans and optional choices are choices, read back as their values", () => {
@@ -239,4 +249,105 @@ test("an entry's error goes to its map with the entry's name", () => {
   ]);
 
   expect(placed.byName).toEqual({ "finetune.phases.0.rewards": ["correct.source: is no Python"] });
+});
+
+// A trimmed copy of the published schema's Sweep, with two algorithms' settings and defaults.
+const sweepSchema = {
+  type: "object",
+  properties: { sweep: { $ref: "#/$defs/Sweep" } },
+  $defs: {
+    Sweep: {
+      type: "object",
+      properties: {
+        algorithm: { enum: ["sft", "dpo"], type: "string" },
+        settings: { $ref: "#/$defs/PhaseSettings", trainer_settings: "settings" },
+        trials: { type: "integer", default: 10, exclusiveMinimum: 0 },
+        objective: {
+          anyOf: [{ $ref: "#/$defs/Objective" }, { type: "null" }],
+          default: null,
+          algorithm_defaults: "objective",
+        },
+      },
+    },
+    PhaseSettings: { type: "object", additionalProperties: true, properties: {} },
+    Objective: {
+      type: "object",
+      properties: {
+        metric: { type: "string" },
+        goal: { enum: ["minimize", "maximize"], type: "string" },
+      },
+    },
+  },
+  algorithms: {
+    sft: {
+      objective: { metric: "eval_loss", goal: "minimize" },
+      settings: {
+        learning_rate: { type: "number", default: 2e-4 },
+        num_train_epochs: { type: "number", default: 3 },
+        weight_decay: { type: "number", placeholder: 0 },
+      },
+    },
+    dpo: {
+      objective: { metric: "eval_rewards/accuracies", goal: "maximize" },
+      settings: {
+        learning_rate: { type: "number", default: 5e-6 },
+        num_train_epochs: { type: "number", default: 1 },
+        beta: { type: "number", default: 0.1 },
+      },
+    },
+  },
+};
+
+function fieldsOf(values: FormValues): Record<string, string> {
+  const nodes = flatten(pipelineForm(sweepSchema, values)).filter(
+    (node) => node.kind !== "section",
+  );
+  return Object.fromEntries(nodes.map((node) => [node.name, fieldValue(node as never, values)]));
+}
+
+test("fields start with their defaults, which the request holds until edited", () => {
+  const values = { fields: {}, more: {} };
+
+  expect(fieldsOf(values)).toMatchObject({
+    "sweep.algorithm": "sft",
+    "sweep.trials": "10",
+    "sweep.settings.learning_rate": "2e-4",
+    "sweep.settings.weight_decay": "",
+  });
+  expect(pipelineRequestFromForm(pipelineForm(sweepSchema, values), values)).toEqual({
+    sweep: {
+      algorithm: "sft",
+      trials: 10,
+      settings: { learning_rate: 0.0002, num_train_epochs: 3 },
+    },
+  });
+});
+
+test("a setting TRL defaults itself shows that default greyed, and isn't sent", () => {
+  const form = pipelineForm(sweepSchema);
+  const weightDecay = flatten(form).find((node) => node.name === "sweep.settings.weight_decay");
+
+  expect(weightDecay).toMatchObject({ placeholder: "0" });
+  expect(weightDecay).not.toHaveProperty("default");
+});
+
+test("switching the algorithm changes the untouched settings and keeps the edited ones", () => {
+  const edited = { "sweep.settings.num_train_epochs": "2" };
+  const values = { fields: { ...edited, "sweep.algorithm": "dpo" }, more: {} };
+
+  expect(fieldsOf(values)).toMatchObject({
+    "sweep.settings.learning_rate": "5e-6",
+    "sweep.settings.num_train_epochs": "2",
+    "sweep.settings.beta": "0.1",
+  });
+  expect(fieldsOf(values)).not.toHaveProperty("sweep.settings.weight_decay");
+});
+
+test("a Sweep's objective defaults to its algorithm's", () => {
+  const values = { fields: { "sweep.algorithm": "dpo", "sweep.objective": "on" }, more: {} };
+
+  expect(fieldsOf(values)).toMatchObject({
+    "sweep.objective.metric": "eval_rewards/accuracies",
+    "sweep.objective.goal": "maximize",
+  });
 });

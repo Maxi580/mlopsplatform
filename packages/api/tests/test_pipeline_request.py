@@ -9,6 +9,7 @@ from mlp_api.pipelines.hugging_face import HubModel
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.storage.database import create_tables
 from mlp_core import config
+from mlp_core.pipeline_request.schema import Phase
 
 from .conftest import FakeHuggingFace, FakeModelRegistry, FakeObjectStore
 from .test_models import register
@@ -187,19 +188,56 @@ def test_unknown_fields_are_rejected(validate, request_):
     assert "Extra inputs are not permitted" in rejection(validate(request_))
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        ("finetune", "phases", 0, "dataset"),
-        ("finetune", "phases", 0, "settings", "learning_rate"),
-        ("finetune", "phases", 0, "settings", "num_train_epochs"),
-        ("finetune", "phases", 0, "lora", "r"),
-    ],
-)
-def test_requests_missing_a_basic_value_are_rejected(validate, path):
+def test_a_phase_without_a_dataset_is_rejected(validate):
+    path = ("finetune", "phases", 0, "dataset")
+
     _, errors = validate(without(pipeline_request(), *path))
 
     assert errors == [{"loc": list(path), "msg": "Field required"}]
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "dataset"),
+    [("sft", "dataset:chat"), ("dpo", "dataset:pairs"), ("kto", "dataset:labels")],
+)
+def test_a_phase_of_only_algorithm_and_dataset_trains_with_its_algorithms_defaults(
+    validate, preference_datasets, algorithm, dataset
+):
+    request = pipeline_request()
+    request["finetune"]["phases"] = [{"algorithm": algorithm, "dataset": dataset}]
+
+    resolved, errors = validate(request)
+
+    assert errors == []
+    [phase] = resolved.finetune.phases
+    defaults = config.ALGORITHMS[algorithm]
+    assert phase.settings.model_dump() == defaults["default_settings"]
+    assert phase.lora.model_dump() == defaults["default_lora"]
+
+
+def test_named_settings_replace_only_their_defaults(validate):
+    resolved, _ = validate(pipeline_request(settings={"learning_rate": 1e-5}, lora={"r": 8}))
+
+    [phase] = resolved.finetune.phases
+    assert phase.settings.learning_rate == 1e-5
+    assert phase.settings.lr_scheduler_type == "cosine"
+    assert (phase.lora.r, phase.lora.lora_alpha) == (8, 32)
+
+
+def test_a_full_phase_gets_no_lora(validate):
+    request = without(pipeline_request(phase={"method": "full"}), "finetune", "phases", 0, "lora")
+
+    resolved, _ = validate(request)
+
+    assert resolved.finetune.phases[0].lora is None
+
+
+def test_rl_phases_default_to_no_lora_dropout():
+    phase = Phase.model_validate(
+        {"algorithm": "grpo", "dataset": "dataset:chat", "rewards": REWARDS, "lora": {"r": 8}}
+    )
+
+    assert phase.lora.lora_dropout == 0.0
 
 
 def test_settings_unknown_to_the_trl_config_are_rejected(validate):
@@ -397,10 +435,10 @@ def test_a_dataset_of_the_wrong_row_format_for_a_later_phase_is_rejected(
     assert f"1, 'dataset']: {message}" in rejection(validate(request))
 
 
-def test_the_first_phase_trains_a_new_adapter_so_it_needs_lora(validate):
-    message = rejection(validate(without(pipeline_request(), "finetune", "phases", 0, "lora")))
+def test_the_first_phase_trains_a_new_adapter_with_the_lora_defaults(validate):
+    resolved, _ = validate(without(pipeline_request(), "finetune", "phases", 0, "lora"))
 
-    assert "0, 'lora']: trains a new Adapter on the starting model" in message
+    assert resolved.finetune.phases[0].lora.model_dump() == config.LORA_DEFAULTS
 
 
 def test_a_later_phase_continues_the_adapter_so_it_takes_no_lora(validate, preference_datasets):
@@ -425,7 +463,7 @@ def test_a_full_phase_after_an_adapter_merges_it_first(validate, preference_data
 
 
 @pytest.mark.parametrize("earlier", [{"output": "merged"}, {"method": "full"}])
-def test_a_phase_after_full_weights_trains_a_new_adapter_so_it_needs_lora(
+def test_a_phase_after_full_weights_trains_a_new_adapter_with_the_lora_defaults(
     validate, preference_datasets, earlier
 ):
     request = pipeline_request(phase=earlier)
@@ -433,12 +471,10 @@ def test_a_phase_after_full_weights_trains_a_new_adapter_so_it_needs_lora(
         without(request, "finetune", "phases", 0, "lora")
     request["finetune"]["phases"].append(then("dpo", "dataset:pairs"))
 
-    message = rejection(validate(request))
+    resolved, errors = validate(request)
 
-    assert "1, 'lora']: trains a new Adapter on the full weights of Phase 1" in message
-    request["finetune"]["phases"][1]["lora"] = pipeline_request()["finetune"]["phases"][0]["lora"]
-    _, errors = validate(request)
     assert errors == []
+    assert resolved.finetune.phases[1].lora.model_dump() == config.LORA_DEFAULTS
 
 
 def test_settings_of_a_later_phase_are_checked_against_its_algorithms_config(

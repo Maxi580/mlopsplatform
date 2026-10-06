@@ -9,7 +9,7 @@ import {
   LoaderCircle,
   Rocket,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
 import { BENCHMARKS, DATASETS, PIPELINES, SCHEMA, VALIDATE_PIPELINE } from "../apiPaths";
@@ -38,11 +38,10 @@ export default function NewPipelinePage() {
   const schema = useApi<Record<string, unknown>>(SCHEMA).data;
   const datasets = useApi<Dataset[]>(DATASETS).data;
   const benchmarks = useApi<Benchmark[]>(BENCHMARKS).data;
-  const form = useMemo(() => schema && pipelineForm(schema), [schema]);
 
-  return form ? (
+  return schema ? (
     <PipelineBuilder
-      form={form}
+      schema={schema}
       datasetReferences={datasetReferences(datasets ?? [])}
       benchmarks={benchmarks ?? []}
     />
@@ -54,11 +53,11 @@ export default function NewPipelinePage() {
 }
 
 function PipelineBuilder({
-  form,
+  schema,
   datasetReferences,
   benchmarks,
 }: {
-  form: FormSection;
+  schema: Record<string, unknown>;
   datasetReferences: string[];
   benchmarks: Benchmark[];
 }) {
@@ -68,6 +67,8 @@ function PipelineBuilder({
   const [errors, setErrors] = useState<PlacedErrors>(NO_ERRORS);
   const [resolved, setResolved] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
+  // Which fields show, and their defaults, depend on the values, e.g. on a Phase's algorithm.
+  const form = pipelineForm(schema, values);
   const request = pipelineRequestFromForm(form, values);
   const filledSecrets = Object.fromEntries(Object.entries(secrets).filter(([, value]) => value));
   const downloads = useDownloadPreview(request, filledSecrets);

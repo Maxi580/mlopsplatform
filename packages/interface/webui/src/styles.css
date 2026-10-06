@@ -693,6 +693,23 @@ textarea[aria-invalid="true"] {
   gap: 4px;
 }
 
+.reset-button {
+  display: inline-flex;
+  margin-left: auto;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.reset-button:hover,
+.reset-button:focus-visible {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
 /* An infobox floats over the form, so showing it moves nothing. */
 .info {
   position: relative;

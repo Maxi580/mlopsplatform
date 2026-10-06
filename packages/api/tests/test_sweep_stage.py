@@ -4,6 +4,7 @@ import pytest
 
 from mlp_api.auth.session import issue_step_token
 from mlp_core import api_paths
+from mlp_core.pipeline_request.schema import Sweep
 
 from .test_datasets import jsonl, upload
 from .test_evaluate_stage import PINNED_BASE_MODEL, container, errors, tasks, validate
@@ -49,6 +50,22 @@ def report(api, pipeline_id, result=None, token=None):
         json=result or BEST,
         headers={"authorization": f"Bearer {token}"},
     )
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "objective"),
+    [("sft", ("eval_loss", "minimize")), ("grpo", ("reward", "maximize"))],
+)
+def test_sweep_defaults_to_ten_trials_and_its_algorithms_objective(algorithm, objective):
+    block = {"algorithm": algorithm, "dataset": "dataset:chat", "parameters": {"settings": {}}}
+    block["parameters"]["settings"]["learning_rate"] = LEARNING_RATE
+    if algorithm == "grpo":
+        block["rewards"] = {"one": {"weight": 1.0, "source": "def reward(s, i): return 1.0"}}
+
+    sweep = Sweep.model_validate(block)
+
+    assert sweep.trials == 10
+    assert (sweep.objective.metric, sweep.objective.goal) == objective
 
 
 def test_sweep_defaults_to_the_starting_model_of_finetune_and_a_held_out_tenth(logged_in_api):

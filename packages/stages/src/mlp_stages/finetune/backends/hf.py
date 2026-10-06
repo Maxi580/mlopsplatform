@@ -48,7 +48,7 @@ def build_trainer(
             # Keeps its rank and targets; DPO and KTO take a frozen copy of it as their reference.
             model = PeftModel.from_pretrained(model, adapter_directory, is_trainable=True)
         else:
-            peft_config = LoraConfig(**{**config.LORA_DEFAULTS, **phase.lora.model_dump()})
+            peft_config = LoraConfig(**{**config.LORA_PLATFORM_SETTINGS, **phase.lora.model_dump()})
     return getattr(trl, algorithm["trainer"])(
         model=model,
         args=getattr(trl, algorithm["config"])(**settings, output_dir=output_directory),
@@ -63,8 +63,11 @@ def build_trainer(
 
 
 def trainer_settings(phase: Phase) -> tuple[dict, dict]:
-    """The Phase's settings over its algorithm's defaults, and the trainer's reward functions."""
-    settings = {**config.ALGORITHMS[phase.algorithm]["defaults"], **phase.settings.model_dump()}
+    """The Phase's settings over what the platform sets, and the trainer's reward functions."""
+    settings = {
+        **config.ALGORITHMS[phase.algorithm]["platform_settings"],
+        **phase.settings.model_dump(),
+    }
     # Only `grpo` and `rloo` have rewards, weighted in the order TRL is given them.
     if not phase.rewards:
         return settings, {}

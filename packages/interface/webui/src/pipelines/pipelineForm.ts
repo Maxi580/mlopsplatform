@@ -1,4 +1,5 @@
 import { MORE_SETTINGS, SWITCHED_ON } from "../config";
+import { formatNumber } from "../fields/numbers";
 
 export type FieldKind =
   | "fixed"
@@ -34,12 +35,17 @@ export type FormField = {
   pattern?: string;
   // Shown as an infobox beside the field, e.g. what `assistant_only_loss` does.
   description?: string;
+  // Shown until the user edits the field, and sent; × puts it back.
+  default?: string;
+  // Shown greyed in an empty field and not sent, e.g. the default TRL itself applies.
+  placeholder?: string;
 };
 
 export type FormNode = FormSection | FormField;
 export type MoreSetting = { key: string; value: string };
 export type Entry = { name: string; fields: Record<string, string> };
-// Field values by dotted name, more settings and a map's entries by section name.
+// The user's edits by dotted field name (a field left alone shows its default), more settings
+// and a map's entries by section name.
 export type FormValues = {
   fields: Record<string, string>;
   more: Record<string, MoreSetting[]>;
@@ -49,10 +55,22 @@ export type FormValues = {
 export type FieldError = { loc: (string | number)[]; msg: string };
 
 type Schema = Record<string, any>;
+// What building a node needs besides its own schema: the published schema and the values, as
+// some defaults depend on other fields, e.g. a Phase's settings on its algorithm, and the
+// defaults its section's algorithm gives its fields, e.g. a Sweep's objective.
+type Context = { root: Schema; defs: Schema; values: FormValues; defaults?: Schema };
 
-/** The form for a Pipeline Request: a section per object of the published schema. */
-export function pipelineForm(schema: Schema): FormSection {
-  return nodeOf(schema, schema.$defs ?? {}, "", "Pipeline Request") as FormSection;
+const NO_VALUES: FormValues = { fields: {}, more: {} };
+
+/** The form for a Pipeline Request with these values: a section per object of the schema. */
+export function pipelineForm(schema: Schema, values: FormValues = NO_VALUES): FormSection {
+  const context = { root: schema, defs: schema.$defs ?? {}, values };
+  return nodeOf(schema, context, "", "Pipeline Request") as FormSection;
+}
+
+/** What a field shows and sends: the user's edit, else its default. */
+export function fieldValue(field: FormField, values: FormValues): string {
+  return values.fields[field.name] ?? field.default ?? "";
 }
 
 /** The Pipeline Request the form's values describe; empty values are left out, sections never. */
@@ -78,7 +96,7 @@ export function pipelineRequestFromForm(
     } else if (node.kind === "fixed") {
       put(tree, parts(node.name), node.fixed);
     } else {
-      const value = (values.fields[node.name] ?? "").trim();
+      const value = fieldValue(node, values).trim();
       if (value) put(tree, parts(node.name), readValue(node, value));
     }
   }
@@ -117,17 +135,27 @@ export function moreName(section: string): string {
   return `${section}.${MORE_SETTINGS}`;
 }
 
-function nodeOf(schema: Schema, defs: Schema, name: string, title: string): FormNode {
+function nodeOf(schema: Schema, context: Context, name: string, title: string): FormNode {
   // An optional value (`X | None`) shows as X; left empty, it is left out.
   const options = schema.anyOf?.filter((option: Schema) => option.type !== "null") ?? [];
   const optional = options.length === 1 && schema.anyOf.length === 2;
-  const node = resolveRef(optional ? options[0] : schema, defs);
+  const node = resolveRef(optional ? options[0] : schema, context.defs);
   const types = new Set((node.anyOf ?? [node]).map((option: Schema) => option.type));
   // A field's own title, not its type's (e.g. "Settings", not "SftSettings").
   title = schema.title ?? humanize(title);
   const child = (key: string) => (name ? `${name}.${key}` : key);
   if ("const" in node) return { kind: "fixed", name, title, fixed: node.const };
   const description = schema.description ?? node.description;
+  // The settings of a Phase's algorithm, or of its Adapter, as the API publishes them; sent
+  // whenever they are shown, over the algorithm's defaults.
+  if (schema.trainer_settings) {
+    const algorithm = context.root.algorithms?.[algorithmAt(context, parent(name))];
+    const settings: Schema = algorithm?.[schema.trainer_settings] ?? {};
+    const children = Object.entries(settings).map(([key, value]) =>
+      nodeOf(value as Schema, context, child(key), key),
+    );
+    return { kind: "section", name, title, children, moreSettings: true, optional: false };
+  }
   // A map of objects, e.g. rewards by name: entries of the value's fields. Pydantic writes a
   // map with a key pattern as patternProperties.
   const values =
@@ -135,7 +163,7 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
       ? node.additionalProperties
       : Object.values(node.patternProperties ?? {})[0];
   if (types.has("object") && values) {
-    const entry = nodeOf(values as Schema, defs, "", title.replace(/s$/, ""));
+    const entry = nodeOf(values as Schema, context, "", title.replace(/s$/, ""));
     return {
       kind: "section",
       name,
@@ -148,8 +176,11 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
     };
   }
   if (types.has("object")) {
+    // E.g. a Sweep's objective, whose defaults its algorithm publishes as `objective`.
+    const algorithm = context.root.algorithms?.[algorithmAt(context, parent(name))];
+    const inner = { ...context, defaults: algorithm?.[schema.algorithm_defaults] };
     const children = Object.entries(node.properties ?? {}).map(([key, value]) =>
-      nodeOf(value as Schema, defs, child(key), key),
+      nodeOf(value as Schema, inner, child(key), key),
     );
     return {
       kind: "section",
@@ -161,17 +192,26 @@ function nodeOf(schema: Schema, defs: Schema, name: string, title: string): Form
       ...(description && { description }),
     };
   }
-  if (node.type === "array" && resolveRef(node.items, defs).type === "object") {
+  if (node.type === "array" && resolveRef(node.items, context.defs).type === "object") {
     const children = Array.from({ length: node.minItems ?? 1 }, (_, index) =>
-      nodeOf(node.items, defs, child(String(index)), `${title.replace(/s$/, "")} ${index + 1}`),
+      nodeOf(node.items, context, child(String(index)), `${title.replace(/s$/, "")} ${index + 1}`),
     );
     return { kind: "section", name, title, children, moreSettings: false, optional };
   }
-  return { ...fieldOf(node, defs, types), name, title, ...(description && { description }) };
+  const field = { ...fieldOf(node, context.defs, types), name, title };
+  const fallback = defaultOf(schema, node, field, context.defaults?.[lastPart(name)]);
+  return {
+    ...field,
+    ...(description && { description }),
+    ...(fallback !== undefined && { default: fallback }),
+    ...(schema.placeholder != null && { placeholder: formatValue(schema.placeholder) }),
+  };
 }
 
 function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {
-  if ("enum" in node) return { kind: "choice" as const, choices: node.enum };
+  // A choice, also where any other text is allowed too, e.g. TRL's `lr_scheduler_type`.
+  const choices = node.enum ?? node.anyOf?.find((option: Schema) => option.enum)?.enum;
+  if (choices) return { kind: "choice" as const, choices };
   // A list of values from a fixed set, such as benchmarks from the catalog.
   const items = node.type === "array" ? resolveRef(node.items, defs) : undefined;
   if (items?.enum) return { kind: "choices" as const, choices: items.enum };
@@ -183,6 +223,32 @@ function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {
   // An optional value's pattern sits on its non-null option.
   const pattern = node.pattern ?? node.anyOf?.find((option: Schema) => option.pattern)?.pattern;
   return { kind: "text" as const, pattern };
+}
+
+/** What the field shows until edited: its algorithm's default, the schema's, or for a value
+ * that must be chosen, its first choice. */
+function defaultOf(
+  schema: Schema,
+  node: Schema,
+  field: { kind: FieldKind; choices?: unknown[] },
+  algorithmDefault: unknown,
+): string | undefined {
+  const value = algorithmDefault ?? schema.default ?? node.default;
+  if (value !== undefined && value !== null) return formatValue(value);
+  const required = !("default" in schema) && !schema.anyOf;
+  return required && field.kind === "choice" ? String(field.choices?.[0]) : undefined;
+}
+
+// The algorithm a Phase or Sweep at `path` trains with: chosen, else the first.
+function algorithmAt(context: Context, path: string): string {
+  const first = Object.keys(context.root.algorithms ?? {})[0];
+  return context.values.fields[path ? `${path}.algorithm` : "algorithm"] || first;
+}
+
+function formatValue(value: unknown): string {
+  if (typeof value === "number") return formatNumber(value);
+  if (Array.isArray(value)) return value.join(",");
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 function humanize(key: string): string {
@@ -234,6 +300,14 @@ function readSetting(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+function parent(name: string): string {
+  return name.split(".").slice(0, -1).join(".");
+}
+
+function lastPart(name: string): string {
+  return name.split(".").pop() ?? "";
 }
 
 function parts(name: string): string[] {

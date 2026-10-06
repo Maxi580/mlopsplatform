@@ -113,6 +113,21 @@ def test_an_endpoint_offers_its_tokenizer_so_it_can_be_evaluated(logged_in_api, 
     assert "--enable-tokenizer-info-endpoint" in vllm_args(logged_in_api.app.state.cluster)
 
 
+def test_untouched_serving_options_are_vllms_own_defaults(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api, f"hf:{QWEN}")
+
+    args = vllm_args(cluster)
+    for option in (
+        ["--dtype", "auto"],
+        ["--gpu-memory-utilization", "0.9"],
+        ["--max-num-seqs", "256"],
+        ["--kv-cache-dtype", "auto"],
+        ["--enable-prefix-caching"],
+    ):
+        assert contains(args, option)
+    assert "--max-model-len" not in args
+
+
 def test_an_adapter_is_served_on_its_base_model_under_the_endpoint_name(
     logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
 ):

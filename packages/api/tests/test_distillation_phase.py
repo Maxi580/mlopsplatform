@@ -90,20 +90,18 @@ def test_a_distillation_phase_trains_on_prompts_only(logged_in_api):
     assert "distillation trains on prompt_only rows" in error["msg"]
 
 
-def test_each_algorithm_requires_its_own_length_setting(logged_in_api):
+def test_each_algorithm_defaults_its_own_length_setting(logged_in_api):
     request = distilling(settings={**distilling()["finetune"]["phases"][0]["settings"]})
     del request["finetune"]["phases"][0]["settings"]["max_completion_length"]
     sft = pipeline_request()
     del sft["finetune"]["phases"][0]["settings"]["max_length"]
 
-    [distillation_error] = errors(logged_in_api, request)
-    [sft_error] = errors(logged_in_api, sft)
+    distillation_settings = resolved_phase(logged_in_api, request)["settings"]
+    sft_settings = resolved_phase(logged_in_api, sft)["settings"]
 
-    assert distillation_error == {
-        "loc": ["finetune", "phases", 0, "settings", "max_completion_length"],
-        "msg": "Field required",
-    }
-    assert sft_error["loc"] == ["finetune", "phases", 0, "settings", "max_length"]
+    assert distillation_settings["max_completion_length"] == 1024
+    assert "max_length" not in distillation_settings
+    assert sft_settings["max_length"] == 2048
 
 
 def test_settings_are_checked_against_the_distillation_config(logged_in_api):

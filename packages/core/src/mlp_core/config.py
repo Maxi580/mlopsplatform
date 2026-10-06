@@ -53,8 +53,9 @@ BLOCKED_TRAINER_SETTINGS = (
     "model_init_kwargs",
     "trust_remote_code",
 )
-# The platform saves Checkpoints itself, every checkpoint_minutes, keeping only the newest on disk.
-TRAINER_DEFAULTS = {
+# What the platform sets for every algorithm: it saves Checkpoints itself, every
+# checkpoint_minutes, keeping only the newest on disk.
+TRAINER_PLATFORM_SETTINGS = {
     "report_to": ["mlflow"],
     "save_strategy": "no",
     "save_total_limit": 1,
@@ -62,7 +63,7 @@ TRAINER_DEFAULTS = {
 }
 # Online RL generates its rollouts on vLLM in the Phase's own pod and GPUs (#19), and weighs its
 # rewards as the Phase's `rewards` say.
-RL_DEFAULTS = {**TRAINER_DEFAULTS, "use_vllm": True, "vllm_mode": "colocate"}
+RL_PLATFORM_SETTINGS = {**TRAINER_PLATFORM_SETTINGS, "use_vllm": True, "vllm_mode": "colocate"}
 RL_BLOCKED_SETTINGS = (
     *BLOCKED_TRAINER_SETTINGS,
     "vllm_mode",
@@ -73,8 +74,54 @@ RL_BLOCKED_SETTINGS = (
     "vllm_group_port",
     "reward_weights",
 )
-# Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings, and
-# the metrics a Sweep may optimize: `eval_` ones are measured on its held-out rows after training,
+# The settings a Phase trains with where it names none, tuned for LoRA training of a 1-8B model.
+# Validation fills them in, and the published schema shows them per algorithm.
+PHASE_DEFAULTS = {"lr_scheduler_type": "cosine", "bf16": True}
+SFT_DEFAULTS = {
+    "learning_rate": 2e-4,
+    "num_train_epochs": 3,
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 4,
+    "max_length": 2048,
+    "warmup_steps": 0.03,
+    **PHASE_DEFAULTS,
+}
+PREFERENCE_DEFAULTS = {
+    "learning_rate": 5e-6,
+    "num_train_epochs": 1,
+    "per_device_train_batch_size": 2,
+    "gradient_accumulation_steps": 8,
+    "max_length": 2048,
+    "warmup_steps": 0.1,
+    **PHASE_DEFAULTS,
+    "beta": 0.1,
+}
+DISTILLATION_DEFAULTS = {
+    "learning_rate": 2e-5,
+    "num_train_epochs": 1,
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 4,
+    "max_completion_length": 1024,
+    "warmup_steps": 0.1,
+    **PHASE_DEFAULTS,
+}
+RL_DEFAULTS = {
+    "learning_rate": 2e-6,
+    "num_train_epochs": 1,
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 4,
+    "max_completion_length": 1024,
+    "warmup_steps": 0.1,
+    **PHASE_DEFAULTS,
+    "num_generations": 8,
+    "vllm_gpu_memory_utilization": 0.3,
+}
+# A new Adapter's settings where the Phase names none; RL trains with no dropout.
+LORA_DEFAULTS = {"r": 16, "lora_alpha": 32, "lora_dropout": 0.05, "target_modules": "all-linear"}
+RL_LORA_DEFAULTS = {**LORA_DEFAULTS, "lora_dropout": 0.0}
+# Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings, what
+# the platform sets, the defaults of its own and its Adapter's settings, and the metrics a Sweep may
+# optimize, the first by default: `eval_` ones are measured on its held-out rows after training,
 # the others are the last value training logged.
 ALGORITHMS = {
     "sft": {
@@ -84,10 +131,13 @@ ALGORITHMS = {
         "length_setting": "max_length",
         # Could swap the Base Model's chat template (#16).
         "blocked_settings": (*BLOCKED_TRAINER_SETTINGS, "chat_template_path"),
-        "defaults": TRAINER_DEFAULTS,
+        "platform_settings": TRAINER_PLATFORM_SETTINGS,
+        "default_settings": SFT_DEFAULTS,
+        "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
         "objectives": ("eval_loss", "eval_mean_token_accuracy"),
+        "goal": "minimize",
     },
     "dpo": {
         "trainer": "DPOTrainer",
@@ -95,10 +145,13 @@ ALGORITHMS = {
         "row_formats": ("preference",),
         "length_setting": "max_length",
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
-        "defaults": TRAINER_DEFAULTS,
+        "platform_settings": TRAINER_PLATFORM_SETTINGS,
+        "default_settings": PREFERENCE_DEFAULTS,
+        "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
         "objectives": ("eval_loss", "eval_rewards/accuracies", "eval_rewards/margins"),
+        "goal": "minimize",
     },
     "kto": {
         "trainer": "KTOTrainer",
@@ -106,10 +159,13 @@ ALGORITHMS = {
         "row_formats": ("unpaired_preference",),
         "length_setting": "max_length",
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
-        "defaults": TRAINER_DEFAULTS,
+        "platform_settings": TRAINER_PLATFORM_SETTINGS,
+        "default_settings": PREFERENCE_DEFAULTS,
+        "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
         "objectives": ("eval_loss",),
+        "goal": "minimize",
     },
     # The Student generates its own completions to the prompts, which the Teacher scores.
     "distillation": {
@@ -125,10 +181,13 @@ ALGORITHMS = {
             "teacher_model_init_kwargs",
             "use_vllm",
         ),
-        "defaults": TRAINER_DEFAULTS,
+        "platform_settings": TRAINER_PLATFORM_SETTINGS,
+        "default_settings": DISTILLATION_DEFAULTS,
+        "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": True,
         "learns_from_rewards": False,
         "objectives": ("eval_loss",),
+        "goal": "minimize",
     },
     # Online RL: the model writes completions to each prompt, which the Phase's rewards score.
     "grpo": {
@@ -137,10 +196,13 @@ ALGORITHMS = {
         "row_formats": ("prompt_only",),
         "length_setting": "max_completion_length",
         "blocked_settings": RL_BLOCKED_SETTINGS,
-        "defaults": RL_DEFAULTS,
+        "platform_settings": RL_PLATFORM_SETTINGS,
+        "default_settings": RL_DEFAULTS,
+        "default_lora": RL_LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": True,
         "objectives": ("reward", "eval_reward"),
+        "goal": "maximize",
     },
     "rloo": {
         "trainer": "RLOOTrainer",
@@ -148,10 +210,13 @@ ALGORITHMS = {
         "row_formats": ("prompt_only",),
         "length_setting": "max_completion_length",
         "blocked_settings": RL_BLOCKED_SETTINGS,
-        "defaults": RL_DEFAULTS,
+        "platform_settings": RL_PLATFORM_SETTINGS,
+        "default_settings": {**RL_DEFAULTS, "beta": 0.05},
+        "default_lora": RL_LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": True,
         "objectives": ("reward", "eval_reward"),
+        "goal": "maximize",
     },
 }
 # Training backend -> Phase algorithm -> the weight methods it trains it with; validation rejects
@@ -173,7 +238,7 @@ SINGLE_GPU_BACKENDS = ("unsloth",)
 # LoraConfig settings the platform sets.
 LORA_CONFIG = "LoraConfig"
 BLOCKED_LORA_SETTINGS = ("task_type",)
-LORA_DEFAULTS = {"task_type": "CAUSAL_LM"}
+LORA_PLATFORM_SETTINGS = {"task_type": "CAUSAL_LM"}
 # The largest Adapter rank vLLM serves; an Adapter merged into full weights may be larger.
 MAX_LORA_RANK = 512
 # How `qlora` loads the base it trains an Adapter on: 4-bit NF4, computing in bfloat16.
@@ -229,6 +294,7 @@ SWEEP_OUTPUT = "@sweep"
 SWEEP_EVAL_SPLIT = 0.1
 SWEEP_SEED = 42
 SWEEP_SAMPLERS = ("tpe", "random", "grid")
+SWEEP_TRIALS = 10
 # Names the Model Version the Pipeline's last Phase registers.
 FINETUNE_OUTPUT = "@finetune"
 # Names the Distillation Dataset Version the Pipeline's `distill` step registers.
@@ -252,6 +318,8 @@ QUANTIZATION_SCHEMES = {
 }
 # Its scales come from the weights alone; every other scheme calibrates on Dataset rows.
 UNCALIBRATED_SCHEMES = ("fp8-dynamic",)
+# Needs no calibration rows, and recent GPUs run it natively.
+QUANTIZATION_SCHEME = "fp8-dynamic"
 QUANTIZE_IGNORE = ["lm_head"]
 CALIBRATION_SAMPLES = 512
 CALIBRATION_MAX_LENGTH = 2048
@@ -298,6 +366,9 @@ SPECULATIVE_METHODS = {
     "peagle": {"method": "eagle3", "parallel_drafting": True},
 }
 SPECULATIVE_TOKENS = 3
+# vLLM's own defaults for the serving options that don't depend on the model, so forms start there.
+SERVING_GPU_MEMORY_UTILIZATION = 0.9
+SERVING_MAX_NUM_SEQS = 256
 # Secret slot -> the environment variable of the steps that receive it. The API adds
 # `step_token` itself, for the `distill` and `sweep` steps to call the API with.
 SECRET_ENV_VARS = {
@@ -903,6 +974,10 @@ ENDPOINT_SERVICE_URL = "http://{object_name}.{namespace}.svc:{port}"
 LOCAL_VLLM_URL = f"http://localhost:{VLLM_PORT}"
 
 # Distill
+# How the Teacher replies where the `distill` Stage doesn't say: somewhat varied, and long enough
+# for a worked answer.
+DISTILL_TEMPERATURE = 0.7
+DISTILL_MAX_TOKENS = 4096
 # Requests the `distill` step sends the Teacher at once.
 DISTILL_CONCURRENT_REQUESTS = 16
 # How long the step waits for one Teacher reply.

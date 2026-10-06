@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mlp_core.config import (
     ENDPOINT_NAME_MAX_LENGTH,
+    SERVING_GPU_MEMORY_UTILIZATION,
+    SERVING_MAX_NUM_SEQS,
     SPECULATIVE_METHODS,
     SPECULATIVE_TOKENS,
     VLLM_LORA_RANKS,
@@ -30,17 +32,17 @@ class ServingOptions(BaseModel):
     """The longest prompt plus reply, in tokens; vLLM reads it from the model when left empty."""
     prefix_caching: bool = True
     """Reuses the work on prompt beginnings seen before, e.g. a shared system prompt."""
-    dtype: Literal["auto", "half", "float16", "bfloat16", "float32"] | None = None
+    dtype: Literal["auto", "half", "float16", "bfloat16", "float32"] | None = "auto"
     """The number format of weights and activations; `auto` takes the model's."""
-    gpu_memory_utilization: float | None = Field(None, gt=0, le=1)
+    gpu_memory_utilization: float | None = Field(SERVING_GPU_MEMORY_UTILIZATION, gt=0, le=1)
     """The share of GPU memory vLLM may take, for the weights and the KV cache."""
-    max_num_seqs: int | None = Field(None, gt=0)
+    max_num_seqs: int | None = Field(SERVING_MAX_NUM_SEQS, gt=0)
     """Requests generated at once; more wait."""
     max_num_batched_tokens: int | None = Field(None, gt=0)
     """Tokens computed in one step: higher speeds up long prompts, lower keeps replies flowing."""
     async_scheduling: bool | None = None
     """Plans the next step while the GPU computes, for lower latency."""
-    kv_cache_dtype: Literal["auto", "fp8", "fp8_e4m3", "fp8_e5m2"] | None = None
+    kv_cache_dtype: Literal["auto", "fp8", "fp8_e4m3", "fp8_e5m2"] | None = "auto"
     """The number format of the KV cache; `fp8` fits twice the requests at a small quality cost."""
     quantization: Literal["fp8", "bitsandbytes"] | None = None
     """Quantizes the weights on the fly, at load time, to fit a larger model."""
