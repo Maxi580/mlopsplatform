@@ -408,6 +408,20 @@ code,
   flex-shrink: 0;
 }
 
+.endpoint-access {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  align-items: center;
+  margin: 8px 0 0;
+}
+
+.endpoint-access dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .link-button {
   display: inline-flex;
   align-items: center;

@@ -52,16 +52,17 @@ def serving_case_result(state, name: str, serving: dict, cases: dict, endpoints:
     # 3. Passed once vLLM is ready and its stats count a real chat request; then it stops.
     if endpoint["status"] == "pending":
         return "pending"
-    passed = endpoint["status"] == "running" and counts_a_chat_request(state.cluster, name)
+    passed = endpoint["status"] == "running" and counts_a_chat_request(state.cluster, endpoint)
     if endpoint["status"] != "stopped":
         stop_endpoint(state.engine, state.cluster, name)
     return "passed" if passed else "failed"
 
 
-def counts_a_chat_request(cluster, name: str) -> bool:
+def counts_a_chat_request(cluster, endpoint: dict) -> bool:
     """Whether the Endpoint answers a chat request, after which its stats show it finished."""
+    name = endpoint["name"]
     try:
-        cluster.send_chat_request(name, config.SMOKE_TEST_CHAT_REQUEST)
+        cluster.send_chat_request(name, config.SMOKE_TEST_CHAT_REQUEST, endpoint["key"])
     except Exception:
         logger.exception("Smoke Test Endpoint %s did not answer a chat request", name)
         return False

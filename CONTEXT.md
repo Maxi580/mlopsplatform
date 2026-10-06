@@ -39,6 +39,10 @@ One training run within a Sweep. Its weights are thrown away.
 A running, OpenAI-compatible server for one model (a Model Version or a Base Model), started by a user from the Serving tab or the CLI. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it.
 _Avoid_: Deployment, served model, inference service
 
+**Endpoint Key**:
+The random credential that opens one Endpoint's URL; anyone holding it can call that Endpoint and nothing else. Viewable and refreshable by platform users.
+_Avoid_: API key, token
+
 **Smoke Test**:
 A built-in Pipeline, started by a user, that runs every Stage, every Phase algorithm, every weight method and every training backend on the smallest Qwen model, to prove the platform runs without errors. Output quality is ignored. A failed Case doesn't stop the rest. Afterwards it deletes everything it created except its Kubeflow run.
 _Avoid_: Health check, e2e test

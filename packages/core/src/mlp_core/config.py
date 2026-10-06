@@ -437,7 +437,7 @@ STEP_TOKEN_CLAIM = "pipeline_step"
 MAX_FAILED_LOGINS = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
 # Logging out clears an expired session cookie too.
-PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN, api_paths.LOGOUT}
+PUBLIC_PATHS = {api_paths.HEALTH, api_paths.LOGIN, api_paths.LOGOUT, api_paths.VERIFY_ENDPOINT_KEY}
 DEFAULT_HF_REVISION = "main"
 # Shorter Secret values would match ordinary request strings.
 MIN_SECRET_LENGTH = 8
@@ -487,8 +487,11 @@ ENDPOINT_LABEL = "mlp-endpoint"
 # prefix, so no API path can fall under an Endpoint's route.
 ENDPOINT_PATH_PREFIX = "/serving/{uuid}/"
 ENDPOINT_URL = "https://{domain}/serving/{uuid}/v1"
-# The Traefik middlewares of the platform namespace on every Endpoint route.
-ENDPOINT_ROUTE_MIDDLEWARES = ("login", "endpoint-strip-prefix")
+# The Traefik middlewares of the platform namespace on every Endpoint route: only its Endpoint Key
+# opens it, not the platform login.
+ENDPOINT_ROUTE_MIDDLEWARES = ("endpoint-key", "endpoint-strip-prefix")
+# Random bytes in an Endpoint Key.
+ENDPOINT_KEY_BYTES = 32
 # Traefik's IngressRoute resource: its API group, version and plural.
 INGRESS_ROUTE_RESOURCE = {"group": "traefik.io", "version": "v1alpha1", "plural": "ingressroutes"}
 VLLM_PORT = 8000

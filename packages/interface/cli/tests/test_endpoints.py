@@ -5,6 +5,7 @@ from mlp_core import api_paths
 
 from .conftest import TOKEN
 
+KEY = "endpoint-key-of-chat"
 URL = "https://platform.test/serving/0123456789abcdef0123456789abcdef/v1"
 ENDPOINT = {
     "name": "chat",
@@ -12,6 +13,7 @@ ENDPOINT = {
     "model": "model:qwen-sft@1",
     "status": "running",
     "url": URL,
+    "key": KEY,
     "created_at": "2026-10-01T08:30:00+00:00",
 }
 
@@ -121,3 +123,33 @@ def test_endpoints_send_the_login_token(logged_in, fake_api):
 
     assert result.exit_code == 0, result.output
     assert fake_api.received == [(api_paths.ENDPOINTS, f"Bearer {TOKEN}")]
+
+
+def test_key_prints_the_running_endpoints_key(logged_in, fake_api):
+    stopped = {**ENDPOINT, "status": "stopped", "key": "old-key"}
+    fake_api.answers[api_paths.ENDPOINTS] = (200, [ENDPOINT, stopped])
+
+    result = mlp_endpoints("key", "chat")
+
+    assert result.exit_code == 0, result.output
+    assert result.output == f"{KEY}\n"
+
+
+def test_key_of_an_endpoint_that_is_not_running_says_so(logged_in, fake_api):
+    fake_api.answers[api_paths.ENDPOINTS] = (200, [{**ENDPOINT, "status": "stopped"}])
+
+    result = mlp_endpoints("key", "chat")
+
+    assert result.exit_code == 1
+    assert "No Endpoint chat is running" in result.output
+
+
+def test_refresh_key_prints_the_new_key(logged_in, fake_api):
+    path = api_paths.REFRESH_ENDPOINT_KEY.format(name="chat")
+    fake_api.answers[path] = (200, {**ENDPOINT, "key": "new-key"})
+
+    result = mlp_endpoints("refresh-key", "chat")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received == [(path, b"")]
+    assert "new-key" in result.output

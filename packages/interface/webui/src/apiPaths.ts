@@ -31,6 +31,7 @@ export const checkpoint = (pipelineId: number, phaseIndex: number) =>
 export const ENDPOINTS = "/endpoints";
 export const endpointByName = (name: string) => `/endpoints/${name}`;
 export const stopEndpoint = (name: string) => `${endpointByName(name)}/stop`;
+export const refreshEndpointKey = (name: string) => `${endpointByName(name)}/refresh-key`;
 export const modelCacheEntry = (reference: string) =>
   `${MODEL_CACHE}?reference=${encodeURIComponent(reference)}`;
 export const endpointStats = (name: string) => `/endpoints/${name}/stats`;

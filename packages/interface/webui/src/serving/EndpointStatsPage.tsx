@@ -110,7 +110,18 @@ export default function EndpointStatsPage() {
             Live from the Endpoint's vLLM, counting every request it serves. Charts fill while this
             page stays open, for up to {ENDPOINT_STATS_HISTORY_MS / MS_PER_MINUTE} minutes.
           </p>
-          {endpoint && <CopyValue label="URL" value={endpoint.url} />}
+          {endpoint && (
+            <dl className="endpoint-access">
+              <dt>URL</dt>
+              <dd>
+                <CopyValue label="URL" value={endpoint.url} />
+              </dd>
+              <dt>Endpoint Key</dt>
+              <dd>
+                <CopyValue label="Endpoint Key" value={endpoint.key} />
+              </dd>
+            </dl>
+          )}
         </div>
       </header>
 

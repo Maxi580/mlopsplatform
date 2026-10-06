@@ -1,8 +1,15 @@
-import { CircleAlert, LoaderCircle, Play, Square, Trash2 } from "lucide-react";
+import { CircleAlert, LoaderCircle, Play, RefreshCw, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
-import { ENDPOINTS, endpointByName, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
+import {
+  ENDPOINTS,
+  endpointByName,
+  MODELS,
+  refreshEndpointKey,
+  SCHEMA,
+  stopEndpoint,
+} from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { NO_CATALOG } from "../fields/catalog";
 import ModelPicker from "../fields/ModelPicker";
@@ -39,6 +46,19 @@ export default function ServingPage() {
     endpoints.reload();
   }
 
+  async function refreshKey(name: string) {
+    try {
+      await callApi(refreshEndpointKey(name), {});
+      setNotice({
+        text: `New Endpoint Key for ${name}; the old one no longer works`,
+        failed: false,
+      });
+    } catch (failure) {
+      setNotice({ text: errorMessage(failure), failed: true });
+    }
+    endpoints.reload();
+  }
+
   async function remove(name: string) {
     try {
       await callApi(endpointByName(name), undefined, "DELETE");
@@ -55,7 +75,8 @@ export default function ServingPage() {
         <div>
           <h1>Serving</h1>
           <p className="muted">
-            OpenAI-compatible Endpoints, behind the platform login; they run until stopped.
+            OpenAI-compatible Endpoints, each opened by its own Endpoint Key; they run until
+            stopped.
           </p>
         </div>
       </header>
@@ -85,6 +106,7 @@ export default function ServingPage() {
                   "Tokens/s",
                   "TTFT",
                   "URL",
+                  "Key",
                   "Started (UTC)",
                 ].map((column) => (
                   <th key={column}>{column}</th>
@@ -100,6 +122,7 @@ export default function ServingPage() {
                   endpoint={endpoint}
                   tokensPerSecond={tokensPerSecond[endpoint.name]}
                   onStop={stop}
+                  onRefreshKey={refreshKey}
                   onDelete={remove}
                 />
               ))}
@@ -156,11 +179,13 @@ function EndpointRow({
   endpoint,
   tokensPerSecond,
   onStop,
+  onRefreshKey,
   onDelete,
 }: {
   endpoint: Endpoint;
   tokensPerSecond?: number | null;
   onStop: (name: string) => void;
+  onRefreshKey: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
   const stopped = endpoint.status === "stopped";
@@ -178,6 +203,22 @@ function EndpointRow({
       <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
       <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
       <td>{!stopped && <CopyValue label="URL" value={endpoint.url} />}</td>
+      <td>
+        {!stopped && (
+          <span className="copy-value">
+            <CopyValue label="Endpoint Key" value={endpoint.key} hidden />
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Refresh Endpoint Key"
+              title="Refresh Endpoint Key; the old one stops working"
+              onClick={() => onRefreshKey(endpoint.name)}
+            >
+              <RefreshCw size={14} />
+            </button>
+          </span>
+        )}
+      </td>
       <td>{endpoint.created_at.slice(0, 16).replace("T", " ")}</td>
       <td className="actions">
         {stopped ? (

@@ -90,21 +90,20 @@ mlp endpoints                                              # every Endpoint with
 mlp endpoints start hf:Qwen/Qwen3-0.6B --name chat         # a Base Model
 mlp endpoints start model:qwen-sft@1 --name chat-sft -o max_model_len=8192 -o kv_cache_dtype=fp8
 mlp endpoints start model:qwen-sft@1 --name fast -o 'speculative={method: eagle3, model: "model:qwen-sft-speculator@1"}'
+mlp endpoints key chat                                     # its Endpoint Key
+mlp endpoints refresh-key chat                             # a new key; the old one stops working
 mlp endpoints stop chat
 mlp endpoints delete chat                                  # removes the stopped Endpoint from the list
 ```
 
 An Endpoint is a vLLM Deployment (the upstream `images.vllm`, pinned) serving one model on `gpus_per_endpoint` GPUs from the platform settings: a Base Model from the Model Cache, a full-weight Model Version, or an Adapter on its base. Its pod first downloads what vLLM loads, with `fetch` for a Base Model (public ones only: Endpoints take no Hugging Face token, so gated models are rejected) and `mlp-stage download` for Model Version files, then runs vLLM offline. It shows `pending` while GPUs are busy, however long that takes, then `running` once vLLM is ready, or `failed` once vLLM crashed (its pod logs say why). It runs until `mlp endpoints stop` deletes it (`stopped`), or its Deployment disappears, e.g. in a platform upgrade. A name is free again once its Endpoint stopped. The Base Models and Model Versions an Endpoint serves from can't be deleted or evicted while it runs.
 
-Each start gives the Endpoint a random UUID, so its OpenAI-compatible URL is `https://<domain>/serving/<uuid>/v1`; a restart is a new Endpoint with a new URL. `mlp endpoints` and the Serving tab show it (with a copy button). It sits behind the same login as everything else; clients call the model by the Endpoint's name and send the token `mlp login` stored:
+Each start gives the Endpoint a random UUID and a random Endpoint Key, so its OpenAI-compatible URL is `https://<domain>/serving/<uuid>/v1`; a restart is a new Endpoint with a new URL and key. Only the Endpoint Key opens it, not the platform login, so a URL and key can be handed to people outside the platform: Traefik asks the API (`/auth/verify-endpoint-key`) whether the bearer token is the key of the Endpoint with that UUID and that it isn't stopped, then forwards straight to vLLM. `mlp endpoints` and the Serving tab show the URL, `mlp endpoints key` and the Serving tab the key (both with copy buttons); `mlp endpoints refresh-key` and the Serving tab's refresh button replace the key at once, keeping the URL. Clients call the model by the Endpoint's name:
 
 ```python
-from pathlib import Path
 from openai import OpenAI  # run with SSL_CERT_FILE=ca.crt
 
-client = OpenAI(
-    base_url="https://<domain>/serving/<uuid>/v1", api_key=(Path.home() / ".mlp/token").read_text()
-)
+client = OpenAI(base_url="https://<domain>/serving/<uuid>/v1", api_key="<Endpoint Key>")
 client.chat.completions.create(model="chat", messages=[{"role": "user", "content": "Hi"}])
 ```
 
@@ -126,7 +125,7 @@ Serving options, all optional (`POST /endpoints` takes `name`, `model` and these
 
 Tool calling is on (`--enable-auto-tool-choice`) whenever a parser is known: `tool_parser`, else the model's `tool_parser` tag, else the one its Base Model's `model_type` maps to. `mlp_core.endpoint_spec.vllm_args` turns a spec into vLLM's arguments, so `evaluate` and in-cluster Teachers use the same flags.
 
-Live stats come from each running Endpoint's vLLM `/metrics`, which the API reads through its Service (all Endpoints at once, waiting `ENDPOINT_METRICS_TIMEOUT` for each), so they count every request the Endpoint serves; nothing is stored and no Prometheus is installed. `GET /endpoints` adds a `stats` field per Endpoint: running and waiting requests, generated tokens with the time they were read (two readings give tokens/s), and the time-to-first-token p50; it is `null` while the Endpoint is pending or loading, or when it doesn't answer. `GET /endpoints/<name>/stats` answers the curated sections (Requests, Tokens, KV cache, Latency, and Speculative decoding when it is on), each value with a label and a one-line explanation; histograms as p50, p95 and mean since start (quantiles estimated from the buckets, as Prometheus' `histogram_quantile` does) with their raw sums and counts; and every metric with vLLM's own `# HELP` text. The raw Prometheus text is at `https://<domain>/serving/<uuid>/metrics`, behind the login like the OpenAI URL, as the route strips `/serving/<uuid>` before vLLM; point a Prometheus or `curl` with the token at it to keep history the platform doesn't.
+Live stats come from each running Endpoint's vLLM `/metrics`, which the API reads through its Service (all Endpoints at once, waiting `ENDPOINT_METRICS_TIMEOUT` for each), so they count every request the Endpoint serves; nothing is stored and no Prometheus is installed. `GET /endpoints` adds a `stats` field per Endpoint: running and waiting requests, generated tokens with the time they were read (two readings give tokens/s), and the time-to-first-token p50; it is `null` while the Endpoint is pending or loading, or when it doesn't answer. `GET /endpoints/<name>/stats` answers the curated sections (Requests, Tokens, KV cache, Latency, and Speculative decoding when it is on), each value with a label and a one-line explanation; histograms as p50, p95 and mean since start (quantiles estimated from the buckets, as Prometheus' `histogram_quantile` does) with their raw sums and counts; and every metric with vLLM's own `# HELP` text. The raw Prometheus text is at `https://<domain>/serving/<uuid>/metrics`, behind the Endpoint Key like the OpenAI URL, as the route strips `/serving/<uuid>` before vLLM; point a Prometheus or `curl` with the key at it to keep history the platform doesn't.
 
 ## Pipeline Requests
 

@@ -290,10 +290,10 @@ class FakeCluster:
             raise ConnectionError(f"endpoint-{name} timed out")
         return self.metrics[name]
 
-    def send_chat_request(self, name, request):
+    def send_chat_request(self, name, request, key):
         if name not in self.metrics:
             raise ConnectionError(f"endpoint-{name} timed out")
-        self.chat_requests.append((name, request))
+        self.chat_requests.append((name, request, key))
 
 
 @pytest.fixture

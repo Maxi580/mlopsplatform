@@ -31,6 +31,15 @@ roleRef:
   kind: Role
   name: mlp-api-endpoints
 ---
+# Only the Endpoint Key opens an Endpoint's route; the API checks it, then Traefik goes to vLLM.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: endpoint-key
+spec:
+  forwardAuth:
+    address: http://api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.api }}/auth/verify-endpoint-key
+---
 # `/serving/<uuid>/v1/...` reaches vLLM as `/v1/...`.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware

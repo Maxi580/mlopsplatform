@@ -9,6 +9,8 @@ endpoint = Table(
     Column("name", String, nullable=False),
     # Names its URL; a restart is a new Endpoint with a new one.
     Column("uuid", String, nullable=False, unique=True),
+    # In plain text, so users can look it up again.
+    Column("key", String, nullable=False),
     Column("owner", String, nullable=False),
     # The spec with its model pinned.
     Column("spec", JSON, nullable=False),

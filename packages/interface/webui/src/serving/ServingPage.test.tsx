@@ -64,6 +64,7 @@ const chat: Endpoint = {
   model: "model:qwen-sft@2",
   status: "running",
   url: URL,
+  key: "key-of-chat",
   created_at: "2026-10-02T08:30:00+00:00",
   stats: null,
 };
@@ -120,6 +121,26 @@ test("an Endpoint's URL is copied from its row", async () => {
   await user.click(within(row).getByRole("button", { name: "Copy URL" }));
 
   expect(await navigator.clipboard.readText()).toBe(URL);
+});
+
+test("an Endpoint's key is copied and refreshed from its row", async () => {
+  const user = userEvent.setup();
+  const calls = fakeApi({
+    ...routes,
+    "POST /endpoints/chat/refresh-key": [200, { ...chat, key: "new-key" }],
+  });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  expect(within(row).queryByText("key-of-chat")).not.toBeInTheDocument();
+  await user.click(within(row).getByRole("button", { name: "Copy Endpoint Key" }));
+  expect(await navigator.clipboard.readText()).toBe("key-of-chat");
+
+  await user.click(within(row).getByRole("button", { name: "Refresh Endpoint Key" }));
+  expect(
+    await screen.findByText("New Endpoint Key for chat; the old one no longer works"),
+  ).toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain("POST /endpoints/chat/refresh-key");
 });
 
 test("an Endpoint stops from its row", async () => {

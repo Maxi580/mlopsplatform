@@ -40,7 +40,7 @@ def logout(response: Response) -> dict:
     return {}
 
 
-# Traefik's forwardAuth for the KFP UI, MLflow UI and Endpoints; require_login does the check.
+# Traefik's forwardAuth for the KFP UI and MLflow UI; require_login does the check.
 # The Web UI shows the logged-in user's name from it.
 @router.get(api_paths.VERIFY)
 def verify() -> dict:

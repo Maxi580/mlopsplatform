@@ -776,7 +776,9 @@ def test_a_serving_case_passes_once_its_endpoint_answered_a_chat_request_and_the
 
     cases = smoke_test(logged_in_api)["cases"]
     assert (cases["serve-base-model"], cases["serve-full-weights"]) == ("passed", "failed")
-    assert cluster.chat_requests == [(f"{name}-serve-base-model", config.SMOKE_TEST_CHAT_REQUEST)]
+    served = f"{name}-serve-base-model"
+    [key] = [e["key"] for e in logged_in_api.get(api_paths.ENDPOINTS).json() if e["name"] == served]
+    assert cluster.chat_requests == [(served, config.SMOKE_TEST_CHAT_REQUEST, key)]
     assert cluster.endpoints == {}
 
 

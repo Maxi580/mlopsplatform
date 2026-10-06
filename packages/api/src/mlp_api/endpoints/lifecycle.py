@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import Engine, delete, insert, select, update
 
 from mlp_api.endpoints.endpoint_model import add_drafter, find_endpoint_model
+from mlp_api.endpoints.keys import new_endpoint_key
 from mlp_api.endpoints.manifests import endpoint_manifests
 from mlp_api.endpoints.table import endpoint, not_stopped
 from mlp_api.model_cache.downloads import preview_downloads
@@ -54,6 +55,7 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
                 insert(endpoint).values(
                     name=name,
                     uuid=endpoint_uuid,
+                    key=new_endpoint_key(),
                     owner=config.OWNER,
                     spec=spec.model_dump(mode="json", exclude_defaults=True),
                     uses=model.references,
@@ -131,6 +133,7 @@ def endpoint_summary(row, domain: str) -> dict:
         "gpus": row.gpus,
         "status": row.status,
         "url": config.ENDPOINT_URL.format(domain=domain, uuid=row.uuid),
+        "key": row.key,
         "created_at": row.created_at.isoformat(),
     }
 

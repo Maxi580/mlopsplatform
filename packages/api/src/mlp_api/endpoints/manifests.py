@@ -95,7 +95,7 @@ def endpoint_manifests(
         },
     }
 
-    # 3. The Service, and the route to it behind the login, with the URL prefix stripped.
+    # 3. The Service, and the route to it behind the Endpoint Key, with the URL prefix stripped.
     service = {
         "apiVersion": "v1",
         "kind": "Service",

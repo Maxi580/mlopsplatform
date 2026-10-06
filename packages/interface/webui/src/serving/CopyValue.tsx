@@ -1,12 +1,20 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
-/** The value in monospace, with a button copying it to the clipboard. */
-export default function CopyValue({ label, value }: { label: string; value: string }) {
+/** The value in monospace, unless hidden, with a button copying it to the clipboard. */
+export default function CopyValue({
+  label,
+  value,
+  hidden = false,
+}: {
+  label: string;
+  value: string;
+  hidden?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   return (
     <span className="copy-value">
-      <span className="mono">{value}</span>
+      {!hidden && <span className="mono">{value}</span>}
       <button
         type="button"
         className="icon-button"

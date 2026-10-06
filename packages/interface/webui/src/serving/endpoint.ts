@@ -5,6 +5,8 @@ export type Endpoint = {
   model: string;
   status: string;
   url: string;
+  // The Endpoint Key: the bearer token its URL takes.
+  key: string;
   created_at: string;
   // Null while it is pending, loading or unreachable.
   stats: EndpointStatsSummary | null;

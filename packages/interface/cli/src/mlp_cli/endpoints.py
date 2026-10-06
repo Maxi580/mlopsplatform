@@ -11,7 +11,7 @@ app = typer.Typer()
 
 @app.callback(invoke_without_command=True)
 def endpoints(context: typer.Context) -> None:
-    """List Endpoints with their model, status and URL, or start, stop and delete them."""
+    """List Endpoints with model, status and URL; start, stop, delete them or show their keys."""
     if context.invoked_subcommand:
         return
     # 1. Every Endpoint, stopped ones included, from the API.
@@ -72,3 +72,25 @@ def delete(name: str) -> None:
     with api_client() as client:
         exit_on_error(client.delete(api_paths.ENDPOINT.format(name=name)))
     typer.echo(f"Deleted {name}")
+
+
+@app.command()
+def key(name: str) -> None:
+    """Print the running Endpoint's Endpoint Key, the bearer token its URL takes."""
+    with api_client() as client:
+        listing = exit_on_error(client.get(api_paths.ENDPOINTS)).json()
+    # A stopped Endpoint keeps its row, and its name may be running again.
+    running = [e for e in listing if e["name"] == name and e["status"] != "stopped"]
+    if not running:
+        typer.echo(f"No Endpoint {name} is running", err=True)
+        raise typer.Exit(1)
+    typer.echo(running[0]["key"])
+
+
+@app.command("refresh-key")
+def refresh_key(name: str) -> None:
+    """Replace the Endpoint's Endpoint Key; the old one stops working at once."""
+    with api_client() as client:
+        path = api_paths.REFRESH_ENDPOINT_KEY.format(name=name)
+        refreshed = exit_on_error(client.post(path)).json()
+    typer.echo(f"New Endpoint Key of {name}: {refreshed['key']}")

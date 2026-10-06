@@ -169,10 +169,13 @@ class Cluster:
         response.raise_for_status()
         return response.text
 
-    def send_chat_request(self, name: str, request: dict) -> None:
-        """Sends the Endpoint one chat completion request; raises unless vLLM answered it."""
+    def send_chat_request(self, name: str, request: dict, key: str) -> None:
+        """Sends the Endpoint one chat completion request with its key; raises unless answered."""
         url = (
             f"{endpoint_service_url(name, self.endpoint_environment.namespace)}/v1/chat/completions"
         )
         timeout = config.SMOKE_TEST_CHAT_TIMEOUT.total_seconds()
-        httpx.post(url, json={"model": name, **request}, timeout=timeout).raise_for_status()
+        headers = {"Authorization": f"Bearer {key}"}
+        httpx.post(
+            url, json={"model": name, **request}, headers=headers, timeout=timeout
+        ).raise_for_status()
