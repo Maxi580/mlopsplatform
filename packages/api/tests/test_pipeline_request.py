@@ -309,6 +309,7 @@ def test_settings_go_unchecked_without_a_usable_trainer_config_schema(
         ("settings", "trust_remote_code", True),
         ("lora", "task_type", "SEQ_CLS"),
         ("lora", "runtime_config", {"ephemeral_gpu_offload": True}),
+        ("lora", "velora_config", {"num_groups": 64}),
     ],
 )
 def test_blocked_settings_are_rejected(validate, block, setting, value):

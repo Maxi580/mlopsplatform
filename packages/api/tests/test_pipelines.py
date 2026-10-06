@@ -521,7 +521,8 @@ def test_schema_publishes_every_allowed_setting_once_shown_directly_or_one_click
     assert {"learning_rate", "bf16", "seed"} <= set(shown)
     assert "adam_beta1" in more
     lora = {*published["lora_settings"], *schema["more_lora_settings"]}
-    assert not {"use_dora", "task_type", "modules_to_save", "runtime_config"} & lora
+    left_out = {"use_dora", "task_type", "modules_to_save", "runtime_config", "velora_config"}
+    assert not left_out & lora
     assert published["lora_settings"]["r"]["enum"] == list(config.VLLM_LORA_RANKS)
 
 
