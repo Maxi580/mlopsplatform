@@ -116,13 +116,28 @@ RL_DEFAULTS = {
     "num_generations": 8,
     "vllm_gpu_memory_utilization": 0.3,
 }
+# The settings a form shows directly for every algorithm, its length setting after the batch; the
+# rest of its TRL config is one click away.
+SHOWN_SETTINGS = (
+    "learning_rate",
+    "num_train_epochs",
+    "per_device_train_batch_size",
+    "gradient_accumulation_steps",
+    "warmup_steps",
+    "lr_scheduler_type",
+    "weight_decay",
+    "max_grad_norm",
+    "bf16",
+    "seed",
+)
 # A new Adapter's settings where the Phase names none; RL trains with no dropout.
 LORA_DEFAULTS = {"r": 16, "lora_alpha": 32, "lora_dropout": 0.05, "target_modules": "all-linear"}
 RL_LORA_DEFAULTS = {**LORA_DEFAULTS, "lora_dropout": 0.0}
 # Phase algorithm -> its TRL trainer, row formats, required length setting, blocked settings, what
-# the platform sets, the defaults of its own and its Adapter's settings, and the metrics a Sweep may
-# optimize, the first by default: `eval_` ones are measured on its held-out rows after training,
-# the others are the last value training logged.
+# the platform sets, the defaults of its own and its Adapter's settings, the settings a form shows
+# directly besides SHOWN_SETTINGS, and the metrics a Sweep may optimize, the first by default:
+# `eval_` ones are measured on its held-out rows after training, the others are the last value
+# training logged.
 ALGORITHMS = {
     "sft": {
         "trainer": "SFTTrainer",
@@ -133,6 +148,7 @@ ALGORITHMS = {
         "blocked_settings": (*BLOCKED_TRAINER_SETTINGS, "chat_template_path"),
         "platform_settings": TRAINER_PLATFORM_SETTINGS,
         "default_settings": SFT_DEFAULTS,
+        "shown_settings": ("assistant_only_loss", "packing"),
         "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
@@ -147,6 +163,7 @@ ALGORITHMS = {
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
         "platform_settings": TRAINER_PLATFORM_SETTINGS,
         "default_settings": PREFERENCE_DEFAULTS,
+        "shown_settings": ("beta", "loss_type"),
         "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
@@ -161,6 +178,7 @@ ALGORITHMS = {
         "blocked_settings": BLOCKED_TRAINER_SETTINGS,
         "platform_settings": TRAINER_PLATFORM_SETTINGS,
         "default_settings": PREFERENCE_DEFAULTS,
+        "shown_settings": ("beta", "desirable_weight", "undesirable_weight"),
         "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": False,
@@ -183,6 +201,7 @@ ALGORITHMS = {
         ),
         "platform_settings": TRAINER_PLATFORM_SETTINGS,
         "default_settings": DISTILLATION_DEFAULTS,
+        "shown_settings": ("beta", "temperature"),
         "default_lora": LORA_DEFAULTS,
         "learns_from_teacher": True,
         "learns_from_rewards": False,
@@ -198,6 +217,14 @@ ALGORITHMS = {
         "blocked_settings": RL_BLOCKED_SETTINGS,
         "platform_settings": RL_PLATFORM_SETTINGS,
         "default_settings": RL_DEFAULTS,
+        "shown_settings": (
+            "num_generations",
+            "beta",
+            "loss_type",
+            "temperature",
+            "epsilon",
+            "vllm_gpu_memory_utilization",
+        ),
         "default_lora": RL_LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": True,
@@ -212,6 +239,13 @@ ALGORITHMS = {
         "blocked_settings": RL_BLOCKED_SETTINGS,
         "platform_settings": RL_PLATFORM_SETTINGS,
         "default_settings": {**RL_DEFAULTS, "beta": 0.05},
+        "shown_settings": (
+            "num_generations",
+            "beta",
+            "temperature",
+            "epsilon",
+            "vllm_gpu_memory_utilization",
+        ),
         "default_lora": RL_LORA_DEFAULTS,
         "learns_from_teacher": False,
         "learns_from_rewards": True,
@@ -239,6 +273,9 @@ SINGLE_GPU_BACKENDS = ("unsloth",)
 # LoraConfig settings the platform sets.
 LORA_CONFIG = "LoraConfig"
 BLOCKED_LORA_SETTINGS = ("task_type",)
+SHOWN_LORA_SETTINGS = ("r", "lora_alpha", "lora_dropout", "target_modules")
+# Forms leave out what an Adapter vLLM serves can't have; merged, the API still takes them.
+HIDDEN_LORA_SETTINGS = ("use_dora", "modules_to_save", "bias")
 LORA_PLATFORM_SETTINGS = {"task_type": "CAUSAL_LM"}
 # The largest Adapter rank vLLM serves; an Adapter merged into full weights may be larger.
 MAX_LORA_RANK = 512

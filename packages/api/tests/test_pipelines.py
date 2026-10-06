@@ -6,7 +6,7 @@ import pytest
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.hugging_face import HubModel
 from mlp_api.pipelines.reconciler import reconcile_pipelines
-from mlp_core import api_paths
+from mlp_core import api_paths, config
 
 from .test_datasets import CHAT, jsonl, upload
 from .test_models import register
@@ -460,3 +460,22 @@ def test_finetune_runs_offline_from_the_model_cache_and_reads_datasets_from_the_
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
     }
+
+
+@pytest.mark.parametrize("algorithm", list(config.ALGORITHMS))
+def test_schema_publishes_every_allowed_setting_once_shown_directly_or_one_click_away(
+    logged_in_api, algorithm
+):
+    schema = logged_in_api.get(api_paths.SCHEMA).json()
+    published = schema["algorithms"][algorithm]
+
+    shown, more = published["settings"], published["more_settings"]
+    blocked = config.ALGORITHMS[algorithm]["blocked_settings"]
+    assert published["length_setting"] in shown
+    assert not set(shown) & set(more)
+    assert not set(blocked) & (set(shown) | set(more))
+    assert {"learning_rate", "bf16", "seed"} <= set(shown)
+    assert "adam_beta1" in more
+    lora = {*published["lora_settings"], *schema["more_lora_settings"]}
+    assert not {"use_dora", "task_type", "modules_to_save"} & lora
+    assert published["lora_settings"]["r"]["enum"] == list(config.VLLM_LORA_RANKS)

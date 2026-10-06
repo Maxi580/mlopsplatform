@@ -1,4 +1,5 @@
 import { Plus, Trash2, X } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE, SWITCHED_ON } from "../config";
 import InfoBox from "../fields/InfoBox";
 import { formatBytes } from "../formatBytes";
@@ -45,6 +46,18 @@ export default function FormSectionView({
     const { [name]: _, ...fields } = values.fields;
     onChange({ ...values, fields });
   };
+  const fieldInput = (field: FormField) => (
+    <FieldInput
+      key={field.name}
+      field={field}
+      value={fieldValue(field, values)}
+      errors={errors[field.name]}
+      datasetReferences={datasetReferences}
+      benchmarks={benchmarks}
+      onChange={(value) => setField(field.name, value)}
+      onReset={field.name in values.fields ? () => resetField(field.name) : undefined}
+    />
+  );
 
   return (
     <>
@@ -58,24 +71,15 @@ export default function FormSectionView({
           ))}
         </div>
       )}
-      {editable.length > 0 && (
-        <div className="field-grid">
-          {editable.map((field) => (
-            <FieldInput
-              key={field.name}
-              field={field}
-              value={fieldValue(field, values)}
-              errors={errors[field.name]}
-              datasetReferences={datasetReferences}
-              benchmarks={benchmarks}
-              onChange={(value) => setField(field.name, value)}
-              onReset={field.name in values.fields ? () => resetField(field.name) : undefined}
-            />
-          ))}
-        </div>
-      )}
-      {section.moreSettings && (
-        <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />
+      {editable.length > 0 && <div className="field-grid">{editable.map(fieldInput)}</div>}
+      {section.allSettings?.length ? (
+        <AllSettings section={section} errors={errors} fieldInput={fieldInput}>
+          <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />
+        </AllSettings>
+      ) : (
+        section.moreSettings && (
+          <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />
+        )
       )}
       {section.entry && <Entries section={section} values={values} onChange={onChange} />}
       {subsections.flatMap(itemsOfList).map((subsection) => (
@@ -277,6 +281,45 @@ function ChoicesInput({
   );
 }
 
+// Every other setting of the section, collapsed and filterable by name, with custom keys last;
+// open while one of them has an error.
+function AllSettings({
+  section,
+  errors,
+  fieldInput,
+  children,
+}: {
+  section: FormSection;
+  errors: Record<string, string[]>;
+  fieldInput: (field: FormField) => ReactNode;
+  children: ReactNode;
+}) {
+  const [filter, setFilter] = useState("");
+  const settings = section.allSettings ?? [];
+  const failing = [...settings.map((field) => field.name), moreName(section.name)];
+  const shown = settings.filter((field) =>
+    lastPart(field.name).includes(filter.trim().toLowerCase().replaceAll(" ", "_")),
+  );
+
+  return (
+    <details className="all-settings" open={failing.some((name) => errors[name]) || undefined}>
+      <summary>
+        All settings <span className="muted">{settings.length}</span>
+      </summary>
+      <input
+        type="search"
+        className="settings-filter"
+        aria-label={`Filter ${section.title.toLowerCase()}`}
+        placeholder="Filter by name"
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+      />
+      <div className="field-grid">{shown.map(fieldInput)}</div>
+      {children}
+    </details>
+  );
+}
+
 // Settings the schema allows beyond its fields; values read as JSON when they can (0.1, true, [..]).
 function MoreSettings({
   section,
@@ -290,7 +333,7 @@ function MoreSettings({
 
   return (
     <div className="more-settings">
-      <p className="field-label">More settings</p>
+      <p className="field-label">Custom settings</p>
       {rows.map((row, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows are controlled inputs without an identity.
         <div key={index} className="more-row">

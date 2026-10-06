@@ -24,6 +24,8 @@ export type FormSection = {
   description?: string;
   // A map's entries, each a name and these fields, e.g. a Phase's rewards; in once one is named.
   entry?: FormSection;
+  // Every other setting it takes, shown one click away, e.g. the rest of SFTConfig.
+  allSettings?: FormField[];
 };
 
 export type FormField = {
@@ -146,15 +148,25 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
   const child = (key: string) => (name ? `${name}.${key}` : key);
   if ("const" in node) return { kind: "fixed", name, title, fixed: node.const };
   const description = schema.description ?? node.description;
-  // The settings of a Phase's algorithm, or of its Adapter, as the API publishes them; sent
-  // whenever they are shown, over the algorithm's defaults.
+  // The settings of a Phase's algorithm, or of its Adapter, as the API publishes them: the common
+  // ones shown, every other one a click away; sent whenever they are shown.
   if (schema.trainer_settings) {
     const algorithm = context.root.algorithms?.[algorithmAt(context, parent(name))];
-    const settings: Schema = algorithm?.[schema.trainer_settings] ?? {};
-    const children = Object.entries(settings).map(([key, value]) =>
-      nodeOf(value as Schema, context, child(key), key),
-    );
-    return { kind: "section", name, title, children, moreSettings: true, optional: false };
+    const fieldsOf = (settings: Schema = {}) =>
+      Object.entries(settings).map(([key, value]) =>
+        nodeOf(value as Schema, context, child(key), key),
+      );
+    const more = `more_${schema.trainer_settings}`;
+    return {
+      kind: "section",
+      name,
+      title,
+      children: fieldsOf(algorithm?.[schema.trainer_settings]),
+      allSettings: fieldsOf(algorithm?.[more] ?? context.root[more]) as FormField[],
+      moreSettings: true,
+      optional: false,
+      ...(description && { description }),
+    };
   }
   // A map of objects, e.g. rewards by name: entries of the value's fields. Pydantic writes a
   // map with a key pattern as patternProperties.
@@ -239,8 +251,9 @@ function defaultOf(
 ): string | undefined {
   const value = algorithmDefault ?? schema.default ?? node.default;
   if (value !== undefined && value !== null) return formatValue(value);
-  const required = !("default" in schema) && !schema.anyOf;
-  return required && field.kind === "choice" ? String(field.choices?.[0]) : undefined;
+  // A value the request must name, e.g. an algorithm, not a setting TRL defaults itself.
+  const mustChoose = !("default" in schema) && !schema.anyOf && schema.placeholder == null;
+  return mustChoose && node.enum ? String(field.choices?.[0]) : undefined;
 }
 
 /** What decides which of a section's fields apply, from what the API publishes: whether its
@@ -293,7 +306,8 @@ function resolveRef(node: Schema, defs: Schema): Schema {
 function nodesOf(node: FormNode, values?: FormValues): FormNode[] {
   if (node.kind !== "section") return [node];
   if (values && !isSwitchedOn(node, values)) return [];
-  return [node, ...node.children.flatMap((child) => nodesOf(child, values))];
+  const children = [...node.children, ...(node.allSettings ?? [])];
+  return [node, ...children.flatMap((child) => nodesOf(child, values))];
 }
 
 function nearestName(names: Set<string>, loc: string[]): [string | null, string[]] {

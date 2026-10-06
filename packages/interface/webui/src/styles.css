@@ -693,6 +693,21 @@ textarea[aria-invalid="true"] {
   gap: 4px;
 }
 
+.all-settings {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.all-settings summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.settings-filter {
+  max-width: 320px;
+}
+
 .reset-button {
   display: inline-flex;
   margin-left: auto;

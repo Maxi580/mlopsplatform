@@ -387,3 +387,55 @@ test("the Teacher API key and URL show only for a Teacher at an external API", a
   expect(screen.getByLabelText(/^API URL/)).toBeInTheDocument();
   expect(screen.getByLabelText(/^Teacher API key/)).toBeInTheDocument();
 });
+
+test("All settings filters by name, and a custom key still reaches the request", async () => {
+  const withSettings = {
+    type: "object",
+    properties: { finetune: { $ref: "#/$defs/Finetune" } },
+    $defs: {
+      Finetune: {
+        type: "object",
+        properties: { settings: { $ref: "#/$defs/Settings", trainer_settings: "settings" } },
+      },
+      Settings: { type: "object", additionalProperties: true, properties: {} },
+    },
+    algorithms: {
+      sft: {
+        settings: { learning_rate: { type: "number", title: "Learning rate", default: 2e-4 } },
+        more_settings: {
+          adam_beta1: { type: "number", title: "Adam beta1", placeholder: 0.9 },
+          optim: {
+            enum: ["adamw_torch", "adafactor"],
+            type: "string",
+            title: "Optim",
+            placeholder: "adamw_torch",
+          },
+        },
+      },
+    },
+  };
+  const calls = fakeApi({
+    "GET /schema": [200, withSettings],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 9 }],
+  });
+  renderApp("/pipelines/new");
+
+  await userEvent.type(await screen.findByLabelText(/^Filter settings/), "adam");
+  expect(screen.getByLabelText(/^Adam beta1/)).toHaveAttribute("placeholder", "0.9");
+  expect(screen.queryByLabelText(/^Optim/)).not.toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText(/^Adam beta1/), "0.95");
+  await userEvent.click(screen.getByRole("button", { name: /add setting/i }));
+  await userEvent.type(screen.getByLabelText("Setting"), "my_flag");
+  await userEvent.type(screen.getByLabelText("Value"), "true");
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+  await screen.findByText(/Submitted Pipeline 9/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.finetune.settings).toEqual({
+    learning_rate: 0.0002,
+    adam_beta1: 0.95,
+    my_flag: true,
+  });
+});

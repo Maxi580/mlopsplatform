@@ -1,5 +1,6 @@
 import {
   type FormNode,
+  type FormSection,
   type FormValues,
   fieldValue,
   pipelineForm,
@@ -475,3 +476,80 @@ test("a value typed into a field that then gets hidden isn't sent", () => {
     method: "full",
   });
 });
+
+// A Phase whose algorithm publishes its common settings, every other one, and LoRA's.
+const settingsSchema = {
+  type: "object",
+  properties: { phase: { $ref: "#/$defs/Phase" } },
+  $defs: {
+    Phase: {
+      type: "object",
+      properties: {
+        algorithm: { enum: ["sft"], type: "string" },
+        settings: { $ref: "#/$defs/PhaseSettings", trainer_settings: "settings" },
+        lora: {
+          anyOf: [{ $ref: "#/$defs/LoraSettings" }, { type: "null" }],
+          default: null,
+          trainer_settings: "lora_settings",
+        },
+      },
+    },
+    PhaseSettings: { type: "object", additionalProperties: true, properties: {} },
+    LoraSettings: { type: "object", additionalProperties: true, properties: {} },
+  },
+  algorithms: {
+    sft: {
+      settings: { learning_rate: { type: "number", default: 2e-4 } },
+      more_settings: {
+        optim: {
+          anyOf: [{ enum: ["adamw_torch", "adafactor"], type: "string" }, { type: "string" }],
+          placeholder: "adamw_torch",
+        },
+        packing_strategy: { type: "string", placeholder: "bfd" },
+        use_liger_kernel: { type: "boolean", placeholder: false },
+        adam_beta1: { type: "number", placeholder: 0.9 },
+      },
+      lora_settings: { r: { type: "integer", enum: [8, 16, 32], default: 16 } },
+    },
+  },
+  more_lora_settings: { use_rslora: { type: "boolean", placeholder: false } },
+};
+
+test("every other setting is one click away, typed, and sent only once edited", () => {
+  const values = { fields: { "phase.settings.adam_beta1": "0.95" }, more: {} };
+  const form = pipelineForm(settingsSchema, values);
+  const settings = flatten(form).find((node) => node.name === "phase.settings") as FormSection;
+
+  expect(settings.children.map((node) => node.name)).toEqual(["phase.settings.learning_rate"]);
+  expect(
+    Object.fromEntries(settings.allSettings!.map((field) => [lastName(field), field.kind])),
+  ).toEqual({
+    optim: "choice",
+    packing_strategy: "text",
+    use_liger_kernel: "choice",
+    adam_beta1: "number",
+  });
+  expect(pipelineRequestFromForm(form, values)).toEqual({
+    phase: {
+      algorithm: "sft",
+      settings: { learning_rate: 0.0002, adam_beta1: 0.95 },
+      lora: { r: 16 },
+    },
+  });
+});
+
+test("LoRA's rank is a choice of the ranks vLLM serves, sent as a number", () => {
+  const values = { fields: { "phase.lora.r": "32" }, more: {} };
+  const form = pipelineForm(settingsSchema, values);
+  const lora = flatten(form).find((node) => node.name === "phase.lora") as FormSection;
+
+  expect(lora.children[0]).toMatchObject({ kind: "choice", choices: [8, 16, 32] });
+  expect(lora.allSettings!.map(lastName)).toEqual(["use_rslora"]);
+  expect((pipelineRequestFromForm(form, values).phase as { lora: unknown }).lora).toEqual({
+    r: 32,
+  });
+});
+
+function lastName(node: FormNode): string {
+  return node.name.split(".").pop()!;
+}
