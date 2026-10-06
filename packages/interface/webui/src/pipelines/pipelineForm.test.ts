@@ -351,3 +351,127 @@ test("a Sweep's objective defaults to its algorithm's", () => {
     "sweep.objective.goal": "maximize",
   });
 });
+
+// A trimmed copy of the published schema's Phases and `distill`, with when each field applies.
+const appliesSchema = {
+  type: "object",
+  properties: {
+    distill: { anyOf: [{ $ref: "#/$defs/Distill" }, { type: "null" }], default: null },
+    finetune: { $ref: "#/$defs/Finetune" },
+  },
+  $defs: {
+    Distill: {
+      type: "object",
+      properties: {
+        teacher: { type: "string", references: ["hf:", "model:", "endpoint:"] },
+        api_url: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+          default: null,
+          applies_if: "external_teacher",
+        },
+      },
+    },
+    Finetune: {
+      type: "object",
+      properties: { phases: { type: "array", minItems: 2, items: { $ref: "#/$defs/Phase" } } },
+    },
+    Phase: {
+      type: "object",
+      properties: {
+        algorithm: { enum: ["sft", "distillation", "grpo"], type: "string" },
+        method: { enum: ["lora", "qlora", "full"], type: "string", default: "lora" },
+        lora: {
+          anyOf: [{ $ref: "#/$defs/LoraSettings" }, { type: "null" }],
+          default: null,
+          trainer_settings: "lora_settings",
+          applies_if: "new_adapter",
+        },
+        teacher: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+          default: null,
+          applies_if: "learns_from_teacher",
+        },
+        rewards: {
+          anyOf: [{ type: "object", additionalProperties: { type: "number" } }, { type: "null" }],
+          default: null,
+          applies_if: "learns_from_rewards",
+        },
+        output: {
+          enum: ["adapter", "merged"],
+          type: "string",
+          default: "adapter",
+          applies_if: "trains_adapter",
+        },
+      },
+    },
+    LoraSettings: { type: "object", additionalProperties: true, properties: {} },
+  },
+  adapter_methods: ["lora", "qlora"],
+  algorithms: Object.fromEntries(
+    [
+      ["sft", false, false],
+      ["distillation", true, false],
+      ["grpo", false, true],
+    ].map(([name, teacher, rewards]) => [
+      name,
+      {
+        learns_from_teacher: teacher,
+        learns_from_rewards: rewards,
+        lora_settings: { r: { type: "integer", default: 16 } },
+      },
+    ]),
+  ),
+};
+
+function shownNames(fields: Record<string, string>): string[] {
+  return flatten(pipelineForm(appliesSchema, { fields, more: {} })).map((node) => node.name);
+}
+
+test("a Phase shows a Teacher only for distillation, and rewards only for grpo", () => {
+  const sft = shownNames({});
+  expect(sft).not.toContain("finetune.phases.0.teacher");
+  expect(sft).not.toContain("finetune.phases.0.rewards");
+
+  const distillation = shownNames({ "finetune.phases.0.algorithm": "distillation" });
+  expect(distillation).toContain("finetune.phases.0.teacher");
+  expect(distillation).not.toContain("finetune.phases.0.rewards");
+  expect(shownNames({ "finetune.phases.0.algorithm": "grpo" })).toContain(
+    "finetune.phases.0.rewards",
+  );
+});
+
+test("full weights hide LoRA and output; a Phase continuing an Adapter has no LoRA of its own", () => {
+  const shown = shownNames({});
+  expect(shown).toContain("finetune.phases.0.lora.r");
+  expect(shown).toContain("finetune.phases.0.output");
+  expect(shown).not.toContain("finetune.phases.1.lora");
+  expect(shown).toContain("finetune.phases.1.output");
+
+  const full = shownNames({ "finetune.phases.0.method": "full" });
+  expect(full).not.toContain("finetune.phases.0.lora");
+  expect(full).not.toContain("finetune.phases.0.output");
+  // After full weights, the next Phase trains a new Adapter.
+  expect(full).toContain("finetune.phases.1.lora.r");
+  expect(shownNames({ "finetune.phases.0.output": "merged" })).toContain("finetune.phases.1.lora");
+});
+
+test("a Teacher at an external API shows its URL", () => {
+  expect(shownNames({ distill: "on", "distill.teacher": "hf:Qwen/Qwen3-8B" })).not.toContain(
+    "distill.api_url",
+  );
+  expect(shownNames({ distill: "on", "distill.teacher": "gpt-4o" })).toContain("distill.api_url");
+});
+
+test("a value typed into a field that then gets hidden isn't sent", () => {
+  const values = {
+    fields: { "finetune.phases.0.teacher": "hf:Qwen/Qwen3-8B", "finetune.phases.0.method": "full" },
+    more: {},
+  };
+
+  const request = pipelineRequestFromForm(pipelineForm(appliesSchema, values), values);
+
+  expect((request.finetune as { phases: object[] }).phases[0]).toEqual({
+    algorithm: "sft",
+    method: "full",
+  });
+});

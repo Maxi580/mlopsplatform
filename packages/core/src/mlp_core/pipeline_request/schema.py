@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from mlp_core.config import (
+    ADAPTER_METHODS,
     ALGORITHMS,
     ASSISTANT_ONLY_LOSS_INFOBOX,
     BACKENDS,
@@ -56,6 +57,12 @@ from mlp_core.pipeline_request.references import (
 EndpointReference = Annotated[str, Field(pattern=f"^endpoint:{ENDPOINT_NAME_PATTERN}$")]
 InClusterTeacher = TypeAdapter(BaseModelReference | ModelReference | EndpointReference)
 JobTeacher = TypeAdapter(BaseModelReference | ModelReference)
+
+
+# Clients show a field only where its trait holds, e.g. a Teacher only for an algorithm that learns
+# from one; GET /schema publishes what each trait depends on.
+def applies_if(trait: str, **extra) -> dict:
+    return {"json_schema_extra": {"applies_if": trait, **extra}}
 
 
 # A field's docstring is its `description` in the published schema, which clients show as help.
@@ -127,11 +134,17 @@ class PhaseConfiguration(Strict):
     )
     """The algorithm's TRL settings, over its defaults."""
     # After a kept Adapter, a Phase continues it as it is (#19); a new one takes the defaults.
-    lora: LoraSettings | None = Field(None, json_schema_extra={"trainer_settings": "lora_settings"})
+    lora: LoraSettings | None = Field(
+        None, **applies_if("new_adapter", trainer_settings="lora_settings")
+    )
     """A new Adapter's settings, from PEFT's LoraConfig, over the algorithm's defaults."""
-    teacher: str | None = None
+    teacher: str | None = Field(
+        None, **applies_if("learns_from_teacher", references=["hf:", "model:"])
+    )
     """The Base Model or Model Version whose token probabilities a `distillation` Phase learns."""
-    rewards: dict[RewardName, Reward] | None = Field(None, description=REWARDS_INFOBOX)
+    rewards: dict[RewardName, Reward] | None = Field(
+        None, description=REWARDS_INFOBOX, **applies_if("learns_from_rewards")
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -150,7 +163,7 @@ class PhaseConfiguration(Strict):
 
     def with_default_lora(self, continues_adapter: bool) -> None:
         """Gives a new Adapter its algorithm's LoRA defaults, unless the Phase names its own."""
-        if self.method != "full" and not continues_adapter and self.lora is None:
+        if self.method in ADAPTER_METHODS and not continues_adapter and self.lora is None:
             self.lora = LoraSettings(**ALGORITHMS[self.algorithm]["default_lora"])
 
     @model_validator(mode="after")
@@ -181,7 +194,7 @@ class PhaseConfiguration(Strict):
 
 
 class Phase(PhaseConfiguration):
-    output: Literal["adapter", "merged"] = "adapter"
+    output: Literal["adapter", "merged"] = Field("adapter", **applies_if("trains_adapter"))
     """`adapter` registers the Adapter; `merged` the Adapter merged into its base, as full weights
     that stand alone."""
     params_from: Literal[SWEEP_OUTPUT] | None = None
@@ -189,11 +202,11 @@ class Phase(PhaseConfiguration):
 
     @property
     def keeps_adapter(self) -> bool:
-        return self.method != "full" and self.output == "adapter"
+        return self.method in ADAPTER_METHODS and self.output == "adapter"
 
     @property
     def merges_adapter(self) -> bool:
-        return self.method != "full" and self.output == "merged"
+        return self.method in ADAPTER_METHODS and self.output == "merged"
 
     def with_parameters(self, parameters: dict) -> "Phase":
         """The Phase with `{settings: …, lora: …}` values over its own."""
@@ -355,10 +368,13 @@ class Distill(Strict):
 
     dataset: DatasetReference
     """The prompts to ask the Teacher: a Dataset of `prompt` rows."""
-    teacher: str
+    # Any other name is a model at `api_url`.
+    teacher: str = Field(json_schema_extra={"references": ["hf:", "model:", "endpoint:"]})
     """A Base Model or Model Version run here, a running Endpoint, or the name of a model at
     `api_url`."""
-    api_url: str | None = Field(None, pattern=r"^https?://\S+$", title="API URL")
+    api_url: str | None = Field(
+        None, pattern=r"^https?://\S+$", title="API URL", **applies_if("external_teacher")
+    )
     """An OpenAI-compatible API serving the Teacher, e.g. https://api.openai.com/v1; its key is
     the Teacher API key Secret."""
     tools: list[Tool] | None = None

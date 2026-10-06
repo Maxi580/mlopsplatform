@@ -70,7 +70,13 @@ function PipelineBuilder({
   // Which fields show, and their defaults, depend on the values, e.g. on a Phase's algorithm.
   const form = pipelineForm(schema, values);
   const request = pipelineRequestFromForm(form, values);
-  const filledSecrets = Object.fromEntries(Object.entries(secrets).filter(([, value]) => value));
+  // A Teacher's API key only where the Teacher is a model at an API.
+  const slots = Object.entries(SECRET_SLOTS).filter(
+    ([slot]) => slot !== "teacher_api_key" || hasField(form, "distill.api_url"),
+  );
+  const filledSecrets = Object.fromEntries(
+    slots.flatMap(([slot]) => (secrets[slot] ? [[slot, secrets[slot]]] : [])),
+  );
   const downloads = useDownloadPreview(request, filledSecrets);
 
   useEffect(() => {
@@ -182,7 +188,7 @@ function PipelineBuilder({
             </h2>
             <p className="muted">Sent beside the request and kept only while the Pipeline runs.</p>
             <div className="field-grid">
-              {Object.entries(SECRET_SLOTS).map(([slot, label]) => (
+              {slots.map(([slot, label]) => (
                 <SecretInput
                   key={slot}
                   slot={slot}
@@ -309,6 +315,12 @@ function SecretInput(props: {
         </button>
       </div>
     </div>
+  );
+}
+
+function hasField(section: FormSection, name: string): boolean {
+  return section.children.some(
+    (node) => node.name === name || (node.kind === "section" && hasField(node, name)),
   );
 }
 

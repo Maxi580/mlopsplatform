@@ -348,3 +348,42 @@ test("a Phase starts with its algorithm's defaults, and × puts a changed one ba
   expect(screen.getByLabelText(/^Epochs/)).toHaveValue("1");
   expect(screen.queryByRole("button", { name: "Back to 1" })).not.toBeInTheDocument();
 });
+
+test("the Teacher API key and URL show only for a Teacher at an external API", async () => {
+  const withDistill = {
+    type: "object",
+    properties: {
+      distill: { anyOf: [{ $ref: "#/$defs/Distill" }, { type: "null" }], default: null },
+    },
+    $defs: {
+      Distill: {
+        type: "object",
+        properties: {
+          teacher: { type: "string", title: "Teacher", references: ["hf:", "model:"] },
+          api_url: {
+            anyOf: [{ type: "string" }, { type: "null" }],
+            default: null,
+            title: "API URL",
+            applies_if: "external_teacher",
+          },
+        },
+      },
+    },
+  };
+  fakeApi({
+    "GET /schema": [200, withDistill],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+  });
+  renderApp("/pipelines/new");
+
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run distill/i }));
+  await userEvent.type(screen.getByLabelText(/^Teacher/), "hf:Qwen/Qwen3-8B");
+  expect(screen.queryByLabelText(/^API URL/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Teacher API key/)).not.toBeInTheDocument();
+
+  await userEvent.clear(screen.getByLabelText(/^Teacher/));
+  await userEvent.type(screen.getByLabelText(/^Teacher/), "gpt-4o");
+  expect(screen.getByLabelText(/^API URL/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/^Teacher API key/)).toBeInTheDocument();
+});

@@ -10,6 +10,7 @@ def published_schema() -> dict:
     schema["algorithms"] = {
         name: published_algorithm(algorithm) for name, algorithm in config.ALGORITHMS.items()
     }
+    schema["adapter_methods"] = config.ADAPTER_METHODS
     return schema
 
 

@@ -26,6 +26,20 @@ def test_schema_publishes_the_pipeline_request_and_its_basic_values(logged_in_ap
     assert schema["$defs"]["Sweep"]["properties"]["trials"]["default"] == 10
 
 
+def test_schema_publishes_when_each_field_applies(logged_in_api):
+    schema = logged_in_api.get(api_paths.SCHEMA).json()
+
+    phase = schema["$defs"]["Phase"]["properties"]
+    assert phase["teacher"]["applies_if"] == "learns_from_teacher"
+    assert phase["rewards"]["applies_if"] == "learns_from_rewards"
+    assert phase["lora"]["applies_if"] == "new_adapter"
+    assert phase["output"]["applies_if"] == "trains_adapter"
+    assert schema["$defs"]["Distill"]["properties"]["api_url"]["applies_if"] == "external_teacher"
+    assert schema["adapter_methods"] == ["lora", "qlora"]
+    assert schema["algorithms"]["distillation"]["learns_from_teacher"] is True
+    assert schema["algorithms"]["grpo"]["learns_from_rewards"] is True
+
+
 def test_schema_publishes_each_algorithms_defaults(logged_in_api):
     algorithms = logged_in_api.get(api_paths.SCHEMA).json()["algorithms"]
 

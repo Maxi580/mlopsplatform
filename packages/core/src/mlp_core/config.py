@@ -222,6 +222,7 @@ ALGORITHMS = {
 # Training backend -> Phase algorithm -> the weight methods it trains it with; validation rejects
 # every other combination, with no fallback to another backend (#23).
 WEIGHT_METHODS = ("lora", "qlora", "full")
+ADAPTER_METHODS = ("lora", "qlora")
 BACKENDS = {
     "hf": dict.fromkeys(ALGORITHMS, WEIGHT_METHODS),
     # Its vLLM shares weights with LoRA Adapters only, and it loads no Teacher.

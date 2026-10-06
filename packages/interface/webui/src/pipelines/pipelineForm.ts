@@ -179,9 +179,13 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
     // E.g. a Sweep's objective, whose defaults its algorithm publishes as `objective`.
     const algorithm = context.root.algorithms?.[algorithmAt(context, parent(name))];
     const inner = { ...context, defaults: algorithm?.[schema.algorithm_defaults] };
-    const children = Object.entries(node.properties ?? {}).map(([key, value]) =>
-      nodeOf(value as Schema, inner, child(key), key),
-    );
+    // Only the fields that apply, e.g. a Teacher only where the algorithm learns from one.
+    const children = Object.entries(node.properties ?? {})
+      .filter(([, value]) => {
+        const trait = (value as Schema).applies_if;
+        return !trait || traitsOf(node, context, name)[trait];
+      })
+      .map(([key, value]) => nodeOf(value as Schema, inner, child(key), key));
     return {
       kind: "section",
       name,
@@ -237,6 +241,31 @@ function defaultOf(
   if (value !== undefined && value !== null) return formatValue(value);
   const required = !("default" in schema) && !schema.anyOf;
   return required && field.kind === "choice" ? String(field.choices?.[0]) : undefined;
+}
+
+/** What decides which of a section's fields apply, from what the API publishes: whether its
+ * algorithm learns from a Teacher or from rewards, whether its method trains an Adapter, a new one
+ * or the previous Phase's, and whether its Teacher is a model at an external API. */
+function traitsOf(node: Schema, context: Context, path: string): Record<string, boolean> {
+  const siblingValue = (at: string, key: string) =>
+    context.values.fields[`${at}.${key}`] ?? String(node.properties?.[key]?.default ?? "");
+  const adapterMethods: string[] = context.root.adapter_methods ?? [];
+  const trainsAdapter = (at: string) => adapterMethods.includes(siblingValue(at, "method"));
+  // A Phase after one that keeps its Adapter continues that Adapter.
+  const index = Number(lastPart(path));
+  const previous = index > 0 ? `${parent(path)}.${index - 1}` : null;
+  const continuesAdapter =
+    previous !== null && trainsAdapter(previous) && siblingValue(previous, "output") === "adapter";
+  const teacher = siblingValue(path, "teacher").trim();
+  const references: string[] = node.properties?.teacher?.references ?? [];
+  const algorithm = context.root.algorithms?.[algorithmAt(context, path)] ?? {};
+  return {
+    learns_from_teacher: !!algorithm.learns_from_teacher,
+    learns_from_rewards: !!algorithm.learns_from_rewards,
+    trains_adapter: trainsAdapter(path),
+    new_adapter: trainsAdapter(path) && !continuesAdapter,
+    external_teacher: !!teacher && !references.some((prefix) => teacher.startsWith(prefix)),
+  };
 }
 
 // The algorithm a Phase or Sweep at `path` trains with: chosen, else the first.
