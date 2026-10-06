@@ -112,10 +112,8 @@ test("every schema value becomes a field of the right kind", () => {
     moreSettings: true,
   });
   expect(byName.finetune).toMatchObject({ kind: "section", moreSettings: false });
-  expect(byName["finetune.from"]).toMatchObject({
-    kind: "text",
-    pattern: expect.stringMatching(/^\^model:/),
-  });
+  expect(byName["finetune.from"]).toMatchObject({ kind: "model", references: ["model:"] });
+  expect(byName["finetune.base_model"]).toMatchObject({ kind: "model", references: ["hf:"] });
 });
 
 test("the form's values become a Pipeline Request", () => {

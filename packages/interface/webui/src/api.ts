@@ -18,10 +18,11 @@ export async function callApi<T>(
   path: string,
   body?: unknown,
   method = body === undefined ? "GET" : "POST",
+  headers: Record<string, string> = {},
 ): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: body === undefined ? {} : { "content-type": "application/json" },
+    headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
   });

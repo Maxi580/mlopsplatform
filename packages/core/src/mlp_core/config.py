@@ -637,6 +637,29 @@ DISTILLATION_ROW_FORMAT = "prompt_completion"
 # Suffixes of the Kubernetes sizes the settings use, e.g. `object_store_size: 100Gi`.
 QUANTITY_SUFFIXES = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "Pi": 2**50}
 
+# Base Models
+# Popular open models a Base Model picker offers before anything is typed, with their parameters
+# and whether Hugging Face gates them behind accepting a licence.
+CURATED_BASE_MODELS = (
+    {"name": "Qwen/Qwen3-0.6B", "parameters": 751_632_384, "gated": False},
+    {"name": "Qwen/Qwen3-1.7B", "parameters": 2_031_739_904, "gated": False},
+    {"name": "Qwen/Qwen3-4B", "parameters": 4_022_468_096, "gated": False},
+    {"name": "Qwen/Qwen3-8B", "parameters": 8_190_735_360, "gated": False},
+    {"name": "Qwen/Qwen2.5-7B-Instruct", "parameters": 7_615_616_512, "gated": False},
+    {"name": "meta-llama/Llama-3.2-1B-Instruct", "parameters": 1_235_814_400, "gated": True},
+    {"name": "meta-llama/Llama-3.2-3B-Instruct", "parameters": 3_212_749_824, "gated": True},
+    {"name": "meta-llama/Llama-3.1-8B-Instruct", "parameters": 8_030_261_248, "gated": True},
+    {"name": "google/gemma-3-1b-it", "parameters": 999_885_952, "gated": True},
+    {"name": "google/gemma-3-4b-it", "parameters": 4_300_079_472, "gated": True},
+    {"name": "microsoft/Phi-4-mini-instruct", "parameters": 3_836_021_760, "gated": False},
+    {"name": "HuggingFaceTB/SmolLM3-3B", "parameters": 3_075_098_624, "gated": False},
+    {"name": "mistralai/Mistral-7B-Instruct-v0.3", "parameters": 7_248_023_552, "gated": True},
+)
+# A search asks the Hub for this many models matching one word, and answers those of them that
+# hold every word, at most BASE_MODEL_SEARCH_RESULTS.
+BASE_MODEL_SEARCH_SCAN = 100
+BASE_MODEL_SEARCH_RESULTS = 20
+
 # Model Cache
 # Where the Model Cache holds Base Models: the Hugging Face cache, HF_HOME/hub.
 HUB_DIRECTORY = "hub"

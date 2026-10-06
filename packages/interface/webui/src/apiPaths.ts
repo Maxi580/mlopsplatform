@@ -13,6 +13,7 @@ export const datasetVersion = (name: string, version: number) =>
   `/datasets/${name}/versions/${version}`;
 export const datasetDownload = (name: string, version: number) =>
   `${datasetVersion(name, version)}/download`;
+export const BASE_MODELS = "/base-models";
 export const MODELS = "/models";
 export const modelVersion = (name: string, version: number) =>
   `/models/${name}/versions/${version}`;

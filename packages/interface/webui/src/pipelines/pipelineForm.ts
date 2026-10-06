@@ -9,7 +9,8 @@ export type FieldKind =
   | "code"
   | "list"
   | "integer"
-  | "number";
+  | "number"
+  | "model";
 
 export type FormSection = {
   kind: "section";
@@ -45,6 +46,9 @@ export type FormField = {
   placeholder?: string;
   // A number's bounds, which its steppers never cross.
   bounds?: Bounds;
+  // The References a model or Dataset field takes, e.g. `hf:`, `model:`, and the outputs of
+  // the Stages switched on, e.g. `@finetune`.
+  references?: string[];
 };
 
 export type FormNode = FormSection | FormField;
@@ -222,14 +226,36 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
     );
     return { kind: "section", name, title, children, moreSettings: false, optional, list };
   }
-  const field = { ...fieldOf(node, context.defs, types), name, title };
-  const fallback = defaultOf(schema, node, field, context.defaults?.[lastPart(name)]);
+  const references = referencesOf(schema, node, context);
+  const field = references.some((reference) => MODEL_REFERENCES.includes(reference))
+    ? { kind: "model" as const, references, name, title }
+    : { ...fieldOf(node, context.defs, types), name, title };
+  // A Stage's output, the last one switched on, e.g. `@quantize` before `@finetune`.
+  const output = references.filter((reference) => reference.startsWith("@")).at(-1);
+  const fallback = defaultOf(schema, node, field, context.defaults?.[lastPart(name)] ?? output);
   return {
     ...field,
     ...(description && { description }),
     ...(fallback !== undefined && { default: fallback }),
     ...(schema.placeholder != null && { placeholder: formatValue(schema.placeholder) }),
   };
+}
+
+const MODEL_REFERENCES = ["hf:", "model:", "endpoint:"];
+
+/** The References the field takes, by its patterns or its `references`, and the outputs it
+ * takes of the Stages that are switched on. */
+function referencesOf(schema: Schema, node: Schema, context: Context): string[] {
+  const options: Schema[] = node.anyOf ?? [node];
+  const prefixes = options.flatMap((option) => option.pattern?.match(/^\^(\w+:)/)?.[1] ?? []);
+  const outputs = options.flatMap(
+    (option) => option.enum ?? ("const" in option ? [option.const] : []),
+  );
+  const switchedOn = (output: string) => context.values.fields[output.slice(1)] === SWITCHED_ON;
+  return [
+    ...(schema.references ?? prefixes),
+    ...outputs.filter((output) => String(output).startsWith("@") && switchedOn(output)),
+  ];
 }
 
 function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {

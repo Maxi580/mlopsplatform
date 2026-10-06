@@ -73,6 +73,9 @@ class FakeHuggingFace:
         self.sizes = {}
         # Dataset repo -> its files.
         self.dataset_files = {}
+        # What every search finds, and each search's word and token.
+        self.search_results = []
+        self.searches = []
 
     def find_model(self, repo, revision, token):
         self.lookups.append((repo, revision, token))
@@ -86,6 +89,10 @@ class FakeHuggingFace:
 
     def dataset_file(self, repo, commit, path):
         return self.dataset_files[repo][path]
+
+    def search_models(self, word, token):
+        self.searches.append((word, token))
+        return self.search_results
 
     def download_model(self, repo, commit, directory):
         for path, content in self.files[repo].items():

@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { REWARD_TEMPLATE } from "../config";
 import { fakeApi, renderApp } from "../testApi";
@@ -554,4 +554,121 @@ test("the last Phase can't be deleted", async () => {
   renderApp("/pipelines/new");
 
   expect(await screen.findByRole("button", { name: "Delete Phase 1" })).toBeDisabled();
+});
+
+const HF = "^hf:[w.-]+/[w.-]+(@[w.-]+)?$";
+const MODEL = "^model:[a-z0-9][a-z0-9.-]*(@d+)?$";
+const modelsSchema = {
+  type: "object",
+  properties: {
+    finetune: { anyOf: [{ $ref: "#/$defs/Finetune" }, { type: "null" }], default: null },
+    quantize: { anyOf: [{ $ref: "#/$defs/Quantize" }, { type: "null" }], default: null },
+  },
+  $defs: {
+    Finetune: {
+      type: "object",
+      properties: {
+        base_model: {
+          anyOf: [{ type: "string", pattern: HF }, { type: "null" }],
+          default: null,
+          title: "Base Model",
+        },
+      },
+    },
+    Quantize: {
+      type: "object",
+      properties: {
+        model: {
+          anyOf: [
+            { type: "string", pattern: HF },
+            { type: "string", pattern: MODEL },
+            { const: "@finetune", type: "string" },
+            { type: "null" },
+          ],
+          default: null,
+          title: "Model",
+        },
+      },
+    },
+  },
+};
+
+function modelsApi() {
+  return fakeApi({
+    "GET /schema": [200, modelsSchema],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "GET /models": [
+      200,
+      [{ name: "qwen-sft", versions: [{ version: 2, tags: { weights: "full" } }] }],
+    ],
+    "GET /base-models?search=": [
+      200,
+      [{ name: "Qwen/Qwen3-8B", reference: "hf:Qwen/Qwen3-8B", parameters: 8.19e9, gated: false }],
+    ],
+    "GET /base-models?search=qwen%207b": [
+      200,
+      [
+        {
+          name: "Qwen/Qwen2.5-7B-Instruct",
+          reference: "hf:Qwen/Qwen2.5-7B-Instruct",
+          parameters: 7.6e9,
+          gated: false,
+        },
+        {
+          name: "Qwen/Qwen-7B-Gated",
+          reference: "hf:Qwen/Qwen-7B-Gated",
+          parameters: 7.7e9,
+          gated: true,
+        },
+      ],
+    ],
+  });
+}
+
+function groupsOf(listbox: HTMLElement): string[] {
+  return [...listbox.querySelectorAll("[role=group]")].map((group) => group.ariaLabel ?? "");
+}
+
+test("a Base Model field lists curated models, then the Hub's for what is typed", async () => {
+  modelsApi();
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+
+  await userEvent.click(screen.getByRole("combobox", { name: /^Base Model/ }));
+  const listbox = await screen.findByRole("listbox");
+  expect(groupsOf(listbox)).toEqual(["Open source"]);
+  expect(await within(listbox).findByText("Qwen/Qwen3-8B")).toBeInTheDocument();
+
+  await userEvent.type(screen.getByRole("combobox", { name: /^Base Model/ }), "qwen 7b");
+  const gated = await screen.findByRole("option", { name: /Qwen-7B-Gated/ });
+  expect(gated).toHaveTextContent("7.7B");
+  expect(within(gated).getByRole("img", { name: "gated" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: /Qwen2.5-7B-Instruct/ })).toHaveTextContent("7.6B");
+});
+
+test("each model field offers its groups, and Quantize preselects Finetune's output", async () => {
+  const calls = modelsApi();
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("checkbox", { name: /run finetune/i }));
+  await userEvent.click(screen.getByRole("checkbox", { name: /run quantize/i }));
+
+  const model = screen.getByRole("combobox", { name: /^Model/ });
+  expect(model).toHaveValue("@finetune");
+  await userEvent.click(screen.getByRole("button", { name: "Clear Model" }));
+  expect(model).toHaveValue("");
+  await userEvent.click(model);
+  expect(groupsOf(await screen.findByRole("listbox"))).toEqual([
+    "This Pipeline",
+    "Our models",
+    "Open source",
+  ]);
+  expect(screen.getByRole("option", { name: /Output of Finetune/ })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: /qwen-sft@2/ })).toHaveTextContent("full weights");
+
+  // The keyboard alone picks: down to Our models' first entry, then Enter.
+  await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(model).toHaveValue("model:qwen-sft@2");
+  // The browser asks the API for Hub models, never huggingface.co itself.
+  expect(calls.map((call) => call.route)).toContain("GET /base-models?search=");
 });

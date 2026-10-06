@@ -56,3 +56,5 @@ export const REWARD_TEMPLATE = `def reward(sample, item):
     # e.g. return float(item["answer"] in sample["output_text"])
     return 0.0
 `;
+// How long a model picker waits after a keystroke before it searches the Hub.
+export const MODEL_SEARCH_DELAY_MS = 300;

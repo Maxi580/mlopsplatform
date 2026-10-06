@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
 import { ENDPOINTS, MODEL_CACHE, MODELS, SCHEMA, stopEndpoint } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
+import { NO_CATALOG } from "../fields/catalog";
 import FormSectionView from "../pipelines/FormSectionView";
 import {
   type FieldError,
@@ -274,7 +275,7 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
         section={form}
         values={values}
         errors={errors?.byName ?? {}}
-        datasetReferences={[]}
+        catalog={NO_CATALOG}
         onChange={setValues}
       />
       <SpeculatorPicker

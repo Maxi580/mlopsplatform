@@ -12,9 +12,20 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
-import { BENCHMARKS, DATASETS, PIPELINES, SCHEMA, VALIDATE_PIPELINE } from "../apiPaths";
+import {
+  BENCHMARKS,
+  DATASETS,
+  ENDPOINTS,
+  MODELS,
+  PIPELINES,
+  SCHEMA,
+  VALIDATE_PIPELINE,
+} from "../apiPaths";
 import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS, SWITCHED_ON } from "../config";
+import type { Catalog } from "../fields/catalog";
 import { formatBytes } from "../formatBytes";
+import type { Endpoint } from "../serving/endpoint";
+import type { Dataset, RegisteredModel } from "../storage/storage";
 import FormSectionView, { SectionTitle } from "./FormSectionView";
 import type { Benchmark } from "./pipeline";
 import {
@@ -27,7 +38,6 @@ import {
   placeErrors,
 } from "./pipelineForm";
 
-type Dataset = { name: string; versions: { version: number }[] };
 type PlacedErrors = ReturnType<typeof placeErrors>;
 type Download = { kind: string; ref: string; bytes: number | null; cached: boolean };
 type DownloadPreview = { downloads: Download[]; download_bytes: number; cached_bytes: number };
@@ -37,14 +47,13 @@ const NO_ERRORS: PlacedErrors = { byName: {}, unplaced: [] };
 export default function NewPipelinePage() {
   const schema = useApi<Record<string, unknown>>(SCHEMA).data;
   const datasets = useApi<Dataset[]>(DATASETS).data;
+  const models = useApi<RegisteredModel[]>(MODELS).data;
+  const endpoints = useApi<Endpoint[]>(ENDPOINTS).data;
   const benchmarks = useApi<Benchmark[]>(BENCHMARKS).data;
+  const catalog = { datasets: datasets ?? [], models: models ?? [], endpoints: endpoints ?? [] };
 
   return schema ? (
-    <PipelineBuilder
-      schema={schema}
-      datasetReferences={datasetReferences(datasets ?? [])}
-      benchmarks={benchmarks ?? []}
-    />
+    <PipelineBuilder schema={schema} catalog={catalog} benchmarks={benchmarks ?? []} />
   ) : (
     <p className="muted loading">
       <LoaderCircle className="spin" size={16} /> Loading the Pipeline Request schema…
@@ -54,11 +63,11 @@ export default function NewPipelinePage() {
 
 function PipelineBuilder({
   schema,
-  datasetReferences,
+  catalog,
   benchmarks,
 }: {
   schema: Record<string, unknown>;
-  datasetReferences: string[];
+  catalog: Catalog;
   benchmarks: Benchmark[];
 }) {
   const navigate = useNavigate();
@@ -123,7 +132,8 @@ function PipelineBuilder({
   const sectionProps = {
     values,
     errors: errors.byName,
-    datasetReferences,
+    // A model search also finds what the user's token opens.
+    catalog: { ...catalog, hfToken: filledSecrets.hf_token },
     benchmarks,
     onChange: setValues,
   };
@@ -322,13 +332,6 @@ function hasField(section: FormSection, name: string): boolean {
   return section.children.some(
     (node) => node.name === name || (node.kind === "section" && hasField(node, name)),
   );
-}
-
-function datasetReferences(datasets: Dataset[]): string[] {
-  return datasets.flatMap((dataset) => [
-    `dataset:${dataset.name}`,
-    ...dataset.versions.map((version) => `dataset:${dataset.name}@${version.version}`),
-  ]);
 }
 
 function loadDraft(): FormValues {

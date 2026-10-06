@@ -69,6 +69,29 @@ class HuggingFace:
     def download_model(self, repo: str, commit: str, directory: Path) -> None:
         snapshot_download(repo, revision=commit, local_dir=directory, token=False)
 
+    def search_models(self, word: str, token: str | None) -> list[dict]:
+        """Text-generation models whose name holds the word, most downloaded first, each with
+        its parameters and whether it is gated; none if Hugging Face fails."""
+        hub = HfApi(token=token or False)
+        try:
+            found = hub.list_models(
+                search=word,
+                pipeline_tag="text-generation",
+                sort="downloads",
+                limit=config.BASE_MODEL_SEARCH_SCAN,
+                expand=["safetensors", "gated"],
+            )
+            return [
+                {
+                    "name": model.id,
+                    "parameters": model.safetensors.total if model.safetensors else None,
+                    "gated": bool(model.gated),
+                }
+                for model in found
+            ]
+        except (HfHubHTTPError, httpx.HTTPError):
+            return []
+
 
 def pin_base_model(hugging_face: HuggingFace, reference: str, token: str | None) -> str:
     """The `hf:` Reference pinned to a commit; ValueError saying why it can't be."""
@@ -87,3 +110,19 @@ def find_base_model(
     if model.needs_remote_code:
         raise ValueError(f"{repo} needs remote code, which never runs here")
     return base_model_reference(repo, model.commit), model
+
+
+def search_base_models(hugging_face: HuggingFace, search: str, token: str | None) -> list[dict]:
+    """The curated Base Models while `search` is empty, else the Hub's text-generation models
+    whose name holds every word of it, most downloaded first; each with its Reference."""
+    words = search.lower().split()
+    if words:
+        # The Hub matches one word, so the longest asks for the fewest others to drop.
+        found = hugging_face.search_models(max(words, key=len), token)
+        models = [m for m in found if all(word in m["name"].lower() for word in words)]
+    else:
+        models = config.CURATED_BASE_MODELS
+    return [
+        {**model, "reference": f"hf:{model['name']}"}
+        for model in models[: config.BASE_MODEL_SEARCH_RESULTS]
+    ]

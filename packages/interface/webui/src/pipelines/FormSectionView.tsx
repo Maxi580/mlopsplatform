@@ -1,7 +1,9 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE, SWITCHED_ON } from "../config";
+import type { Catalog } from "../fields/catalog";
 import InfoBox from "../fields/InfoBox";
+import ModelPicker from "../fields/ModelPicker";
 import NumberInput from "../fields/NumberInput";
 import { formatBytes } from "../formatBytes";
 import type { Benchmark } from "./pipeline";
@@ -21,7 +23,8 @@ type Props = {
   section: FormSection;
   values: FormValues;
   errors: Record<string, string[]>;
-  datasetReferences: string[];
+  // What the model and Dataset pickers offer.
+  catalog: Catalog;
   // The catalog the benchmark picker describes its choices from.
   benchmarks?: Benchmark[];
   onChange: (values: FormValues) => void;
@@ -32,7 +35,7 @@ export default function FormSectionView({
   section,
   values,
   errors,
-  datasetReferences,
+  catalog,
   benchmarks = [],
   onChange,
 }: Props) {
@@ -55,7 +58,7 @@ export default function FormSectionView({
       field={field}
       value={fieldValue(field, values)}
       errors={errors[field.name]}
-      datasetReferences={datasetReferences}
+      catalog={catalog}
       benchmarks={benchmarks}
       onChange={(value) => setField(field.name, value)}
       onReset={field.name in values.fields ? () => resetField(field.name) : undefined}
@@ -84,7 +87,9 @@ export default function FormSectionView({
           <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />
         )
       )}
-      {section.entry && <Entries section={section} values={values} onChange={onChange} />}
+      {section.entry && (
+        <Entries section={section} values={values} catalog={catalog} onChange={onChange} />
+      )}
       {/* A list's items (e.g. Phase 1, Phase 2) show directly, unless it is switched on. */}
       {subsections.map((subsection) =>
         subsection.list && !subsection.optional ? listItems(subsection) : boxed(subsection),
@@ -121,7 +126,7 @@ export default function FormSectionView({
               section={subsection}
               values={values}
               errors={errors}
-              datasetReferences={datasetReferences}
+              catalog={catalog}
               benchmarks={benchmarks}
               onChange={onChange}
             />
@@ -167,7 +172,7 @@ function FieldInput({
   field,
   value,
   errors,
-  datasetReferences,
+  catalog,
   benchmarks,
   onChange,
   onReset,
@@ -175,7 +180,7 @@ function FieldInput({
   field: FormField;
   value: string;
   errors?: string[];
-  datasetReferences: string[];
+  catalog: Catalog;
   benchmarks: Benchmark[];
   onChange: (value: string) => void;
   // Given once the field was edited: puts its default back, or empties it if it has none.
@@ -218,7 +223,18 @@ function FieldInput({
           </button>
         )}
       </div>
-      {field.kind === "code" ? (
+      {field.kind === "model" ? (
+        <ModelPicker
+          id={field.name}
+          label={field.title}
+          value={value}
+          references={field.references ?? []}
+          catalog={catalog}
+          invalid={!!errors}
+          describedBy={common["aria-describedby"]}
+          onChange={onChange}
+        />
+      ) : field.kind === "code" ? (
         <textarea {...common} className="code-input" rows={3} spellCheck={false} />
       ) : field.kind === "choice" ? (
         <select {...common}>
@@ -254,7 +270,7 @@ function FieldInput({
       )}
       {isDataset && (
         <datalist id="dataset-references">
-          {datasetReferences.map((reference) => (
+          {datasetReferences(catalog).map((reference) => (
             <option key={reference} value={reference} />
           ))}
         </datalist>
@@ -383,7 +399,7 @@ function MoreSettings({
   values,
   errors,
   onChange,
-}: Omit<Props, "datasetReferences" | "benchmarks">) {
+}: Omit<Props, "catalog" | "benchmarks">) {
   const rows = values.more[section.name] ?? [];
   const setRows = (next: typeof rows) =>
     onChange({ ...values, more: { ...values.more, [section.name]: next } });
@@ -436,7 +452,12 @@ function MoreSettings({
 }
 
 // A map's entries, e.g. rewards: each a name and the fields of the map's values.
-function Entries({ section, values, onChange }: Pick<Props, "section" | "values" | "onChange">) {
+function Entries({
+  section,
+  values,
+  catalog,
+  onChange,
+}: Pick<Props, "section" | "values" | "catalog" | "onChange">) {
   const entry = section.entry!;
   const rows = values.entries?.[section.name] ?? [];
   const setRows = (next: Entry[]) =>
@@ -469,7 +490,7 @@ function Entries({ section, values, onChange }: Pick<Props, "section" | "values"
                   key={field.name}
                   field={{ ...field, name: `${name}.${field.name}` }}
                   value={row.fields[field.name] ?? ""}
-                  datasetReferences={[]}
+                  catalog={catalog}
                   benchmarks={[]}
                   onChange={(value) =>
                     setRow(index, { ...row, fields: { ...row.fields, [field.name]: value } })
@@ -511,6 +532,13 @@ function FieldErrors({ id, messages }: { id?: string; messages?: string[] }) {
       {messages.join("; ")}
     </p>
   );
+}
+
+function datasetReferences(catalog: Catalog): string[] {
+  return catalog.datasets.flatMap((dataset) => [
+    `dataset:${dataset.name}`,
+    ...dataset.versions.map((version) => `dataset:${dataset.name}@${version.version}`),
+  ]);
 }
 
 function lastPart(name: string): string {
