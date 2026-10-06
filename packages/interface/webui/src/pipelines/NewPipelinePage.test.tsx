@@ -423,7 +423,10 @@ test("All settings filters by name, and a custom key still reaches the request",
   renderApp("/pipelines/new");
 
   await userEvent.type(await screen.findByLabelText(/^Filter settings/), "adam");
-  expect(screen.getByLabelText(/^Adam beta1/)).toHaveAttribute("placeholder", "0.9");
+  expect(screen.getByLabelText(/^Adam beta1/)).toHaveAttribute(
+    "placeholder",
+    "Not set (default: 0.9)",
+  );
   expect(screen.queryByLabelText(/^Optim/)).not.toBeInTheDocument();
   await userEvent.type(screen.getByLabelText(/^Adam beta1/), "0.95");
   await userEvent.click(screen.getByRole("button", { name: /add setting/i }));
@@ -437,6 +440,68 @@ test("All settings filters by name, and a custom key still reaches the request",
     learning_rate: 0.0002,
     adam_beta1: 0.95,
     my_flag: true,
+  });
+});
+
+test("All settings send nothing until set; a yes/no starts on Not set", async () => {
+  const withSettings = {
+    type: "object",
+    properties: { finetune: { $ref: "#/$defs/Finetune" } },
+    $defs: {
+      Finetune: {
+        type: "object",
+        properties: {
+          settings: { $ref: "#/$defs/Settings", trainer_settings: "settings" },
+          lora: { $ref: "#/$defs/Settings", trainer_settings: "lora_settings" },
+        },
+      },
+      Settings: { type: "object", additionalProperties: true, properties: {} },
+    },
+    algorithms: {
+      sft: {
+        settings: { learning_rate: { type: "number", title: "Learning rate", default: 2e-4 } },
+        more_settings: {
+          use_liger_kernel: { type: "boolean", title: "Use liger kernel", placeholder: false },
+          seed: { type: "integer", title: "Seed", placeholder: 42 },
+        },
+        lora_settings: { r: { type: "integer", title: "R", default: 16 } },
+      },
+    },
+    more_lora_settings: {
+      use_rslora: { type: "boolean", title: "Use rslora", placeholder: false },
+      lora_dropout: { type: "number", title: "Lora dropout", placeholder: 0 },
+    },
+  };
+  const calls = fakeApi({
+    "GET /schema": [200, withSettings],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 9 }],
+  });
+  renderApp("/pipelines/new");
+
+  const liger = await screen.findByLabelText(/^Use liger kernel/);
+  expect(liger).toHaveValue("");
+  expect(liger).toHaveDisplayValue("Not set (default: false)");
+  expect(screen.getByLabelText(/^Use rslora/)).toHaveDisplayValue("Not set (default: false)");
+  expect(screen.getByLabelText(/^Seed/)).toHaveAttribute("placeholder", "Not set (default: 42)");
+  expect(screen.getByLabelText(/^Lora dropout/)).toHaveAttribute(
+    "placeholder",
+    "Not set (default: 0)",
+  );
+  await userEvent.selectOptions(screen.getByLabelText(/^Use rslora/), "true");
+  await userEvent.selectOptions(liger, "true");
+  await userEvent.selectOptions(liger, "");
+  expect(screen.getByLabelText(/^Learning rate/)).not.toHaveAttribute("placeholder");
+  await userEvent.type(screen.getByLabelText(/^Seed/), "7");
+  await userEvent.clear(screen.getByLabelText(/^Seed/));
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+  await screen.findByText(/Submitted Pipeline 9/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.finetune).toEqual({
+    settings: { learning_rate: 0.0002 },
+    lora: { r: 16, use_rslora: true },
   });
 });
 

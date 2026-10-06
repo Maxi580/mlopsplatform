@@ -704,6 +704,15 @@ input:is([type="checkbox"], [type="radio"]):focus-visible {
   outline-offset: 2px;
 }
 
+/* An All settings choice left not set greys like a placeholder; its options keep the normal colour. */
+select.not-set {
+  color: var(--text-muted);
+}
+
+select.not-set option {
+  color: var(--text);
+}
+
 input[aria-invalid="true"],
 select[aria-invalid="true"],
 textarea[aria-invalid="true"] {

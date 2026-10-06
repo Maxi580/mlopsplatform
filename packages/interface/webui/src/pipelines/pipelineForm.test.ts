@@ -507,12 +507,75 @@ const settingsSchema = {
         packing_strategy: { type: "string", placeholder: "bfd" },
         use_liger_kernel: { type: "boolean", placeholder: false },
         adam_beta1: { type: "number", placeholder: 0.9 },
+        // Shapes that once reached TRL unasked: objects, defaults inside, a choice without default.
+        lr_scheduler_kwargs: {
+          anyOf: [{ additionalProperties: true, type: "object" }, { type: "null" }],
+          placeholder: {},
+        },
+        accelerator_config: {
+          type: "object",
+          properties: { split_batches: { type: "boolean", default: false } },
+        },
+        report_to: { enum: ["none", "mlflow"], type: "string" },
       },
       lora_settings: { r: { type: "integer", enum: [8, 16, 32], default: 16 } },
     },
   },
-  more_lora_settings: { use_rslora: { type: "boolean", placeholder: false } },
+  more_lora_settings: {
+    use_rslora: { type: "boolean", placeholder: false },
+    loftq_config: { anyOf: [{ type: "object" }, { type: "object" }], placeholder: {} },
+  },
 };
+
+test("a Phase left alone sends only its shown settings, none of All settings", () => {
+  const values = { fields: {}, more: {} };
+  const form = pipelineForm(settingsSchema, values);
+
+  expect(pipelineRequestFromForm(form, values)).toEqual({
+    phase: { algorithm: "sft", settings: { learning_rate: 0.0002 }, lora: { r: 16 } },
+  });
+});
+
+test("All settings start not set: no default, the library's shown as a placeholder", () => {
+  const form = pipelineForm(settingsSchema);
+  const sections = flatten(form).filter((node) => node.kind === "section") as FormSection[];
+  const settings = sections.flatMap((section) => section.allSettings ?? []);
+
+  expect(settings.filter((field) => "default" in field)).toEqual([]);
+  expect(Object.fromEntries(settings.map((field) => [lastName(field), field.placeholder]))).toEqual(
+    {
+      optim: "adamw_torch",
+      packing_strategy: "bfd",
+      use_liger_kernel: "false",
+      adam_beta1: "0.9",
+      lr_scheduler_kwargs: "{}",
+      accelerator_config: undefined,
+      report_to: undefined,
+      use_rslora: "false",
+      loftq_config: "{}",
+    },
+  );
+});
+
+test("an object setting is typed as JSON and sent as what it reads", () => {
+  const values = {
+    fields: {
+      "phase.settings.lr_scheduler_kwargs": '{"min_lr": 0.00001}',
+      "phase.settings.use_liger_kernel": "true",
+      "phase.lora.loftq_config": "{}",
+    },
+    more: {},
+  };
+  const form = pipelineForm(settingsSchema, values);
+  const phase = pipelineRequestFromForm(form, values).phase as { settings: unknown; lora: unknown };
+
+  expect(phase.settings).toEqual({
+    learning_rate: 0.0002,
+    lr_scheduler_kwargs: { min_lr: 0.00001 },
+    use_liger_kernel: true,
+  });
+  expect(phase.lora).toEqual({ r: 16, loftq_config: {} });
+});
 
 test("every other setting is one click away, typed, and sent only once edited", () => {
   const values = { fields: { "phase.settings.adam_beta1": "0.95" }, more: {} };
@@ -527,6 +590,9 @@ test("every other setting is one click away, typed, and sent only once edited", 
     packing_strategy: "text",
     use_liger_kernel: "choice",
     adam_beta1: "number",
+    lr_scheduler_kwargs: "json",
+    accelerator_config: "json",
+    report_to: "choice",
   });
   expect(pipelineRequestFromForm(form, values)).toEqual({
     phase: {
@@ -543,7 +609,7 @@ test("LoRA's rank is a choice of the ranks vLLM serves, sent as a number", () =>
   const lora = flatten(form).find((node) => node.name === "phase.lora") as FormSection;
 
   expect(lora.children[0]).toMatchObject({ kind: "choice", choices: [8, 16, 32] });
-  expect(lora.allSettings!.map(lastName)).toEqual(["use_rslora"]);
+  expect(lora.allSettings!.map(lastName)).toEqual(["use_rslora", "loftq_config"]);
   expect((pipelineRequestFromForm(form, values).phase as { lora: unknown }).lora).toEqual({
     r: 32,
   });

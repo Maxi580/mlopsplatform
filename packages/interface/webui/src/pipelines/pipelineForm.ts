@@ -8,6 +8,7 @@ export type FieldKind =
   | "text"
   | "code"
   | "list"
+  | "json"
   | "integer"
   | "number"
   | "model"
@@ -161,8 +162,7 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
   // A value the schema fixes is sent as is; an optional one (e.g. `params_from: @sweep`) is a choice.
   if ("const" in node && !optional) return { kind: "fixed", name, title, fixed: node.const };
   const description = schema.description ?? node.description;
-  // The settings of a Phase's algorithm, or of its Adapter, as the API publishes them: the common
-  // ones shown, every other one a click away; sent whenever they are shown.
+  // A Phase's algorithm or Adapter settings: common ones shown and sent, the rest only once set.
   if (schema.trainer_settings) {
     const algorithm = context.root.algorithms?.[algorithmAt(context, parent(name))];
     const fieldsOf = (settings: Schema = {}) =>
@@ -175,7 +175,10 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
       name,
       title,
       children: fieldsOf(algorithm?.[schema.trainer_settings]),
-      allSettings: fieldsOf(algorithm?.[more] ?? context.root[more]) as FormField[],
+      allSettings: Object.entries(algorithm?.[more] ?? context.root[more] ?? {}).map(
+        ([key, value]) =>
+          unsetSetting(nodeOf(value as Schema, context, child(key), key), value as Schema),
+      ),
       moreSettings: true,
       optional: false,
       ...(description && { description }),
@@ -248,6 +251,19 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
     ...(description && { description }),
     ...(fallback !== undefined && { default: fallback }),
     ...(schema.placeholder != null && { placeholder: formatValue(schema.placeholder) }),
+  };
+}
+
+/** An All settings field without a default, so it starts not set; an object is typed as JSON. */
+function unsetSetting(node: FormNode, schema: Schema): FormField {
+  const { default: _, ...field } =
+    node.kind === "section"
+      ? { kind: "json" as const, name: node.name, title: node.title, description: node.description }
+      : node;
+  const libraryDefault = schema.placeholder ?? schema.default;
+  return {
+    ...field,
+    ...(libraryDefault != null && { placeholder: formatValue(libraryDefault) }),
   };
 }
 
@@ -449,12 +465,13 @@ function readValue(field: FormField, text: string): unknown {
   if (field.kind === "choice")
     return field.choices?.find((choice) => String(choice) === text) ?? text;
   if (field.kind === "choices") return text.split(",");
+  if (field.kind === "json") return readSetting(text);
   if (field.kind === "list" && text.includes(","))
     return text.split(",").map((part) => part.trim());
   return text;
 }
 
-// A more setting is JSON when it reads as JSON (numbers, true, lists), else text.
+// A more setting or a JSON field is JSON when it reads as JSON (numbers, true, lists), else text.
 function readSetting(text: string): unknown {
   try {
     return JSON.parse(text);

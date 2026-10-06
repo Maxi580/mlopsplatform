@@ -55,10 +55,11 @@ export default function FormSectionView({
     const { [name]: _, ...fields } = values.fields;
     onChange({ ...values, fields });
   };
-  const fieldInput = (field: FormField) => (
+  const fieldInput = (field: FormField, notSet = false) => (
     <FieldInput
       key={field.name}
       field={field}
+      notSet={notSet}
       value={fieldValue(field, values)}
       errors={errors[field.name]}
       catalog={catalog}
@@ -80,7 +81,9 @@ export default function FormSectionView({
           ))}
         </div>
       )}
-      {editable.length > 0 && <div className="field-grid">{editable.map(fieldInput)}</div>}
+      {editable.length > 0 && (
+        <div className="field-grid">{editable.map((field) => fieldInput(field))}</div>
+      )}
       {section.allSettings?.length ? (
         <AllSettings section={section} errors={errors} fieldInput={fieldInput}>
           <MoreSettings section={section} values={values} errors={errors} onChange={onChange} />
@@ -204,8 +207,11 @@ function FieldInput({
   benchmarks,
   onChange,
   onReset,
+  notSet,
 }: {
   field: FormField;
+  // An All settings field, sent only once set; empty, it says so and shows the default greyed.
+  notSet?: boolean;
   value: string;
   errors?: string[];
   catalog: Catalog;
@@ -216,6 +222,8 @@ function FieldInput({
 }) {
   if (field.kind === "choices")
     return <ChoicesInput {...{ field, value, errors, benchmarks, onChange }} />;
+  const unset = `Not set${field.placeholder ? ` (default: ${field.placeholder})` : ""}`;
+  const placeholder = notSet ? unset : field.placeholder;
   const prefix = Object.keys(REFERENCE_PLACEHOLDERS).find((start) =>
     field.pattern?.startsWith(start),
   );
@@ -283,9 +291,9 @@ function FieldInput({
       ) : field.kind === "code" ? (
         <textarea {...common} className="code-input" rows={3} spellCheck={false} />
       ) : field.kind === "choice" ? (
-        <select {...common}>
+        <select {...common} className={notSet && !value ? "not-set" : undefined}>
           <option value="">
-            {field.placeholder ? `${field.placeholder} (default)` : "Choose…"}
+            {notSet ? unset : field.placeholder ? `${field.placeholder} (default)` : "Choose…"}
           </option>
           {field.choices?.map((choice) => (
             <option key={String(choice)}>{String(choice)}</option>
@@ -298,14 +306,14 @@ function FieldInput({
           from={field.default ?? field.placeholder}
           bounds={field.bounds}
           integer={field.kind === "integer"}
-          placeholder={field.placeholder}
+          placeholder={placeholder}
           onChange={onChange}
         />
       ) : (
         <input
           {...common}
           placeholder={
-            field.placeholder ??
+            placeholder ??
             (field.kind === "list"
               ? "one value, or several separated by commas"
               : prefix && REFERENCE_PLACEHOLDERS[prefix])
@@ -417,7 +425,7 @@ function AllSettings({
 }: {
   section: FormSection;
   errors: Record<string, string[]>;
-  fieldInput: (field: FormField) => ReactNode;
+  fieldInput: (field: FormField, notSet: boolean) => ReactNode;
   children: ReactNode;
 }) {
   const [filter, setFilter] = useState("");
@@ -440,7 +448,7 @@ function AllSettings({
         value={filter}
         onChange={(event) => setFilter(event.target.value)}
       />
-      <div className="field-grid">{shown.map(fieldInput)}</div>
+      <div className="field-grid">{shown.map((field) => fieldInput(field, true))}</div>
       {children}
     </details>
   );
