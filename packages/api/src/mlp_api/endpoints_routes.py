@@ -97,11 +97,21 @@ def refresh_key(name: str, request: Request) -> dict:
 # Traefik's forwardAuth on every Endpoint route, which it sends the request's path and headers.
 @router.get(api_paths.VERIFY_ENDPOINT_KEY)
 def verify_endpoint_key(request: Request) -> dict:
+    """Nothing, if the bearer token is the Endpoint Key of the Endpoint the request goes to; 401."""
+    # 1. The Endpoint's UUID, the path segment after the route prefix.
     path = urlsplit(request.headers.get("x-forwarded-uri", "")).path
     prefix = config.ENDPOINT_PATH_PREFIX.split("{")[0]
-    endpoint_uuid = path.removeprefix(prefix).split("/")[0] if path.startswith(prefix) else ""
+    endpoint_uuid = ""
+    if path.startswith(prefix):
+        endpoint_uuid = path.removeprefix(prefix).split("/")[0]
+
+    # 2. The bearer token.
     authorization = request.headers.get("authorization", "")
-    key = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+    key = ""
+    if authorization.startswith("Bearer "):
+        key = authorization.removeprefix("Bearer ")
+
+    # 3. Whether it opens that Endpoint.
     if not endpoint_key_opens(request.app.state.engine, endpoint_uuid, key):
         raise HTTPException(401, "This Endpoint needs its Endpoint Key as the bearer token")
     return {}
