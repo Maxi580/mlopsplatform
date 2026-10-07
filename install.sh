@@ -360,6 +360,7 @@ print_urls() {
 install_yq
 load_values "$ROOT/deploy/values-$ENVIRONMENT.yaml"
 [[ -n $(value .domain) ]] || die "set domain in deploy/values-$ENVIRONMENT.yaml"
+log "Found a $ARCH host: installing $ARCH host tools and building images for linux/$ARCH"
 confirm_upgrade
 prepare_host
 build_images
