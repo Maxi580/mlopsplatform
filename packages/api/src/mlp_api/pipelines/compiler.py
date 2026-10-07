@@ -145,24 +145,23 @@ def compile_smoke_test(
     fetched: list[str],
     sandbox: bool,
     cases: dict[str, PipelineRequest],
+    adapter_users: dict[str, str],
     steps: StepEnvironment,
     settings: Settings,
 ) -> dict:
-    """The Smoke Test's Kubeflow pipeline spec: one node per case, named after it, in a chain."""
+    """The Smoke Test's Kubeflow pipeline spec: fetch, then one node per case, named after it."""
 
     @dsl.pipeline(name=name)
     def pipeline():
-        previous = fetch_step(fetched, steps, settings).set_display_name("fetch")
-        # Each later case runs once the one before it ended, even if that failed; no data passes
-        # between them.
+        # Every case runs once fetch passed, side by side, so one failing can't stop the others;
+        # KFP's backend turns ignore_upstream_failure into an exit hook, so cases can't chain.
+        fetched_task = fetch_step(fetched, steps, settings).set_display_name("fetch")
         if sandbox:
-            previous = (
-                sandbox_step(steps, settings)
-                .set_display_name(config.SMOKE_TEST_SANDBOX_CASE)
-                .after(previous)
-                .ignore_upstream_failure()
+            sandbox_step(steps, settings).set_display_name(config.SMOKE_TEST_SANDBOX_CASE).after(
+                fetched_task
             )
         gpus = settings.gpus_per_stage
+        case_tasks = {}
         for case, request in cases.items():
             # A case of several steps (distill, sweep, Phases) passes or fails with its last one,
             # and each of its steps runs only once the one before it passed.
@@ -198,10 +197,12 @@ def compile_smoke_test(
                 case_steps.append(("evaluate", evaluate_step(pipeline_id, request, steps, gpus)))
             for step_name, task in case_steps[:-1]:
                 task.set_display_name(f"{case}-{step_name}")
-            case_steps[0][1].after(previous).ignore_upstream_failure()
-            for (_, earlier), (_, task) in pairwise(case_steps):
+            case_tasks[case] = case_steps[-1][1].set_display_name(case)
+            for (_, earlier), (_, task) in pairwise([(None, fetched_task), *case_steps]):
                 task.after(earlier)
-            previous = case_steps[-1][1].set_display_name(case)
+            # An Adapter's quantize or evaluate case needs the finetune case that registers it.
+            if case in adapter_users:
+                case_steps[0][1].after(case_tasks[adapter_users[case]])
 
     return pipeline_run_spec(pipeline)
 

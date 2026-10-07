@@ -85,24 +85,23 @@ def start(api, selection=None):
     return api.post(api_paths.SMOKE_TEST_CUSTOM, json=selection)
 
 
-def nodes(cluster) -> list[dict]:
-    """The submitted run's tasks in the order they run."""
-    tasks = cluster.submitted["pipeline_spec"]["pipeline_spec"]["root"]["dag"]["tasks"]
-    ordered, previous = [], None
-    while len(ordered) < len(tasks):
-        [task] = [t for t in tasks.values() if t.get("dependentTasks", [None])[0] == previous]
-        ordered.append(task)
-        previous = next(key for key, t in tasks.items() if t is task)
-    return ordered
+def nodes(cluster) -> dict[str, dict]:
+    return cluster.submitted["pipeline_spec"]["pipeline_spec"]["root"]["dag"]["tasks"]
 
 
 def node(cluster, case: str) -> dict:
-    [found] = [task for task in nodes(cluster) if task["taskInfo"]["name"] == case]
+    [found] = [task for task in nodes(cluster).values() if task["taskInfo"]["name"] == case]
     return found
 
 
-def case_names(cluster) -> list[str]:
-    return [task["taskInfo"]["name"] for task in nodes(cluster)]
+def case_names(cluster) -> set[str]:
+    return {task["taskInfo"]["name"] for task in nodes(cluster).values()}
+
+
+def waits_for(cluster, case: str) -> set[str]:
+    """The names of the nodes the case's node waits for."""
+    tasks = nodes(cluster)
+    return {tasks[key]["taskInfo"]["name"] for key in node(cluster, case).get("dependentTasks", [])}
 
 
 def smoke_test(api) -> dict:
@@ -119,7 +118,7 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
     started = response.json()
     assert started["name"].startswith("smoketest-")
     assert started["kubeflow_run_url"] == "/pipeline/#/runs/details/run-1"
-    assert case_names(cluster) == [
+    assert case_names(cluster) == {
         "fetch",
         "sandbox",
         *GRID_CASES,
@@ -144,24 +143,29 @@ def test_the_complete_smoke_test_runs_fetch_then_every_finetune_case(
         "evaluate-evalscope",
         "evaluate-tool-calling",
         "evaluate-performance",
-    ]
+    }
     assert cluster.submitted["display_name"] == started["name"]
 
 
-def test_every_case_runs_even_after_the_one_before_it_failed(
+def test_every_case_runs_once_fetch_passed_whatever_the_others_do(
     logged_in_api, qwen_on_the_hub, cluster
 ):
     start(logged_in_api)
 
-    # Only a step that follows its case's earlier step waits for that to pass.
-    first, *later = nodes(cluster)
-    assert "triggerPolicy" not in first
-    waiting = ("distill-tools", "sft-sweep", "sft-dpo-chain", "sft-lora-dpo-full-hf", "resume")
-    for waits in waiting:
-        assert "triggerPolicy" not in node(cluster, waits)
-        later.remove(node(cluster, waits))
-    assert later
-    assert all(t["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED" for t in later)
+    # Only a later step of a case, or a case using another's Adapter, waits for more than fetch.
+    waiting = {
+        "distill-tools": {"distill-tools-distill"},
+        "sft-sweep": {"sft-sweep-sweep"},
+        "sft-dpo-chain": {"sft-dpo-chain-finetune-sft"},
+        "sft-lora-dpo-full-hf": {"sft-lora-dpo-full-hf-finetune-sft"},
+        "resume": {"resume-interrupted"},
+        "quantize-adapter": {"fetch", "sft-lora-hf"},
+        "evaluate-adapter": {"fetch", "sft-lora-hf"},
+    }
+    assert waits_for(cluster, "fetch") == set()
+    for case in case_names(cluster) - {"fetch"}:
+        assert waits_for(cluster, case) == waiting.get(case, {"fetch"}), case
+    assert all("triggerPolicy" not in task for task in nodes(cluster).values())
 
 
 @pytest.mark.parametrize(
@@ -203,7 +207,7 @@ def test_a_custom_smoke_test_runs_only_the_selected_cases(
     response = start(logged_in_api, selection)
 
     assert response.status_code == 202, response.text
-    assert case_names(cluster) == cases
+    assert case_names(cluster) == set(cases)
     assert list(smoke_test(logged_in_api)["cases"]) == cases
 
 
@@ -286,7 +290,7 @@ def test_the_distill_case_distills_with_the_base_model_and_a_tool_then_trains_on
     started = start(logged_in_api, {"distill": True}).json()
     name = started["name"]
 
-    assert case_names(cluster) == ["fetch", "distill-tools-distill", "distill-tools"]
+    assert case_names(cluster) == {"fetch", "distill-tools-distill", "distill-tools"}
     assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "distill-tools"]
     distill, finetune = node(cluster, "distill-tools-distill"), node(cluster, "distill-tools")
     request = json.loads(distill["inputs"]["parameters"]["request"]["runtimeValue"]["constant"])
@@ -306,7 +310,7 @@ def test_the_sweep_case_sweeps_two_trials_then_trains_with_the_best_parameters(
     started = start(logged_in_api, {"sweep": True}).json()
     name = started["name"]
 
-    assert case_names(cluster) == ["fetch", "sft-sweep-sweep", "sft-sweep"]
+    assert case_names(cluster) == {"fetch", "sft-sweep-sweep", "sft-sweep"}
     assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "sft-sweep"]
     sweep, finetune = node(cluster, "sft-sweep-sweep"), node(cluster, "sft-sweep")
     request = json.loads(sweep["inputs"]["parameters"]["request"]["runtimeValue"]["constant"])
@@ -339,7 +343,7 @@ def test_the_chain_case_trains_sft_then_dpo_on_the_sft_phases_model_version(
 ):
     name = start(logged_in_api, {"chain": True}).json()["name"]
 
-    assert case_names(cluster) == ["fetch", "sft-dpo-chain-finetune-sft", "sft-dpo-chain"]
+    assert case_names(cluster) == {"fetch", "sft-dpo-chain-finetune-sft", "sft-dpo-chain"}
     assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "sft-dpo-chain"]
     sft, dpo = node(cluster, "sft-dpo-chain-finetune-sft"), node(cluster, "sft-dpo-chain")
     request = json.loads(sft["inputs"]["parameters"]["request"]["runtimeValue"]["constant"])
@@ -356,7 +360,7 @@ def test_the_resume_case_stops_a_phase_after_its_first_checkpoint_then_continues
 ):
     smoke_test_id = start(logged_in_api, {"resume": True}).json()["id"]
 
-    assert case_names(cluster) == ["fetch", "resume-interrupted", "resume"]
+    assert case_names(cluster) == {"fetch", "resume-interrupted", "resume"}
     assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", "resume"]
     interrupted, resumed = (
         {
@@ -383,7 +387,7 @@ def test_a_full_case_trains_every_weight_the_others_an_adapter_one_assistant_onl
 ):
     start(logged_in_api, {"finetune": {"phases": ["sft"], "backends": ["hf"]}})
 
-    trained = {case: phases(cluster, case)[0] for case in case_names(cluster)[1:]}
+    trained = {case: phases(cluster, case)[0] for case in case_names(cluster) - {"fetch"}}
     assert {case: phase["method"] for case, phase in trained.items()} == {
         "sft-lora-hf": "lora",
         "sft-qlora-hf": "qlora",
@@ -400,7 +404,7 @@ def test_the_weight_cases_try_rslora_merged_outputs_and_a_full_phase_after_an_ad
 ):
     start(logged_in_api, {"weights": True})
 
-    assert case_names(cluster) == ["fetch", *WEIGHT_CASES]
+    assert case_names(cluster) == {"fetch", *WEIGHT_CASES}
     rslora, qlora, dora = (phases(cluster, case)[0] for case in WEIGHT_CASES[:3])
     assert (rslora["output"], rslora["lora"]["use_rslora"]) == ("adapter", True)
     assert (qlora["method"], qlora["output"]) == ("qlora", "merged")
@@ -444,8 +448,8 @@ def test_the_sandbox_case_runs_snippets_in_the_sandbox_from_a_pipeline_step(
 ):
     start(logged_in_api, {"sandbox": True})
 
-    _, sandbox = nodes(cluster)
-    assert sandbox["triggerPolicy"]["strategy"] == "ALL_UPSTREAM_TASKS_COMPLETED"
+    assert waits_for(cluster, "sandbox") == {"fetch"}
+    sandbox = node(cluster, "sandbox")
     pipeline = cluster.submitted["pipeline_spec"]["pipeline_spec"]
     container = pipeline["deploymentSpec"]["executors"]["exec-sandbox"]["container"]
     assert container["command"] == ["mlp-stage", "check-sandbox"]

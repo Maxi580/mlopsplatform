@@ -147,6 +147,11 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             fetched,
             selection.sandbox,
             requests,
+            {
+                case: made_by
+                for case, made_by in {**quantizations, **evaluations}.items()
+                if made_by
+            },
             state.cluster.steps,
             state.settings,
         )
