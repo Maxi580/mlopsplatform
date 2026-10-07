@@ -85,9 +85,9 @@ def smoke_test(
         selection["speculate"] = True
     with api_client() as client:
         if selection:
-            response = client.post(api_paths.SMOKE_TEST_CUSTOM, json=selection)
+            response = client.post(api_paths.SMOKE_TEST_CUSTOM, json=selection, timeout=None)
         else:
-            response = client.post(api_paths.SMOKE_TEST_COMPLETE)
+            response = client.post(api_paths.SMOKE_TEST_COMPLETE, timeout=None)
     started = exit_on_error(response).json()
     typer.echo(f"Started Smoke Test {started['name']}")
     typer.echo(f"Kubeflow: {load_profile()['url']}{started['kubeflow_run_url']}")
