@@ -12,6 +12,10 @@ COPY --from=uv /uv /bin/uv
 # Triton compiles a small C helper the first time it runs a kernel (torch's own ops, Unsloth).
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
+# It links with -lcuda, but on WSL the driver comes as libcuda.so.1 only; this libcuda.so says to
+# take libcuda.so.1 from the driver's directory instead. Hosts that have libcuda.so never reach it.
+RUN mkdir /opt/libcuda && echo 'INPUT(libcuda.so.1)' > /opt/libcuda/libcuda.so
+ENV LIBRARY_PATH=/opt/libcuda
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 # Dependencies before the code, so a code change rebuilds only the last layers.
