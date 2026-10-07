@@ -1,3 +1,5 @@
 ignored:
   # Base images come in as build args, tagged in deploy/values.yaml.
   - DL3006
+  # apt versions belong to that base image's distro, so pinning them breaks each base image bump.
+  - DL3008
