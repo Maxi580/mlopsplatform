@@ -28,7 +28,7 @@ install_nvidia_container_toolkit() {
 
 install_gvisor() {
   curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+  echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
     | sudo tee /etc/apt/sources.list.d/gvisor.list >/dev/null
   sudo apt-get update -q && sudo apt-get install -y -q runsc
 }
@@ -36,7 +36,7 @@ install_gvisor() {
 install_nerdctl() {
   local version
   version=$(value .versions.nerdctl)
-  curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v$version/nerdctl-$version-linux-amd64.tar.gz" \
+  curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v$version/nerdctl-$version-linux-$ARCH.tar.gz" \
     | sudo tar -xz -C /usr/local/bin nerdctl
 }
 
@@ -44,7 +44,7 @@ install_nerdctl() {
 install_buildkit() {
   local version
   version=$(value .versions.buildkit)
-  curl -fsSL "https://github.com/moby/buildkit/releases/download/$version/buildkit-$version.linux-amd64.tar.gz" \
+  curl -fsSL "https://github.com/moby/buildkit/releases/download/$version/buildkit-$version.linux-$ARCH.tar.gz" \
     | sudo tar -xz -C /usr/local
   update_root_file /etc/systemd/system/buildkit.service <<EOF || true
 [Unit]
@@ -62,8 +62,8 @@ EOF
 }
 
 install_helm() {
-  curl -fsSL "https://get.helm.sh/helm-$(value .versions.helm)-linux-amd64.tar.gz" \
-    | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+  curl -fsSL "https://get.helm.sh/helm-$(value .versions.helm)-linux-$ARCH.tar.gz" \
+    | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-$ARCH/helm
 }
 
 # Asked before anything changes, so answering no leaves the platform as it was.

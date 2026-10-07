@@ -4,14 +4,14 @@ A Kubernetes-native platform to distill, finetune, quantize, evaluate and serve 
 
 ## Install
 
-On a WSL or Ubuntu host with an NVIDIA driver (`nvidia-smi` must work) and systemd:
+On a WSL or Ubuntu host, Intel/AMD (amd64) or ARM (arm64), with an NVIDIA driver (`nvidia-smi` must work) and systemd:
 
 ```sh
 git clone https://github.com/Maxi580/mlopsplatform && cd mlopsplatform
 ./install.sh dev
 ```
 
-It installs only missing host prerequisites (k3s, nerdctl + BuildKit, NVIDIA container toolkit, gVisor, helm, yq), builds our images, deploys the platform and prints its URLs and the path to `ca.crt`. Import `ca.crt` into your OS trust store once. The NVIDIA driver must be 580 or newer (`versions.minNvidiaDriver`).
+It installs only missing host prerequisites (k3s, nerdctl + BuildKit, NVIDIA container toolkit, gVisor, helm, yq), builds our images, deploys the platform and prints its URLs and the path to `ca.crt`. Import `ca.crt` into your OS trust store once. On an ARM host where an older `install.sh` installed amd64 tools, delete them once first: `sudo rm /usr/local/bin/{nerdctl,yq,helm,buildctl} /usr/local/bin/buildkit*`. The NVIDIA driver must be 580 or newer (`versions.minNvidiaDriver`).
 
 On any other Ubuntu host (a cloud VM, a bare-metal server), set `domain` in `deploy/values-prod.yaml` to a DNS name that points at the host, open port 443 to it, and run `./install.sh prod`. One name is enough, since everything is routed by path; a cloud VM's free DNS name works. `values-prod.yaml` holds only the domain, the GPU count and disk sizes; everything else comes from `deploy/values.yaml`.
 
