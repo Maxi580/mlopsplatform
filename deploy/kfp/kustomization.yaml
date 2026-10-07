@@ -10,6 +10,31 @@ patches:
       kind: Secret
       metadata:
         name: mlpipeline-minio-artifact
+  # metadata-writer only handles KFP v1 pods, and its image is amd64-only.
+  - patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: metadata-writer
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: kubeflow-pipelines-metadata-writer
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: kubeflow-pipelines-metadata-writer-role
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: kubeflow-pipelines-metadata-writer-binding
   - target:
       kind: NetworkPolicy
       name: seaweedfs

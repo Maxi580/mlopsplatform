@@ -33,6 +33,16 @@ install_gvisor() {
   sudo apt-get update -q && sudo apt-get install -y -q runsc
 }
 
+# Kubeflow's ML Metadata server has no arm64 image, so it runs translated by QEMU until KFP drops it (kubeflow/pipelines#13986).
+install_qemu() {
+  # Containers need the handler's F flag: Ubuntu 24.04 sets it in qemu-user-static, later releases in qemu-user-binfmt.
+  local package=qemu-user-binfmt
+  [[ $(. /etc/os-release && echo "$VERSION_ID") == 24.04 ]] && package=qemu-user-static
+  sudo apt-get update -q && sudo apt-get install -y -q "$package"
+  # Replaces a handler registered without the F flag.
+  sudo systemctl restart systemd-binfmt
+}
+
 install_nerdctl() {
   local version
   version=$(value .versions.nerdctl)
@@ -90,6 +100,7 @@ prepare_host() {
   (( ${driver%%.*} >= minimum )) || die "NVIDIA driver $driver is too old: install $minimum or newer"
   if ! command -v nvidia-container-runtime >/dev/null; then install_nvidia_container_toolkit; restart_k3s=true; fi
   if ! command -v runsc >/dev/null; then install_gvisor; restart_k3s=true; fi
+  if [[ $ARCH == arm64 ]] && ! grep -qs '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-x86_64; then install_qemu; fi
 
   update_root_file /etc/rancher/k3s/config.yaml.d/mlp.yaml <<EOF && restart_k3s=true
 secrets-encryption: true
@@ -239,7 +250,15 @@ patches:
       name: seaweedfs-pvc
     patch: '[{"op": "replace", "path": "/spec/resources/requests/storage", "value": "$(value .settings.object_store_size)"}]'
 EOF
-  kubectl apply -k "$WORK/kfp"
+  kubectl kustomize "$WORK/kfp" > "$WORK/kfp.yaml"
+  # On arm64 the kubelet would fetch ML Metadata's amd64-only image without unpacking it; IfNotPresent then uses this
+  # copy. Delete once KFP drops ML Metadata (kubeflow/pipelines#13986).
+  if [[ $ARCH == arm64 ]]; then
+    sudo nerdctl --address "$K3S_SOCKET" --namespace k8s.io pull --platform linux/amd64 "$(yq \
+      'select(.kind == "Deployment" and .metadata.name == "metadata-grpc-deployment") | .spec.template.spec.containers[0].image' \
+      "$WORK/kfp.yaml")"
+  fi
+  kubectl apply -f "$WORK/kfp.yaml"
   kubectl -n "$kubeflow" rollout status deploy/seaweedfs --timeout=10m
   for bucket in $(value '.buckets[]'); do
     kubectl -n "$kubeflow" exec deploy/seaweedfs -- sh -c \
