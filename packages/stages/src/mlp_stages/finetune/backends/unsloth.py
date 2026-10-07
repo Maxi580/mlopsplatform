@@ -71,15 +71,25 @@ def build_trainer(
     trainer = getattr(trl, algorithm["trainer"])(
         model=model,
         args=getattr(trl, algorithm["config"])(**settings, output_dir=output_directory),
-        train_dataset=dataset,
+        train_dataset=rendered_conversations(dataset, tokenizer),
         # A Sweep's Trials are measured on held-out rows.
-        eval_dataset=eval_dataset,
+        eval_dataset=rendered_conversations(eval_dataset, tokenizer),
         processing_class=tokenizer,
         **trainer_kwargs,
     )
     if assistant_only_loss:
         trainer = train_on_responses_only(trainer)
     return trainer
+
+
+# Unsloth's SFT tokenizes a `text` column but, unlike TRL, can't render `messages` itself.
+def rendered_conversations(dataset, tokenizer):
+    if dataset is None or "messages" not in dataset.column_names:
+        return dataset
+    return dataset.map(
+        lambda row: {"text": tokenizer.apply_chat_template(row["messages"], tokenize=False)},
+        remove_columns=["messages"],
+    )
 
 
 def save_model_version(
