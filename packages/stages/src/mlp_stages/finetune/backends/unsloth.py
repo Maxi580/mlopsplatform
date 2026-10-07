@@ -96,14 +96,17 @@ def save_model_version(
     trainer, phase: Phase, tokenizer, model_directory: Path, base_directory: Path
 ) -> None:
     """Saves the Phase's output: full weights, the Adapter, or the Adapter merged into its base."""
-    # 1. Merged in 16 bits, not the 4 bits `qlora` trained on.
+    # 1. Without the frozen copy TRL adds to a continued Adapter; Unsloth leaves it in.
+    hf.delete_frozen_adapter_copy(trainer.model)
+
+    # 2. Merged in 16 bits, not the 4 bits `qlora` trained on.
     if phase.merges_adapter:
         trainer.model.save_pretrained_merged(
             str(model_directory), tokenizer, save_method="merged_16bit"
         )
         return
 
-    # 2. Unsloth moves embedding targets into modules_to_save, which vLLM can't serve.
+    # 3. Unsloth moves embedding targets into modules_to_save, which vLLM can't serve.
     saved_modules = phase.keeps_adapter and trainer.model.peft_config["default"].modules_to_save
     if saved_modules:
         raise SystemExit(

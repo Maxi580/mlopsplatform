@@ -45,7 +45,7 @@ def build_trainer(
             # TRL prepares a 4-bit model only for a new Adapter.
             if qlora:
                 model = prepare_model_for_kbit_training(model)
-            # Keeps its rank and targets; DPO and KTO take a frozen copy of it as their reference.
+            # Keeps its rank and targets; DPO, KTO, GRPO and RLOO train against a frozen copy.
             model = PeftModel.from_pretrained(model, adapter_directory, is_trainable=True)
         else:
             peft_config = LoraConfig(**{**config.LORA_PLATFORM_SETTINGS, **phase.lora.model_dump()})
@@ -87,9 +87,8 @@ def save_model_version(
     trainer, phase: Phase, tokenizer, model_directory: Path, base_directory: Path
 ) -> None:
     """Saves the Phase's output: full weights, the Adapter, or the Adapter merged into its base."""
-    # 1. Without the reference copy DPO and KTO add to a continued Adapter.
-    if "ref" in getattr(trainer.model, "peft_config", {}):
-        trainer.model.delete_adapter("ref")
+    # 1. Without the frozen copy TRL adds to a continued Adapter.
+    delete_frozen_adapter_copy(trainer.model)
     if not phase.merges_adapter:
         trainer.save_model(str(model_directory))
         return
@@ -99,3 +98,9 @@ def save_model_version(
     trainer.save_model(str(adapter_directory))
     load_model(base_directory, adapter_directory, "bfloat16").save_pretrained(model_directory)
     tokenizer.save_pretrained(model_directory)
+
+
+def delete_frozen_adapter_copy(model) -> None:
+    """Deletes the frozen copy of a continued Adapter that DPO, KTO, GRPO and RLOO train against."""
+    if "ref" in getattr(model, "peft_config", {}):
+        model.delete_adapter("ref")

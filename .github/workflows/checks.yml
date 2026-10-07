@@ -14,6 +14,17 @@ jobs:
       - run: uv sync --all-packages --frozen
       - run: uv run pytest
 
+  # Fails when a locked package has no aarch64 wheel or sdist, without downloading the wheels.
+  arm:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        extra: [hf, unsloth, evaluate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --no-dev --package mlp-stages --extra ${{ matrix.extra }} --dry-run
+
   webui:
     runs-on: ubuntu-latest
     defaults:

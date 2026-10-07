@@ -346,7 +346,7 @@
   "auto_find_batch_size": {
    "type": "boolean",
    "default": false,
-   "description": "Whether to find a training batch size that will fit into memory automatically through exponential decay, avoiding CUDA Out-of-Memory errors. The evaluation batch size is not adjusted."
+   "description": "Whether to find a batch size that will fit into memory automatically through exponential decay, avoiding CUDA Out-of-Memory errors."
   },
   "logging_strategy": {
    "anyOf": [
