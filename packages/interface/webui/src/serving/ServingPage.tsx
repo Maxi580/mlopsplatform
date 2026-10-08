@@ -95,7 +95,7 @@ export default function ServingPage() {
       {endpoints.data?.length === 0 && <p className="muted">No Endpoints yet; start one below.</p>}
       {!!endpoints.data?.length && (
         <div className="card table-card">
-          <table>
+          <table className="endpoint-table">
             <thead>
               <tr>
                 {[
@@ -190,10 +190,13 @@ function EndpointRow({
 }) {
   const stopped = endpoint.status === "stopped";
   const { stats } = endpoint;
+  const started = endpoint.created_at.slice(0, 16).replace("T", " ");
   return (
     <tr>
-      <td className="pipeline-name">
-        {stopped ? endpoint.name : <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>}
+      <td className="pipeline-name" title={endpoint.name}>
+        <span className="cut-off-name">
+          {stopped ? endpoint.name : <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>}
+        </span>
       </td>
       <td className="cut-off">
         <CopyValue label="model" value={endpoint.model} />
@@ -201,7 +204,9 @@ function EndpointRow({
       <td>
         <StatusBadge status={endpoint.status} />
       </td>
-      <td>{stats ? `${stats.running} running · ${stats.waiting} waiting` : "—"}</td>
+      <td title={stats ? `${stats.running} running · ${stats.waiting} waiting` : undefined}>
+        {stats ? `${stats.running} · ${stats.waiting}` : "—"}
+      </td>
       <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
       <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
       <td className="cut-off">{!stopped && <CopyValue label="URL" value={endpoint.url} />}</td>
@@ -221,7 +226,7 @@ function EndpointRow({
           </span>
         )}
       </td>
-      <td>{endpoint.created_at.slice(0, 16).replace("T", " ")}</td>
+      <td title={started}>{started.slice("YYYY-".length)}</td>
       <td className="actions">
         {stopped ? (
           <button

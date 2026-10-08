@@ -408,12 +408,26 @@ code,
   flex-shrink: 0;
 }
 
-/* A long value ends in … so the table needs no horizontal scrollbar; its title shows it in full. */
-.cut-off .mono {
-  max-width: 240px;
+/* Model and URL share the width the other columns leave and end in …; their title shows them in full. */
+td.cut-off {
+  width: 50%;
+  max-width: 0;
+}
+
+.cut-off .copy-value {
+  display: flex;
+}
+
+.cut-off .mono,
+.cut-off-name {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+/* Endpoint names run up to 54 characters but rarely matter past the first few. */
+.cut-off-name {
+  display: block;
+  max-width: 16ch;
 }
 
 .endpoint-access {
@@ -470,6 +484,13 @@ td {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+}
+
+/* The Endpoint table's ten columns fit a laptop only with tighter cells. */
+.endpoint-table th,
+.endpoint-table td {
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 tbody tr:last-child td {

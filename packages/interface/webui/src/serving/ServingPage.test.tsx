@@ -134,7 +134,7 @@ test("an Endpoint's model is copied from its row, also once stopped", async () =
   expect(await navigator.clipboard.readText()).toBe("model:qwen-sft@2");
 });
 
-test("a long model and URL are cut off, and hovering shows them in full", async () => {
+test("a long name, model and URL are cut off, and hovering shows them in full", async () => {
   fakeApi(routes);
   renderApp("/serving");
 
@@ -143,6 +143,8 @@ test("a long model and URL are cut off, and hovering shows them in full", async 
     expect(within(row).getByText(value)).toHaveAttribute("title", value);
     expect(within(row).getByText(value).closest("td")).toHaveClass("cut-off");
   }
+  expect(within(row).getByText("chat").closest(".cut-off-name")).toBeInTheDocument();
+  expect(within(row).getByText("chat").closest("td")).toHaveAttribute("title", "chat");
 });
 
 test("an Endpoint's key is copied and refreshed from its row", async () => {
@@ -343,11 +345,14 @@ test("an Endpoint's load and TTFT show in its row, and its name links to its sta
   const name = await screen.findByRole("link", { name: "chat" });
   const cells = within(name.closest("tr")!).getAllByRole("cell");
   expect(cells.slice(3, 6).map((cell) => cell.textContent)).toEqual([
-    "3 running · 1 waiting",
+    "3 · 1",
     // Tokens/s takes two readings.
     "—",
     "123 ms",
   ]);
+  expect(cells[3]).toHaveAttribute("title", "3 running · 1 waiting");
+  expect(cells[8]).toHaveTextContent("10-02 08:30");
+  expect(cells[8]).toHaveAttribute("title", "2026-10-02 08:30");
   expect(name).toHaveAttribute("href", "/serving/chat");
 });
 
@@ -365,7 +370,7 @@ test("tokens/s is the generated tokens between two readings", async () => {
   const readings = [stats, { ...stats, generation_tokens: 1500, read_at: "2026-10-02T09:00:10Z" }];
   fakeApi({ ...routes, "GET /endpoints": () => [200, [{ ...chat, stats: readings.shift() }]] });
   renderApp("/serving");
-  await screen.findByText("3 running · 1 waiting");
+  await screen.findByText("3 · 1");
 
   await act(() => vi.advanceTimersByTimeAsync(ENDPOINT_LIST_REFRESH_MS));
 
