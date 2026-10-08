@@ -31,6 +31,8 @@ export const CACHE_ENTRY_KINDS = { base_model: "Base Model", benchmark: "Benchma
 export const STORAGE_WARNING_PERCENT = 90;
 // How long the New Pipeline form waits after a change before asking what the request downloads.
 export const DOWNLOAD_PREVIEW_DELAY_MS = 400;
+// How far either side of a setting's default a Sweep parameter's range starts, e.g. 50%.
+export const TUNED_RANGE_SPREAD = 0.5;
 // The form's value under an optional section's name, e.g. the `speculate` Stage, once switched on.
 export const SWITCHED_ON = "on";
 // An Endpoint's stats page reloads this often and charts the readings of this long while open.

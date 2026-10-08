@@ -31,6 +31,8 @@ export type FormSection = {
   allSettings?: FormField[];
   // A list whose items are its children, e.g. Phases, which the user adds and deletes.
   list?: { item: string; minItems: number };
+  // The settings its entries tune, which their names pick from, e.g. a Sweep's parameters.
+  tunes?: FormField[];
 };
 
 export type FormField = {
@@ -53,6 +55,10 @@ export type FormField = {
   references?: string[];
   // The row formats a Dataset field reads, each with a JSONL example.
   rowFormats?: { name: string; example: string }[];
+  // A setting its Sweep tunes: shown greyed and not sent, as the tuned value would win.
+  tuned?: boolean;
+  // A list whose items read as JSON where they can, e.g. a Sweep parameter's `true,false`.
+  jsonItems?: boolean;
 };
 
 export type FormNode = FormSection | FormField;
@@ -80,7 +86,9 @@ const NO_VALUES: FormValues = { fields: {}, more: {} };
 /** The form for a Pipeline Request with these values: a section per object of the schema. */
 export function pipelineForm(schema: Schema, values: FormValues = NO_VALUES): FormSection {
   const context = { root: schema, defs: schema.$defs ?? {}, values };
-  return nodeOf(schema, context, "", "Pipeline Request") as FormSection;
+  const form = nodeOf(schema, context, "", "Pipeline Request") as FormSection;
+  markTunedSettings(form, values);
+  return form;
 }
 
 /** What a field shows and sends: the user's edit, else its default. */
@@ -110,7 +118,7 @@ export function pipelineRequestFromForm(
       }
     } else if (node.kind === "fixed") {
       put(tree, parts(node.name), node.fixed);
-    } else {
+    } else if (!node.tuned) {
       const value = fieldValue(node, values).trim();
       if (value) put(tree, parts(node.name), readValue(node, value));
     }
@@ -148,6 +156,25 @@ export function namedEntries(section: FormSection, values: FormValues): Entry[] 
 
 export function moreName(section: string): string {
   return `${section}.${MORE_SETTINGS}`;
+}
+
+/** Links each Sweep's parameters to the settings they tune, e.g. `sweep.parameters.lora` to
+ * `sweep.lora`, and marks the tuned ones. */
+function markTunedSettings(form: FormSection, values: FormValues) {
+  const sections = nodesOf(form).filter((node): node is FormSection => node.kind === "section");
+  for (const parameters of sections) {
+    if (!parameters.entry || lastPart(parent(parameters.name)) !== "parameters") continue;
+    const tuning = `${parent(parent(parameters.name))}.${lastPart(parameters.name)}`;
+    const settings = sections.find((section) => section.name === tuning);
+    if (!settings) continue;
+    parameters.tunes = [...settings.children, ...(settings.allSettings ?? [])].filter(
+      (node): node is FormField => node.kind !== "section",
+    );
+    const tuned = new Set(namedEntries(parameters, values).map((entry) => entry.name.trim()));
+    for (const setting of parameters.tunes) {
+      if (tuned.has(lastPart(setting.name))) setting.tuned = true;
+    }
+  }
 }
 
 function nodeOf(schema: Schema, context: Context, name: string, title: string): FormNode {
@@ -304,11 +331,12 @@ function fieldOf(node: Schema, defs: Schema, types: Set<unknown>) {
   const items = node.type === "array" ? resolveRef(node.items, defs) : undefined;
   if (items?.enum) return { kind: "choices" as const, choices: items.enum };
   if (types.has("boolean")) return { kind: "choice" as const, choices: [true, false] };
-  if (types.has("array")) return { kind: "list" as const };
+  if (types.has("array")) return { kind: "list" as const, jsonItems: !!items && !items.type };
   const { minimum, maximum, exclusiveMinimum, exclusiveMaximum } = node;
   const bounds = { minimum, maximum, exclusiveMinimum, exclusiveMaximum };
-  if (types.has("integer")) return { kind: "integer" as const, bounds };
+  // `int | float`, e.g. a Sweep parameter's `min`, takes any number.
   if (types.has("number")) return { kind: "number" as const, bounds };
+  if (types.has("integer")) return { kind: "integer" as const, bounds };
   if (node.format === "python") return { kind: "code" as const };
   // An optional value's pattern sits on its non-null option.
   const pattern = node.pattern ?? node.anyOf?.find((option: Schema) => option.pattern)?.pattern;
@@ -471,6 +499,8 @@ function readValue(field: FormField, text: string): unknown {
     return field.choices?.find((choice) => String(choice) === text) ?? text;
   if (field.kind === "choices") return text.split(",");
   if (field.kind === "json") return readSetting(text);
+  if (field.kind === "list" && field.jsonItems)
+    return text.split(",").map((part) => readSetting(part.trim()));
   if (field.kind === "list" && text.includes(","))
     return text.split(",").map((part) => part.trim());
   return text;

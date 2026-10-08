@@ -2,7 +2,14 @@ import { X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { matchedParts, matchesWords } from "./fuzzy";
 
-export type Choice = { value: string; label: string; detail?: string; badge?: ReactNode };
+// A `disabled` choice shows greyed and can't be picked, e.g. a setting already tuned.
+export type Choice = {
+  value: string;
+  label: string;
+  detail?: string;
+  badge?: ReactNode;
+  disabled?: boolean;
+};
 // `searched` choices were already found for what is typed, e.g. by the Hub, so they aren't
 // narrowed again; an `action` is offered under the choices, e.g. an upload.
 export type ChoiceGroup = { label: string; choices: Choice[]; searched?: boolean };
@@ -61,6 +68,7 @@ export default function Combobox({
   }
 
   function pick(choice: Choice) {
+    if (choice.disabled) return;
     onChange(choice.value);
     setTyped("");
     setOpen(false);
@@ -126,6 +134,7 @@ export default function Combobox({
                       // Focus stays in the field, which points at the active option.
                       tabIndex={-1}
                       aria-selected={index === active}
+                      aria-disabled={choice.disabled}
                       className="combobox-choice"
                       // Picked before the field loses focus and closes the list.
                       onMouseDown={(event) => {

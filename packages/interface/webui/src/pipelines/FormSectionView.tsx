@@ -1,6 +1,7 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE } from "../config";
+import Combobox from "../fields/Combobox";
 import type { Catalog } from "../fields/catalog";
 import DatasetPicker from "../fields/DatasetPicker";
 import InfoBox from "../fields/InfoBox";
@@ -21,6 +22,12 @@ import {
   withoutListItem,
   withSwitch,
 } from "./pipelineForm";
+import {
+  settingChoices,
+  tunedParameterFields,
+  tunedSetting,
+  withTunedSetting,
+} from "./sweepParameters";
 
 type Props = {
   section: FormSection;
@@ -60,12 +67,14 @@ export default function FormSectionView({
       key={field.name}
       field={field}
       notSet={notSet}
-      value={fieldValue(field, values)}
+      value={field.tuned ? "" : fieldValue(field, values)}
       errors={errors[field.name]}
       catalog={catalog}
       benchmarks={benchmarks}
       onChange={(value) => setField(field.name, value)}
-      onReset={field.name in values.fields ? () => resetField(field.name) : undefined}
+      onReset={
+        field.name in values.fields && !field.tuned ? () => resetField(field.name) : undefined
+      }
     />
   );
 
@@ -222,8 +231,12 @@ function FieldInput({
 }) {
   if (field.kind === "choices")
     return <ChoicesInput {...{ field, value, errors, benchmarks, onChange }} />;
-  const unset = `Not set${field.placeholder ? ` (default: ${field.placeholder})` : ""}`;
-  const placeholder = notSet ? unset : field.placeholder;
+  // A setting its Sweep tunes shows like one not set, saying why.
+  const unsent = notSet || field.tuned;
+  const unset = field.tuned
+    ? "Tuned by this Sweep"
+    : `Not set${field.placeholder ? ` (default: ${field.placeholder})` : ""}`;
+  const placeholder = unsent ? unset : field.placeholder;
   const prefix = Object.keys(REFERENCE_PLACEHOLDERS).find((start) =>
     field.pattern?.startsWith(start),
   );
@@ -231,6 +244,7 @@ function FieldInput({
     id: field.name,
     name: field.name,
     value,
+    disabled: field.tuned,
     "aria-invalid": !!errors,
     "aria-describedby":
       [field.description && `${field.name}-info`, errors && `${field.name}-error`]
@@ -291,9 +305,9 @@ function FieldInput({
       ) : field.kind === "code" ? (
         <textarea {...common} className="code-input" rows={3} spellCheck={false} />
       ) : field.kind === "choice" ? (
-        <select {...common} className={notSet && !value ? "not-set" : undefined}>
+        <select {...common} className={unsent && !value ? "not-set" : undefined}>
           <option value="">
-            {notSet ? unset : field.placeholder ? `${field.placeholder} (default)` : "Choose…"}
+            {unsent ? unset : field.placeholder ? `${field.placeholder} (default)` : "Choose…"}
           </option>
           {field.choices?.map((choice) => (
             <option key={String(choice)}>{String(choice)}</option>
@@ -530,6 +544,7 @@ function Entries({
     <div className="entries">
       {rows.map((row, index) => {
         const name = `${section.name}.${index}`;
+        const setting = tunedSetting(section, row.name);
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: entries are controlled inputs without an identity.
           <fieldset key={index} className="subsection">
@@ -539,14 +554,27 @@ function Entries({
                 <label className="field-label" htmlFor={`${name}.name`}>
                   {entry.title} name
                 </label>
-                <input
-                  id={`${name}.name`}
-                  value={row.name}
-                  autoComplete="off"
-                  onChange={(event) => setRow(index, { ...row, name: event.target.value })}
-                />
+                {section.tunes ? (
+                  <Combobox
+                    id={`${name}.name`}
+                    label={`${entry.title} name`}
+                    value={row.name}
+                    groups={[
+                      { label: section.title, choices: settingChoices(section, rows, index) },
+                    ]}
+                    placeholder="Search settings…"
+                    onChange={(value) => setRow(index, withTunedSetting(section, row, value))}
+                  />
+                ) : (
+                  <input
+                    id={`${name}.name`}
+                    value={row.name}
+                    autoComplete="off"
+                    onChange={(event) => setRow(index, { ...row, name: event.target.value })}
+                  />
+                )}
               </div>
-              {(entry.children as FormField[]).map((field) => (
+              {tunedParameterFields(entry.children as FormField[], setting, row).map((field) => (
                 <FieldInput
                   key={field.name}
                   field={{ ...field, name: `${name}.${field.name}` }}

@@ -1,4 +1,5 @@
 import {
+  type FormField,
   type FormNode,
   type FormSection,
   type FormValues,
@@ -8,6 +9,7 @@ import {
   placeErrors,
   withoutListItem,
 } from "./pipelineForm";
+import { tunedParameterFields, tunedRange } from "./sweepParameters";
 
 // A trimmed copy of `GET /schema`, with each shape the form must handle.
 const schema = {
@@ -350,6 +352,127 @@ test("a Sweep's objective defaults to its algorithm's", () => {
     "sweep.objective.metric": "eval_rewards/accuracies",
     "sweep.objective.goal": "maximize",
   });
+});
+
+// The Sweep above with the parameters it tunes, as the published schema has them.
+const tunedSchema = {
+  ...sweepSchema,
+  $defs: {
+    ...sweepSchema.$defs,
+    Sweep: {
+      ...sweepSchema.$defs.Sweep,
+      properties: {
+        ...sweepSchema.$defs.Sweep.properties,
+        parameters: { $ref: "#/$defs/SweepParameters" },
+      },
+    },
+    SweepParameters: {
+      type: "object",
+      properties: {
+        settings: { type: "object", additionalProperties: { $ref: "#/$defs/SweepParameter" } },
+      },
+    },
+    SweepParameter: {
+      type: "object",
+      properties: {
+        min: { anyOf: [{ type: "integer" }, { type: "number" }, { type: "null" }], default: null },
+        max: { anyOf: [{ type: "integer" }, { type: "number" }, { type: "null" }], default: null },
+        values: {
+          anyOf: [
+            {
+              type: "array",
+              items: { anyOf: [{ type: "boolean" }, { type: "number" }, { type: "string" }] },
+            },
+            { type: "null" },
+          ],
+          default: null,
+        },
+      },
+    },
+  },
+  algorithms: {
+    sft: {
+      ...sweepSchema.algorithms.sft,
+      settings: {
+        ...sweepSchema.algorithms.sft.settings,
+        warmup_steps: { type: "integer", default: 10, minimum: 8 },
+        packing: { type: "boolean", default: false },
+      },
+      more_settings: { seed: { type: "integer", default: 42 } },
+    },
+  },
+};
+
+const tuning = (...names: string[]): FormValues => ({
+  fields: {},
+  more: {},
+  entries: { "sweep.parameters.settings": names.map((name) => ({ name, fields: {} })) },
+});
+
+test("a Sweep's parameters pick from its settings, and a tuned one is marked", () => {
+  const form = pipelineForm(tunedSchema, tuning("learning_rate"));
+  const nodes = Object.fromEntries(flatten(form).map((node) => [node.name, node]));
+  const parameters = nodes["sweep.parameters.settings"] as FormSection;
+
+  expect(parameters.tunes?.map((setting) => setting.name)).toEqual([
+    "sweep.settings.learning_rate",
+    "sweep.settings.num_train_epochs",
+    "sweep.settings.weight_decay",
+    "sweep.settings.warmup_steps",
+    "sweep.settings.packing",
+    "sweep.settings.seed",
+  ]);
+  expect(nodes["sweep.settings.learning_rate"]).toMatchObject({ tuned: true });
+  expect(nodes["sweep.settings.num_train_epochs"]).not.toHaveProperty("tuned");
+});
+
+test("a tuned setting isn't sent among the Sweep's fixed settings, but its range is", () => {
+  const values = tuning("learning_rate");
+  values.entries!["sweep.parameters.settings"][0].fields = { min: "1e-4", max: "3e-4" };
+
+  expect(pipelineRequestFromForm(pipelineForm(tunedSchema, values), values)).toEqual({
+    sweep: {
+      algorithm: "sft",
+      trials: 10,
+      settings: { num_train_epochs: 3, warmup_steps: 10, packing: false },
+      parameters: { settings: { learning_rate: { min: 1e-4, max: 3e-4 } } },
+    },
+  });
+});
+
+test("a tuned parameter's values are sent as the values they read as", () => {
+  const values = tuning("packing");
+  values.entries!["sweep.parameters.settings"][0].fields = { values: "true,false" };
+
+  expect(pipelineRequestFromForm(pipelineForm(tunedSchema, values), values)).toMatchObject({
+    sweep: { parameters: { settings: { packing: { values: [true, false] } } } },
+  });
+});
+
+test("a picked setting's range starts 50% either side of its default, within its bounds", () => {
+  const settings = (pipelineForm(tunedSchema).children[0] as FormSection).children[1];
+  const setting = (name: string) =>
+    flatten(settings).find((node) => node.name === `sweep.settings.${name}`) as FormField;
+
+  expect(tunedRange(setting("learning_rate"))).toEqual({ min: "1e-4", max: "3e-4", values: "" });
+  expect(tunedRange(setting("warmup_steps"))).toEqual({ min: "8", max: "15", values: "" });
+  expect(tunedRange(setting("packing"))).toEqual({ min: "", max: "", values: "true,false" });
+  expect(tunedRange(setting("weight_decay"))).toEqual({ min: "", max: "", values: "" });
+});
+
+test("a tuned parameter's Min and Max step within its setting's bounds and each other", () => {
+  const form = pipelineForm(tunedSchema, tuning("warmup_steps"));
+  const nodes = Object.fromEntries(flatten(form).map((node) => [node.name, node]));
+  const parameters = nodes["sweep.parameters.settings"] as FormSection;
+  const entry = { name: "warmup_steps", fields: { min: "8", max: "15" } };
+  const [min, max] = tunedParameterFields(
+    parameters.entry!.children as FormField[],
+    nodes["sweep.settings.warmup_steps"] as FormField,
+    entry,
+  );
+
+  expect(min).toMatchObject({ kind: "integer", bounds: { minimum: 8, exclusiveMaximum: 15 } });
+  expect(max).toMatchObject({ kind: "integer", bounds: { minimum: 8, exclusiveMinimum: 8 } });
 });
 
 // A trimmed copy of the published schema's Phases and `distill`, with when each field applies.

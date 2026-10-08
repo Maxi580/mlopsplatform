@@ -43,6 +43,7 @@ export default function NumberInput({
         <button
           type="button"
           tabIndex={-1}
+          disabled={input.disabled}
           aria-label={`Increase ${label}`}
           onClick={() => step(1)}
         >
@@ -51,6 +52,7 @@ export default function NumberInput({
         <button
           type="button"
           tabIndex={-1}
+          disabled={input.disabled}
           aria-label={`Decrease ${label}`}
           onClick={() => step(-1)}
         >

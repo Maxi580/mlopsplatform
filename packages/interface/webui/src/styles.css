@@ -713,6 +713,15 @@ select.not-set option {
   color: var(--text);
 }
 
+/* A setting its Sweep tunes, which the request doesn't fix. */
+input:disabled,
+select:disabled,
+.steppers button:disabled {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
 input[aria-invalid="true"],
 select[aria-invalid="true"],
 textarea[aria-invalid="true"] {
@@ -859,6 +868,11 @@ textarea[aria-invalid="true"] {
 
 .combobox-choice[aria-selected="true"] {
   background: var(--accent-soft);
+}
+
+.combobox-choice[aria-disabled="true"] {
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 .combobox-choice .muted {

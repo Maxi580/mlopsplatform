@@ -991,3 +991,86 @@ test("Quantize shows Calibration, required, only for a scheme that calibrates", 
     calibration: { samples: 512 },
   });
 });
+
+test("a Sweep tunes a setting picked by name, from a range around its default", async () => {
+  const range = { anyOf: [{ type: "integer" }, { type: "number" }, { type: "null" }] };
+  const withSweep = {
+    type: "object",
+    properties: { sweep: { $ref: "#/$defs/Sweep" } },
+    $defs: {
+      Sweep: {
+        type: "object",
+        properties: {
+          algorithm: { enum: ["sft"], type: "string" },
+          settings: { $ref: "#/$defs/PhaseSettings", trainer_settings: "settings" },
+          parameters: { $ref: "#/$defs/SweepParameters" },
+        },
+      },
+      PhaseSettings: { type: "object", additionalProperties: true, properties: {} },
+      SweepParameters: {
+        type: "object",
+        properties: {
+          settings: { type: "object", additionalProperties: { $ref: "#/$defs/SweepParameter" } },
+        },
+      },
+      SweepParameter: {
+        type: "object",
+        properties: { min: { ...range, title: "Min" }, max: { ...range, title: "Max" } },
+      },
+    },
+    algorithms: {
+      sft: {
+        settings: {
+          learning_rate: { type: "number", title: "Learning rate", default: 2e-4, minimum: 0 },
+          num_train_epochs: { type: "number", title: "Epochs", default: 3 },
+        },
+      },
+    },
+  };
+  const calls = fakeApi({
+    "GET /schema": [200, withSweep],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 9 }],
+  });
+  renderApp("/pipelines/new");
+  const parameters = await screen.findByRole("group", { name: /^Parameters/ });
+  const addParameter = within(parameters).getByRole("button", { name: /add setting/i });
+
+  await userEvent.click(addParameter);
+  await userEvent.type(screen.getByRole("combobox", { name: /^Setting name/ }), "le");
+  await userEvent.click(screen.getByRole("option", { name: /learning_rate/ }));
+  expect(screen.getByLabelText(/^Min/)).toHaveValue("1e-4");
+  expect(screen.getByLabelText(/^Max/)).toHaveValue("3e-4");
+  // Min steps up, but never to Max.
+  await userEvent.click(screen.getByRole("button", { name: "Increase Min" }));
+  await userEvent.click(screen.getByRole("button", { name: "Increase Min" }));
+  expect(screen.getByLabelText(/^Min/)).toHaveValue("2e-4");
+
+  const fixed = screen.getByLabelText(/^Learning rate/);
+  expect(fixed).toBeDisabled();
+  expect(fixed).toHaveValue("");
+  expect(fixed).toHaveAttribute("placeholder", "Tuned by this Sweep");
+  await userEvent.click(addParameter);
+  await userEvent.click(screen.getAllByRole("combobox", { name: /^Setting name/ })[1]);
+  const tuned = screen.getByRole("option", { name: /learning_rate/ });
+  expect(tuned).toHaveAttribute("aria-disabled", "true");
+  await userEvent.click(tuned);
+  expect(screen.getAllByRole("combobox", { name: /^Setting name/ })[1]).toHaveValue("");
+
+  // Removed, the setting is the Sweep's to fix again, or to tune in another parameter.
+  await userEvent.click(screen.getAllByRole("button", { name: /remove setting/i })[0]);
+  expect(screen.getByLabelText(/^Learning rate/)).toBeEnabled();
+  expect(screen.getByLabelText(/^Learning rate/)).toHaveValue("2e-4");
+  await userEvent.click(screen.getByRole("combobox", { name: /^Setting name/ }));
+  await userEvent.click(screen.getByRole("option", { name: /learning_rate/ }));
+  expect(screen.getByLabelText(/^Learning rate/)).toBeDisabled();
+
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+  await screen.findByText(/Submitted Pipeline 9/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.sweep.settings).toEqual({ num_train_epochs: 3 });
+  expect(submitted.request.sweep.parameters.settings).toEqual({
+    learning_rate: { min: 1e-4, max: 3e-4 },
+  });
+});
