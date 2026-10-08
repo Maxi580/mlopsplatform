@@ -436,7 +436,9 @@ class Quantize(Strict):
     the smallest; `w8a8-int8` makes 8-bit weights and activations."""
     ignore: list[str] = QUANTIZE_IGNORE
     """Layers kept unquantized."""
-    calibration: Calibration | None = None
+    calibration: Calibration | None = Field(
+        None, **applies_if("calibrates", required_if_applies=True)
+    )
     """The rows a calibrated scheme measures activations on."""
 
     @model_validator(mode="after")

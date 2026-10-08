@@ -661,3 +661,59 @@ test("an optional fixed value, e.g. `params_from: @sweep`, is a choice that is l
   expect(form.children[0]).not.toHaveProperty("default");
   expect(pipelineRequestFromForm(form, values)).toEqual({});
 });
+
+// A trimmed copy of the published schema's `quantize`, whose Calibration only some schemes take.
+const quantizeSchema = {
+  type: "object",
+  properties: {
+    quantize: { anyOf: [{ $ref: "#/$defs/Quantize" }, { type: "null" }], default: null },
+  },
+  $defs: {
+    Quantize: {
+      type: "object",
+      properties: {
+        scheme: { enum: ["fp8-dynamic", "w4a16-gptq"], type: "string", default: "fp8-dynamic" },
+        calibration: {
+          anyOf: [{ $ref: "#/$defs/Calibration" }, { type: "null" }],
+          default: null,
+          applies_if: "calibrates",
+          required_if_applies: true,
+        },
+      },
+    },
+    Calibration: {
+      type: "object",
+      properties: {
+        dataset: {
+          type: "string",
+          pattern: "^dataset:[A-Za-z0-9][A-Za-z0-9_.-]*(@d+)?$",
+          default: "dataset:llm-compression-calibration",
+        },
+        samples: { type: "integer", default: 512 },
+      },
+    },
+  },
+  uncalibrated_schemes: ["fp8-dynamic"],
+};
+
+function quantizeRequest(fields: Record<string, string>) {
+  const values = { fields: { quantize: "on", ...fields }, more: {} };
+  return pipelineRequestFromForm(pipelineForm(quantizeSchema, values), values).quantize;
+}
+
+test("a calibrating scheme's Calibration is required and sent with its defaults; fp8-dynamic's is left out", () => {
+  const calibrated = { "quantize.scheme": "w4a16-gptq" };
+  const form = pipelineForm(quantizeSchema, { fields: calibrated, more: {} });
+  const byName = Object.fromEntries(flatten(form).map((node) => [node.name, node]));
+  expect(byName["quantize.calibration"]).toMatchObject({
+    title: "Calibration (required)",
+    optional: false,
+  });
+  expect(quantizeRequest(calibrated)).toEqual({
+    scheme: "w4a16-gptq",
+    calibration: { dataset: "dataset:llm-compression-calibration", samples: 512 },
+  });
+
+  // Switched on before the scheme changed, it still isn't sent.
+  expect(quantizeRequest({ "quantize.calibration": "on" })).toEqual({ scheme: "fp8-dynamic" });
+});

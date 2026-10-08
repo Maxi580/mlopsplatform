@@ -18,9 +18,11 @@ def published_schema() -> dict:
         name: published_algorithm(algorithm) for name, algorithm in config.ALGORITHMS.items()
     }
 
-    # 3. The methods that train an Adapter, and the LoraConfig settings a form doesn't show
-    # directly, without those of an Adapter vLLM can't serve.
+    # 3. The methods that train an Adapter, the schemes that quantize without calibrating, and
+    # the LoraConfig settings a form doesn't show directly, without those of an Adapter vLLM
+    # can't serve.
     schema["adapter_methods"] = config.ADAPTER_METHODS
+    schema["uncalibrated_schemes"] = config.UNCALIBRATED_SCHEMES
     hidden = (*config.BLOCKED_LORA_SETTINGS, *config.HIDDEN_LORA_SETTINGS)
     schema["more_lora_settings"] = other_setting_schemas(
         config.LORA_CONFIG, (*config.SHOWN_LORA_SETTINGS, *hidden)

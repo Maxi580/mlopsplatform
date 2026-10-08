@@ -932,3 +932,62 @@ test("with Distill on, Finetune's Dataset preselects the Distillation Dataset", 
   // Only the Datasets the algorithm reads; Versions stay out of sight.
   expect(screen.getByRole("option", { name: /^chat/ })).toHaveTextContent("messages");
 });
+
+test("Quantize shows Calibration, required, only for a scheme that calibrates", async () => {
+  const quantizeSchema = {
+    type: "object",
+    properties: {
+      quantize: { anyOf: [{ $ref: "#/$defs/Quantize" }, { type: "null" }], default: null },
+    },
+    $defs: {
+      Quantize: {
+        type: "object",
+        properties: {
+          scheme: {
+            enum: ["fp8-dynamic", "w4a16-gptq"],
+            type: "string",
+            default: "fp8-dynamic",
+            title: "Scheme",
+          },
+          calibration: {
+            anyOf: [{ $ref: "#/$defs/Calibration" }, { type: "null" }],
+            default: null,
+            applies_if: "calibrates",
+            required_if_applies: true,
+          },
+        },
+      },
+      Calibration: {
+        type: "object",
+        properties: { samples: { type: "integer", default: 512, title: "Samples" } },
+      },
+    },
+    uncalibrated_schemes: ["fp8-dynamic"],
+  };
+  const calls = fakeApi({
+    "GET /schema": [200, quantizeSchema],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+    "POST /pipelines": [202, { id: 10 }],
+  });
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("button", { name: /add quantize/i }));
+  expect(screen.queryByText(/^Calibration/)).not.toBeInTheDocument();
+
+  await userEvent.selectOptions(screen.getByLabelText(/^Scheme/), "w4a16-gptq");
+  expect(screen.getByText("Calibration (required)")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /remove calibration/i })).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/^Samples/)).toHaveValue("512");
+
+  await userEvent.selectOptions(screen.getByLabelText(/^Scheme/), "fp8-dynamic");
+  expect(screen.queryByText(/^Calibration/)).not.toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText(/^Scheme/), "w4a16-gptq");
+  await userEvent.click(screen.getByRole("button", { name: /submit/i }));
+
+  await screen.findByText(/Submitted Pipeline 10/);
+  const submitted = calls.find((call) => call.route === "POST /pipelines")!.body;
+  expect(submitted.request.quantize).toEqual({
+    scheme: "w4a16-gptq",
+    calibration: { samples: 512 },
+  });
+});

@@ -214,13 +214,15 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
         return !trait || traitsOf(node, context, name)[trait];
       })
       .map(([key, value]) => nodeOf(value as Schema, inner, child(key), key));
+    // E.g. Calibration, which a calibrating scheme can't do without.
+    const required = optional && !!schema.required_if_applies;
     return {
       kind: "section",
       name,
-      title,
+      title: required ? `${title} (required)` : title,
       children,
       moreSettings: node.additionalProperties === true,
-      optional,
+      optional: optional && !required,
       ...(description && { description }),
     };
   }
@@ -392,7 +394,8 @@ function itemTitle(items: Schema, context: Context, list: string, index: number)
 
 /** What decides which of a section's fields apply, from what the API publishes: whether its
  * algorithm learns from a Teacher or from rewards, whether its method trains an Adapter, a new one
- * or the previous Phase's, and whether its Teacher is a model at an external API. */
+ * or the previous Phase's, whether its Teacher is a model at an external API, and whether its
+ * quantization scheme calibrates on Dataset rows. */
 function traitsOf(node: Schema, context: Context, path: string): Record<string, boolean> {
   const siblingValue = (at: string, key: string) =>
     context.values.fields[`${at}.${key}`] ?? String(node.properties?.[key]?.default ?? "");
@@ -406,12 +409,14 @@ function traitsOf(node: Schema, context: Context, path: string): Record<string, 
   const teacher = siblingValue(path, "teacher").trim();
   const references: string[] = node.properties?.teacher?.references ?? [];
   const algorithm = context.root.algorithms?.[algorithmAt(context, path)] ?? {};
+  const uncalibratedSchemes: string[] = context.root.uncalibrated_schemes ?? [];
   return {
     learns_from_teacher: !!algorithm.learns_from_teacher,
     learns_from_rewards: !!algorithm.learns_from_rewards,
     trains_adapter: trainsAdapter(path),
     new_adapter: trainsAdapter(path) && !continuesAdapter,
     external_teacher: !!teacher && !references.some((prefix) => teacher.startsWith(prefix)),
+    calibrates: !uncalibratedSchemes.includes(siblingValue(path, "scheme")),
   };
 }
 

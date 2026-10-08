@@ -43,6 +43,17 @@ _Avoid_: Deployment, served model, inference service
 The random credential that opens one Endpoint's URL; anyone holding it can call that Endpoint and nothing else. Viewable and refreshable by platform users.
 _Avoid_: API key, token
 
+**Endpoint Stats History**:
+An Endpoint's stats over time, kept in MLflow under its name for 30 days and deleted with it: its Server Samples and its Request Traces. Survives stops and restarts.
+_Avoid_: Monitoring, metrics (when meaning the stored history)
+
+**Server Sample**:
+The values the API reads from an Endpoint's vLLM `/metrics` every 10 seconds while it is busy and logs to MLflow: gauges such as KV-cache usage, rates, and latency percentiles over the interval.
+
+**Request Trace**:
+The record vLLM sends to MLflow for one request it served: when it arrived, its queue, prefill and decode times, its tokens and its sampling settings. Never its prompt or response.
+_Avoid_: Log, span (when meaning the whole record)
+
 **Smoke Test**:
 A built-in Pipeline, started by a user, that runs every Stage, every Phase algorithm, every weight method and every training backend on the smallest Qwen model, to prove the platform runs without errors. Output quality is ignored. A failed Case doesn't stop the rest. Afterwards it deletes everything it created except its Kubeflow run.
 _Avoid_: Health check, e2e test

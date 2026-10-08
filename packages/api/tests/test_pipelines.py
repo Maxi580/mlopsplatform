@@ -35,6 +35,9 @@ def test_schema_publishes_when_each_field_applies(logged_in_api):
     assert phase["lora"]["applies_if"] == "new_adapter"
     assert phase["output"]["applies_if"] == "trains_adapter"
     assert schema["$defs"]["Distill"]["properties"]["api_url"]["applies_if"] == "external_teacher"
+    calibration = schema["$defs"]["Quantize"]["properties"]["calibration"]
+    assert (calibration["applies_if"], calibration["required_if_applies"]) == ("calibrates", True)
+    assert schema["uncalibrated_schemes"] == ["fp8-dynamic"]
     assert schema["adapter_methods"] == ["lora", "qlora"]
     assert schema["algorithms"]["distillation"]["learns_from_teacher"] is True
     assert schema["algorithms"]["grpo"]["learns_from_rewards"] is True
