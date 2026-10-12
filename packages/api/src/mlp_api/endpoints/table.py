@@ -7,7 +7,7 @@ endpoint = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("name", String, nullable=False),
-    # Names its URL; a restart is a new Endpoint with a new one.
+    # Names its URL; it stays the same across restarts.
     Column("uuid", String, nullable=False, unique=True),
     # In plain text, so users can look it up again.
     Column("key", String, nullable=False),

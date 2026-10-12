@@ -11,7 +11,7 @@ app = typer.Typer()
 
 @app.callback(invoke_without_command=True)
 def endpoints(context: typer.Context) -> None:
-    """List Endpoints with model, status and URL; start, stop, delete them or show their keys."""
+    """List Endpoints with model, status and URL; start, stop, restart, delete them or show keys."""
     if context.invoked_subcommand:
         return
     # 1. Every Endpoint, stopped ones included, from the API.
@@ -67,6 +67,15 @@ def stop(name: str) -> None:
 
 
 @app.command()
+def restart(name: str) -> None:
+    """Restart the stopped or failed Endpoint at the same URL and Endpoint Key."""
+    with api_client() as client:
+        restarted = exit_on_error(client.post(api_paths.RESTART_ENDPOINT.format(name=name))).json()
+    typer.echo(f"Restarted Endpoint {restarted['name']} ({restarted['status']})")
+    typer.echo(f"OpenAI base URL: {restarted['url']}")
+
+
+@app.command()
 def delete(name: str) -> None:
     """Delete the stopped Endpoint from the list."""
     with api_client() as client:
@@ -76,15 +85,15 @@ def delete(name: str) -> None:
 
 @app.command()
 def key(name: str) -> None:
-    """Print the running Endpoint's Endpoint Key, the bearer token its URL takes."""
+    """Print the Endpoint's Endpoint Key, the bearer token its URL takes."""
     with api_client() as client:
         listing = exit_on_error(client.get(api_paths.ENDPOINTS)).json()
-    # A stopped Endpoint keeps its row, and its name may be running again.
-    running = [e for e in listing if e["name"] == name and e["status"] != "stopped"]
-    if not running:
-        typer.echo(f"No Endpoint {name} is running", err=True)
+    # Newest first, so the first is the one older databases restart.
+    named = [e for e in listing if e["name"] == name]
+    if not named:
+        typer.echo(f"No Endpoint {name}", err=True)
         raise typer.Exit(1)
-    typer.echo(running[0]["key"])
+    typer.echo(named[0]["key"])
 
 
 @app.command("refresh-key")

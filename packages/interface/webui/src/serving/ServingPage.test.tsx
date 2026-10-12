@@ -210,6 +210,37 @@ test("a stopped Endpoint is deleted with its trashcan, and only a stopped one ha
   expect(calls.map((call) => call.route)).toContain("DELETE /endpoints/old");
 });
 
+test.each([
+  ["running", ["Stop"]],
+  ["pending", ["Stop"]],
+  ["failed", ["Restart", "Stop"]],
+  ["stopped", ["Restart", "Delete chat"]],
+])("a %s Endpoint's row offers %j", async (status, actions) => {
+  fakeApi({ ...routes, "GET /endpoints": [200, [{ ...chat, status }]] });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const cell = row.querySelector(".actions") as HTMLElement;
+  const buttons = within(cell).getAllByRole("button");
+  expect(buttons.map((button) => button.textContent?.trim() || button.ariaLabel)).toEqual(actions);
+});
+
+test("a stopped Endpoint restarts from its row", async () => {
+  const calls = fakeApi({
+    ...routes,
+    "POST /endpoints/old/restart": [200, { ...chat, name: "old", status: "pending" }],
+  });
+  renderApp("/serving");
+
+  const stopped = (await screen.findByText("old")).closest("tr")!;
+  await userEvent.click(within(stopped).getByRole("button", { name: /restart/i }));
+
+  expect(
+    await screen.findByText("Restarted old; it is pending until vLLM is ready"),
+  ).toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain("POST /endpoints/old/restart");
+});
+
 test("the model picker lists our Model Versions first, then open-source models", async () => {
   fakeApi(routes);
   renderApp("/serving");
@@ -247,14 +278,14 @@ test("an Endpoint starts with untouched defaults, or with the options changed", 
 
   await userEvent.type(await screen.findByRole("combobox", { name: /^Model/ }), "model:qwen-sft@2");
   await userEvent.type(screen.getByLabelText(/^Endpoint name/), "sft");
-  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^start/i }));
   expect(await screen.findByText(/Started sft/)).toBeInTheDocument();
   const sent = () => calls.filter((call) => call.route === "POST /endpoints").at(-1)!.body;
   expect(sent()).toEqual({ model: "model:qwen-sft@2", name: "sft", ...DEFAULTS });
 
   await userEvent.type(screen.getByLabelText(/^Max Model Len/), "8192");
   await userEvent.selectOptions(screen.getByLabelText(/^Prefix Caching/), "false");
-  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^start/i }));
   await waitFor(() =>
     expect(sent()).toEqual({
       model: "model:qwen-sft@2",
@@ -285,7 +316,7 @@ test("only a Speculator trained for the model can be picked to draft for it", as
   expect(tokens).toHaveAccessibleDescription("Tokens drafted per step.");
   await userEvent.click(screen.getByRole("button", { name: "Increase Draft tokens" }));
   await userEvent.click(screen.getByRole("button", { name: "Increase Draft tokens" }));
-  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^start/i }));
 
   await screen.findByText(/Started chat/);
   expect(calls.find((call) => call.route === "POST /endpoints")!.body.speculative).toEqual({
@@ -300,7 +331,7 @@ test("n-gram drafts without a Speculator", async () => {
   renderApp("/serving");
 
   await userEvent.selectOptions(await screen.findByLabelText(/^Speculative decoding/), "ngram");
-  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^start/i }));
 
   await screen.findByText(/Started chat/);
   expect(calls.find((call) => call.route === "POST /endpoints")!.body.speculative).toEqual({
@@ -322,7 +353,7 @@ test("a refused start shows why, next to the option when it names one", async ()
   renderApp("/serving");
 
   await userEvent.type(await screen.findByLabelText(/^Max Model Len/), "0");
-  await userEvent.click(screen.getByRole("button", { name: /start/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^start/i }));
 
   expect(await screen.findByLabelText(/^Max Model Len/)).toHaveAccessibleDescription(
     expect.stringContaining("should be greater than 0"),
@@ -330,12 +361,23 @@ test("a refused start shows why, next to the option when it names one", async ()
 });
 
 test("a start the API refuses outright shows its reason", async () => {
-  fakeApi({ ...routes, "POST /endpoints": [409, { detail: "Endpoint chat is already running" }] });
+  fakeApi({ ...routes, "POST /endpoints": [502, { detail: "Kubernetes did not create it" }] });
   renderApp("/serving");
 
-  await userEvent.click(await screen.findByRole("button", { name: /start/i }));
+  await userEvent.click(await screen.findByRole("button", { name: /^start/i }));
 
-  expect(await screen.findByText("Endpoint chat is already running")).toBeInTheDocument();
+  expect(await screen.findByText("Kubernetes did not create it")).toBeInTheDocument();
+});
+
+test("a start under a taken name shows why next to the name", async () => {
+  const detail = "Endpoint chat already exists; restart it or delete it first";
+  fakeApi({ ...routes, "POST /endpoints": [409, { detail }] });
+  renderApp("/serving");
+
+  await userEvent.type(await screen.findByLabelText(/^Endpoint name/), "chat");
+  await userEvent.click(screen.getByRole("button", { name: /^start/i }));
+
+  expect(await screen.findByLabelText(/^Endpoint name/)).toHaveAccessibleDescription(detail);
 });
 
 test("an Endpoint's load and TTFT show in its row, and its name links to its stats", async () => {

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def run_serving_cases(state) -> None:
     """Advances every running Smoke Test's pending serving cases by one step."""
-    # 1. The running Smoke Tests, and each name's newest Endpoint, as stopped ones keep their row.
+    # 1. The running Smoke Tests, and each name's newest Endpoint; older databases have several.
     with state.engine.connect() as connection:
         rows = connection.execute(select(pipeline).where(is_smoke_test, unfinished)).all()
     endpoints = {}

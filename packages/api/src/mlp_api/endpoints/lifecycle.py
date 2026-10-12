@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import Engine, delete, insert, select, update
 
-from mlp_api.endpoints.endpoint_model import add_drafter, find_endpoint_model
+from mlp_api.endpoints.endpoint_model import EndpointModel, add_drafter, find_endpoint_model
 from mlp_api.endpoints.keys import new_endpoint_key
 from mlp_api.endpoints.manifests import endpoint_manifests
 from mlp_api.endpoints.table import endpoint, not_stopped
@@ -19,37 +19,22 @@ from mlp_core.endpoint_spec import EndpointSpec
 endpoints_lock = threading.Lock()
 
 
-class EndpointNameTaken(Exception):
+class EndpointConflict(Exception):
     pass
 
 
 def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
     """The new Endpoint, pending until vLLM is ready; ValueError if its model can't be served."""
     with endpoints_lock:
-        # 1. The name is free while no other Endpoint with it runs.
+        # 1. The name is free until the Endpoint with it is deleted.
         if find_endpoint(state.engine, name) is not None:
-            raise EndpointNameTaken(f"Endpoint {name} is already running; stop it or pick a name")
+            raise EndpointConflict(f"Endpoint {name} already exists; restart it or delete it first")
 
-        # 2. What vLLM loads, pinned, and what drafts for it, with room for the Base Models in the
-        # Model Cache.
-        model = find_endpoint_model(
-            spec.model, state.hugging_face, state.model_registry, state.object_store
-        )
-        pinned = {"model": model.references[0]}
-        if spec.speculative:
-            model, drafter = add_drafter(
-                model, spec.speculative, state.hugging_face, state.model_registry
-            )
-            pinned["speculative"] = spec.speculative.model_copy(update={"model": drafter})
-        spec = spec.model_copy(update=pinned)
-        if model.base_models:
-            downloads = preview_downloads(state, model.base_models, None)
-            make_room_for_downloads(state, downloads["download_bytes"])
+        # 2. What vLLM loads, pinned.
+        spec, model = pin_endpoint_model(state, spec)
 
         # 3. Its row first, so in-use checks and the reconciler know every Deployment.
-        settings, cluster = state.settings, state.cluster
-        gpus = settings.gpus_per_endpoint
-        endpoint_uuid = uuid.uuid4().hex
+        endpoint_uuid, gpus = uuid.uuid4().hex, state.settings.gpus_per_endpoint
         with state.engine.begin() as connection:
             connection.execute(
                 insert(endpoint).values(
@@ -65,31 +50,86 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
                 )
             )
 
-        # 4. Its Kubernetes objects; after a failure, none, so nothing serves without its route.
-        manifests = endpoint_manifests(
-            name,
-            endpoint_uuid,
-            spec,
-            model,
-            gpus,
-            settings.model_cache_size,
-            cluster.endpoint_environment,
+        # 4. Its Kubernetes objects.
+        return create_endpoint_objects(state, name, endpoint_uuid, spec, model, gpus)
+
+
+def restart_endpoint(state, name: str) -> dict:
+    """The stopped or failed Endpoint at its URL and key again, pending until vLLM is ready."""
+    with endpoints_lock:
+        # 1. Only one that doesn't run; older databases may have several rows, the newest counts.
+        found = find_endpoint(state.engine, name)
+        if found is None:
+            raise LookupError(f"No Endpoint {name}")
+        if found.status in ("pending", "running"):
+            raise EndpointConflict(f"Endpoint {name} is {found.status}; stop it first")
+
+        # 2. What vLLM loads from the pinned spec, so a moving Reference stays where it was.
+        spec, model = pin_endpoint_model(state, EndpointSpec.model_validate(found.spec))
+
+        # 3. Without a failed Endpoint's leftover Deployment, pending again on today's GPU count.
+        state.cluster.delete_endpoint(name)
+        gpus = state.settings.gpus_per_endpoint
+        with state.engine.begin() as connection:
+            connection.execute(
+                update(endpoint)
+                .where(endpoint.c.id == found.id)
+                .values(status="pending", gpus=gpus)
+            )
+
+        # 4. Its Kubernetes objects under the same UUID.
+        return create_endpoint_objects(state, name, found.uuid, spec, model, gpus)
+
+
+def pin_endpoint_model(state, spec: EndpointSpec) -> tuple[EndpointSpec, EndpointModel]:
+    """The spec with its models pinned, and what vLLM loads, with room in the Model Cache."""
+    # 1. The served model and what drafts for it.
+    model = find_endpoint_model(
+        spec.model, state.hugging_face, state.model_registry, state.object_store
+    )
+    pinned = {"model": model.references[0]}
+    if spec.speculative:
+        model, drafter = add_drafter(
+            model, spec.speculative, state.hugging_face, state.model_registry
         )
-        try:
-            cluster.create_endpoint(manifests)
-        except Exception as error:
-            cluster.delete_endpoint(name)
-            set_status(state.engine, name, "stopped")
-            raise RuntimeError(f"Kubernetes did not create Endpoint {name}: {error}") from None
-        return endpoint_summary(
-            find_endpoint(state.engine, name), cluster.endpoint_environment.domain
-        )
+        pinned["speculative"] = spec.speculative.model_copy(update={"model": drafter})
+
+    # 2. Room for its Base Models, which may have been evicted since it last ran.
+    if model.base_models:
+        downloads = preview_downloads(state, model.base_models, None)
+        make_room_for_downloads(state, downloads["download_bytes"])
+    return spec.model_copy(update=pinned), model
+
+
+def create_endpoint_objects(
+    state, name: str, endpoint_uuid: str, spec: EndpointSpec, model: EndpointModel, gpus: int
+) -> dict:
+    """The Endpoint once Kubernetes has its objects; after a failure none, and it is stopped."""
+    cluster = state.cluster
+    manifests = endpoint_manifests(
+        name,
+        endpoint_uuid,
+        spec,
+        model,
+        gpus,
+        state.settings.model_cache_size,
+        cluster.endpoint_environment,
+    )
+    try:
+        cluster.create_endpoint(manifests)
+    except Exception as error:
+        # Delete any half-created objects, so nothing serves without its route.
+        cluster.delete_endpoint(name)
+        set_status(state.engine, name, "stopped")
+        raise RuntimeError(f"Kubernetes did not create Endpoint {name}: {error}") from None
+    return endpoint_summary(find_endpoint(state.engine, name), cluster.endpoint_environment.domain)
 
 
 def stop_endpoint(engine: Engine, cluster: Cluster, name: str) -> None:
     """Deletes the Endpoint's Kubernetes objects; LookupError if no Endpoint with the name runs."""
     with endpoints_lock:
-        if find_endpoint(engine, name) is None:
+        found = find_endpoint(engine, name)
+        if found is None or found.status == "stopped":
             raise LookupError(f"No Endpoint {name} is running")
         cluster.delete_endpoint(name)
         set_status(engine, name, "stopped")
@@ -139,13 +179,13 @@ def endpoint_summary(row, domain: str) -> dict:
 
 
 def find_endpoint(engine: Engine, name: str):
-    """The Endpoint with the name that isn't stopped, or None."""
+    """The Endpoint with the name, or None; the newest, where older databases have several."""
     with engine.connect() as connection:
-        query = select(endpoint).where(endpoint.c.name == name, not_stopped)
+        query = select(endpoint).where(endpoint.c.name == name).order_by(endpoint.c.id.desc())
         return connection.execute(query).first()
 
 
-# A stopped Endpoint stays stopped.
+# A stopped Endpoint stays stopped; only a restart brings it back.
 def set_status(engine: Engine, name: str, status: str) -> None:
     with engine.begin() as connection:
         connection.execute(

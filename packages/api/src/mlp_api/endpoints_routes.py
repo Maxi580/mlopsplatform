@@ -4,11 +4,12 @@ from fastapi import APIRouter, HTTPException, Request, Response
 
 from mlp_api.endpoints.keys import endpoint_key_opens, refresh_endpoint_key
 from mlp_api.endpoints.lifecycle import (
-    EndpointNameTaken,
+    EndpointConflict,
     delete_endpoint,
     endpoint_summary,
     find_endpoint,
     list_endpoints,
+    restart_endpoint,
     start_endpoint,
     stop_endpoint,
 )
@@ -29,7 +30,6 @@ def endpoints(request: Request) -> list[dict]:
     listed = list_endpoints(state.engine, state.cluster.endpoint_environment.domain)
     running = [found["name"] for found in listed if found["status"] == "running"]
     stats = fetch_endpoint_stats(state.cluster, running)
-    # A stopped Endpoint keeps its row, and its name may be running again.
     for found in listed:
         read = stats.get(found["name"]) if found["status"] == "running" else None
         found["stats"] = endpoint_stats_summary(read)
@@ -40,7 +40,7 @@ def endpoints(request: Request) -> list[dict]:
 def stats(name: str, request: Request) -> dict:
     found = find_endpoint(request.app.state.engine, name)
     if found is None:
-        raise HTTPException(404, f"No Endpoint {name} is running")
+        raise HTTPException(404, f"No Endpoint {name}")
     if found.status != "running":
         detail = f"Endpoint {name} is {found.status}; it has stats once vLLM is ready"
         raise HTTPException(409, detail)
@@ -55,7 +55,7 @@ def start(start: EndpointStart, request: Request) -> dict:
     spec = EndpointSpec.model_validate(start.model_dump(exclude={"name"}))
     try:
         return start_endpoint(request.app.state, start.name, spec)
-    except EndpointNameTaken as error:
+    except EndpointConflict as error:
         raise HTTPException(409, str(error)) from None
     except ValueError as error:
         raise HTTPException(422, f"Can't serve {start.model}: {error}") from None
@@ -70,6 +70,20 @@ def stop(name: str, request: Request) -> dict:
     except LookupError as error:
         raise HTTPException(404, str(error)) from None
     return {"name": name, "status": "stopped"}
+
+
+@router.post(api_paths.RESTART_ENDPOINT)
+def restart(name: str, request: Request) -> dict:
+    try:
+        return restart_endpoint(request.app.state, name)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except EndpointConflict as error:
+        raise HTTPException(409, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, f"Can't serve Endpoint {name} again: {error}") from None
+    except RuntimeError as error:
+        raise HTTPException(502, str(error)) from None
 
 
 @router.delete(api_paths.ENDPOINT, status_code=204)

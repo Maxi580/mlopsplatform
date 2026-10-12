@@ -6,7 +6,7 @@ from mlp_api.pipelines.hugging_face import HubModel
 from mlp_core import api_paths
 
 from .conftest import PASSWORD
-from .test_endpoints import COMMIT, QWEN, endpoints, start, stop
+from .test_endpoints import COMMIT, QWEN, endpoints, restart, start, stop
 
 
 @pytest.fixture
@@ -54,14 +54,13 @@ def test_a_stopped_endpoints_key_opens_nothing(logged_in_api, qwen_on_the_hub):
     assert not opens(logged_in_api, chat["url"], chat["key"])
 
 
-def test_a_restarted_endpoint_gets_a_new_key(logged_in_api, qwen_on_the_hub):
-    first = start(logged_in_api).json()
+def test_a_restarted_endpoint_opens_with_its_key_again(logged_in_api, qwen_on_the_hub):
+    chat = start(logged_in_api).json()
     stop(logged_in_api)
 
-    second = start(logged_in_api).json()
+    restart(logged_in_api)
 
-    assert first["key"] != second["key"]
-    assert not opens(logged_in_api, second["url"], first["key"])
+    assert opens(logged_in_api, chat["url"], chat["key"])
 
 
 def test_a_refreshed_key_replaces_the_old_one_at_the_same_url(logged_in_api, qwen_on_the_hub):
@@ -78,11 +77,20 @@ def test_a_refreshed_key_replaces_the_old_one_at_the_same_url(logged_in_api, qwe
     assert [e["key"] for e in endpoints(logged_in_api)] == [refreshed["key"]]
 
 
-def test_only_a_running_endpoints_key_can_be_refreshed(logged_in_api, qwen_on_the_hub):
-    start(logged_in_api)
+def test_a_stopped_endpoints_key_can_be_refreshed_before_it_restarts(
+    logged_in_api, qwen_on_the_hub
+):
+    chat = start(logged_in_api).json()
     stop(logged_in_api)
 
-    assert refresh(logged_in_api).status_code == 404
+    refreshed = refresh(logged_in_api).json()
+    restart(logged_in_api)
+
+    assert not opens(logged_in_api, chat["url"], chat["key"])
+    assert opens(logged_in_api, chat["url"], refreshed["key"])
+
+
+def test_refreshing_an_unknown_endpoints_key_is_not_found(logged_in_api):
     assert refresh(logged_in_api, "unknown").status_code == 404
 
 

@@ -36,7 +36,7 @@ The `sweep` Stage: a hyperparameter search over one Phase configuration. Its out
 One training run within a Sweep. Its weights are thrown away.
 
 **Endpoint**:
-A running, OpenAI-compatible server for one model (a Model Version or a Base Model), started by a user from the Serving tab or the CLI. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it.
+A running, OpenAI-compatible server for one model (a Model Version or a Base Model), started by a user from the Serving tab or the CLI. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it. A stopped or failed one can be restarted under the same name, URL and Endpoint Key until it is deleted.
 _Avoid_: Deployment, served model, inference service
 
 **Endpoint Key**:

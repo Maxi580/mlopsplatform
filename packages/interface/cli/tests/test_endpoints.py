@@ -95,6 +95,28 @@ def test_stop_stops_the_endpoint(logged_in, fake_api):
     assert "Stopped chat" in result.output
 
 
+def test_restart_restarts_the_endpoint_and_prints_its_url(logged_in, fake_api):
+    path = api_paths.RESTART_ENDPOINT.format(name="chat")
+    fake_api.answers[path] = (200, {**ENDPOINT, "status": "pending"})
+
+    result = mlp_endpoints("restart", "chat")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received == [(path, b"")]
+    assert "Restarted Endpoint chat (pending)" in result.output
+    assert f"OpenAI base URL: {URL}\n" in result.output
+
+
+def test_restarting_a_running_endpoint_says_why_it_was_refused(logged_in, fake_api):
+    detail = "Endpoint chat is running; stop it first"
+    fake_api.answers[api_paths.RESTART_ENDPOINT.format(name="chat")] = (409, {"detail": detail})
+
+    result = mlp_endpoints("restart", "chat")
+
+    assert result.exit_code == 1
+    assert detail in result.output
+
+
 def test_delete_deletes_the_stopped_endpoint(logged_in, fake_api):
     path = api_paths.ENDPOINT.format(name="chat")
     fake_api.answers[path] = (204, b"")
@@ -125,9 +147,9 @@ def test_endpoints_send_the_login_token(logged_in, fake_api):
     assert fake_api.received == [(api_paths.ENDPOINTS, f"Bearer {TOKEN}")]
 
 
-def test_key_prints_the_running_endpoints_key(logged_in, fake_api):
-    stopped = {**ENDPOINT, "status": "stopped", "key": "old-key"}
-    fake_api.answers[api_paths.ENDPOINTS] = (200, [ENDPOINT, stopped])
+def test_key_prints_the_newest_endpoints_key(logged_in, fake_api):
+    older = {**ENDPOINT, "status": "stopped", "key": "old-key"}
+    fake_api.answers[api_paths.ENDPOINTS] = (200, [{**ENDPOINT, "status": "stopped"}, older])
 
     result = mlp_endpoints("key", "chat")
 
@@ -135,13 +157,13 @@ def test_key_prints_the_running_endpoints_key(logged_in, fake_api):
     assert result.output == f"{KEY}\n"
 
 
-def test_key_of_an_endpoint_that_is_not_running_says_so(logged_in, fake_api):
-    fake_api.answers[api_paths.ENDPOINTS] = (200, [{**ENDPOINT, "status": "stopped"}])
+def test_key_of_an_unknown_endpoint_says_so(logged_in, fake_api):
+    fake_api.answers[api_paths.ENDPOINTS] = (200, [ENDPOINT])
 
-    result = mlp_endpoints("key", "chat")
+    result = mlp_endpoints("key", "other")
 
     assert result.exit_code == 1
-    assert "No Endpoint chat is running" in result.output
+    assert "No Endpoint other" in result.output
 
 
 def test_refresh_key_prints_the_new_key(logged_in, fake_api):

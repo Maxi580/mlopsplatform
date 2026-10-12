@@ -44,6 +44,10 @@ def stop(api, name="chat"):
     return api.post(api_paths.STOP_ENDPOINT.format(name=name))
 
 
+def restart(api, name="chat"):
+    return api.post(api_paths.RESTART_ENDPOINT.format(name=name))
+
+
 def endpoints(api) -> list[dict]:
     response = api.get(api_paths.ENDPOINTS)
     assert response.status_code == 200, response.text
@@ -273,16 +277,6 @@ def test_the_route_serves_the_endpoint_url_under_its_uuid(logged_in_api, qwen_on
     assert route["services"] == [{"name": "endpoint-chat", "port": 8000}]
 
 
-def test_a_restarted_endpoint_gets_a_new_url(logged_in_api, qwen_on_the_hub, cluster):
-    first = start(logged_in_api).json()["url"]
-    stop(logged_in_api)
-
-    second = start(logged_in_api).json()["url"]
-
-    assert first != second
-    assert [e["url"] for e in endpoints(logged_in_api)] == [second, first]
-
-
 # A route under an Endpoint's prefix would reach its vLLM instead of the API while it runs.
 def test_no_api_path_falls_under_the_endpoint_route(api):
     prefix = config.ENDPOINT_PATH_PREFIX.split("{")[0]
@@ -395,31 +389,151 @@ def test_a_running_endpoint_cannot_be_deleted(logged_in_api, qwen_on_the_hub, cl
     assert [e["status"] for e in endpoints(logged_in_api)] == ["pending"]
 
 
-def test_delete_keeps_the_running_endpoint_of_the_same_name(
-    logged_in_api, qwen_on_the_hub, cluster
-):
-    start(logged_in_api)
-    stop(logged_in_api)
-    start(logged_in_api)
-
-    assert delete_endpoint(logged_in_api).status_code == 204
-    assert [e["status"] for e in endpoints(logged_in_api)] == ["pending"]
-
-
 def test_deleting_an_unknown_endpoint_is_not_found(logged_in_api):
     assert delete_endpoint(logged_in_api, "unknown").status_code == 404
 
 
-def test_a_name_is_taken_until_its_endpoint_stops(logged_in_api, qwen_on_the_hub, cluster):
+def make_status(api, cluster, status):
+    """Brings the started Endpoint `chat` to the status."""
+    if status == "stopped":
+        stop(api)
+    elif status != "pending":
+        cluster.endpoint_states["chat"] = status
+        reconcile(api)
+
+
+@pytest.mark.parametrize("status", ["pending", "running", "failed", "stopped"])
+def test_a_name_is_taken_until_its_endpoint_is_deleted(
+    logged_in_api, qwen_on_the_hub, cluster, status
+):
     start(logged_in_api)
+    make_status(logged_in_api, cluster, status)
 
     refused = start(logged_in_api)
-    stop(logged_in_api)
-    restarted = start(logged_in_api)
 
     assert refused.status_code == 409
-    assert restarted.status_code == 201, restarted.text
-    assert [e["status"] for e in endpoints(logged_in_api)] == ["pending", "stopped"]
+    expected = "Endpoint chat already exists; restart it or delete it first"
+    assert refused.json()["detail"] == expected
+    assert [e["status"] for e in endpoints(logged_in_api)] == [status]
+
+
+def test_a_deleted_endpoints_name_is_free_again(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    stop(logged_in_api)
+    delete_endpoint(logged_in_api)
+
+    assert start(logged_in_api).status_code == 201
+
+
+@pytest.mark.parametrize("status", ["stopped", "failed"])
+def test_a_restart_brings_back_the_same_endpoint(logged_in_api, qwen_on_the_hub, cluster, status):
+    started = start(logged_in_api, max_model_len=4096).json()
+    make_status(logged_in_api, cluster, status)
+    cluster.deleted_endpoints.clear()
+
+    response = restart(logged_in_api)
+
+    assert response.status_code == 200, response.text
+    restarted = response.json()
+    assert restarted["status"] == "pending"
+    for kept in ("url", "key", "spec", "created_at"):
+        assert restarted[kept] == started[kept]
+    # A failed Endpoint still has its Deployment, which the restart replaces.
+    assert cluster.deleted_endpoints == ["chat"]
+    assert contains(vllm_args(cluster), ["--max-model-len", "4096"])
+    uuid = started["url"].split("/")[-2]
+    [route] = cluster.endpoints["chat"]["route"]["spec"]["routes"]
+    assert f"PathPrefix(`/serving/{uuid}/`)" in route["match"]
+    assert [e["status"] for e in endpoints(logged_in_api)] == ["pending"]
+
+
+def test_a_restart_takes_the_gpu_count_from_platform_settings(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api)
+    stop(logged_in_api)
+    logged_in_api.app.state.settings.gpus_per_endpoint = 2
+
+    assert restart(logged_in_api).json()["gpus"] == 2
+    assert contains(vllm_args(cluster), ["--tensor-parallel-size", "2"])
+
+
+def test_a_failed_endpoint_whose_model_is_gone_keeps_its_deployment(
+    logged_in_api, cluster, model_registry, object_store
+):
+    register(model_registry, object_store, "my-model", {"weights": "full"})
+    start(logged_in_api, "model:my-model@1")
+    make_status(logged_in_api, cluster, "failed")
+    model_registry.versions.clear()
+
+    response = restart(logged_in_api)
+
+    assert response.status_code == 422
+    assert "chat" in cluster.endpoints
+
+
+@pytest.mark.parametrize("status", ["pending", "running"])
+def test_an_endpoint_that_is_not_stopped_cannot_be_restarted(
+    logged_in_api, qwen_on_the_hub, cluster, status
+):
+    start(logged_in_api)
+    make_status(logged_in_api, cluster, status)
+
+    response = restart(logged_in_api)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == f"Endpoint chat is {status}; stop it first"
+
+
+def test_restarting_an_unknown_endpoint_is_not_found(logged_in_api):
+    assert restart(logged_in_api, "unknown").status_code == 404
+
+
+def test_a_restart_kubernetes_refuses_leaves_it_stopped(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    stop(logged_in_api)
+
+    def refuse_route(manifests):
+        cluster.endpoints["chat"] = manifests
+        raise RuntimeError("no IngressRoute")
+
+    cluster.create_endpoint = refuse_route
+
+    response = restart(logged_in_api)
+
+    assert response.status_code == 502
+    assert cluster.endpoints == {}
+    assert [e["status"] for e in endpoints(logged_in_api)] == ["stopped"]
+
+
+def test_an_adapter_endpoint_restarts_on_its_base(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
+):
+    register_adapter(model_registry, object_store, "qwen-sft", PINNED_QWEN)
+    start(logged_in_api, "model:qwen-sft@1")
+    started = (init_commands(cluster), vllm_args(cluster))
+    stop(logged_in_api)
+
+    assert restart(logged_in_api).status_code == 200
+    assert (init_commands(cluster), vllm_args(cluster)) == started
+
+
+def test_a_speculator_endpoint_restarts_with_its_drafter(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, object_store
+):
+    tags = {"speculator": "eagle3", "verifier": PINNED_QWEN}
+    register(model_registry, object_store, "qwen-speculator", tags)
+    speculative = {"method": "eagle3", "model": "model:qwen-speculator"}
+    response = start(logged_in_api, speculative=speculative)
+    assert response.status_code == 201, response.text
+    started = (init_commands(cluster), vllm_args(cluster))
+    stop(logged_in_api)
+
+    restarted = restart(logged_in_api)
+
+    assert restarted.status_code == 200, restarted.text
+    assert (init_commands(cluster), vllm_args(cluster)) == started
+    assert restarted.json()["spec"]["speculative"]["model"] == "model:qwen-speculator@1"
 
 
 def test_a_served_model_version_cannot_be_deleted_until_its_endpoint_stops(
@@ -454,4 +568,5 @@ def test_endpoints_require_login(api, cluster):
     assert api.get(api_paths.ENDPOINTS).status_code == 401
     assert start(api).status_code == 401
     assert stop(api).status_code == 401
+    assert restart(api).status_code == 401
     assert delete_endpoint(api).status_code == 401

@@ -1,4 +1,12 @@
-import { CircleAlert, LoaderCircle, Play, RefreshCw, Square, Trash2 } from "lucide-react";
+import {
+  CircleAlert,
+  LoaderCircle,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
@@ -7,6 +15,7 @@ import {
   endpointByName,
   MODELS,
   refreshEndpointKey,
+  restartEndpoint,
   SCHEMA,
   stopEndpoint,
 } from "../apiPaths";
@@ -40,6 +49,16 @@ export default function ServingPage() {
     try {
       await callApi(stopEndpoint(name), {});
       setNotice({ text: `Stopped ${name}`, failed: false });
+    } catch (failure) {
+      setNotice({ text: errorMessage(failure), failed: true });
+    }
+    endpoints.reload();
+  }
+
+  async function restart(name: string) {
+    try {
+      await callApi(restartEndpoint(name), {});
+      setNotice({ text: `Restarted ${name}; it is pending until vLLM is ready`, failed: false });
     } catch (failure) {
       setNotice({ text: errorMessage(failure), failed: true });
     }
@@ -117,11 +136,12 @@ export default function ServingPage() {
             <tbody>
               {endpoints.data.map((endpoint) => (
                 <EndpointRow
-                  // A stopped Endpoint keeps its row, and its name may be running again.
+                  // Older databases may have several stopped Endpoints with one name.
                   key={`${endpoint.name}-${endpoint.created_at}`}
                   endpoint={endpoint}
                   tokensPerSecond={tokensPerSecond[endpoint.name]}
                   onStop={stop}
+                  onRestart={restart}
                   onRefreshKey={refreshKey}
                   onDelete={remove}
                 />
@@ -179,12 +199,14 @@ function EndpointRow({
   endpoint,
   tokensPerSecond,
   onStop,
+  onRestart,
   onRefreshKey,
   onDelete,
 }: {
   endpoint: Endpoint;
   tokensPerSecond?: number | null;
   onStop: (name: string) => void;
+  onRestart: (name: string) => void;
   onRefreshKey: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
@@ -228,6 +250,15 @@ function EndpointRow({
       </td>
       <td title={started}>{started.slice("YYYY-".length)}</td>
       <td className="actions">
+        {(stopped || endpoint.status === "failed") && (
+          <button
+            type="button"
+            className="button ghost small"
+            onClick={() => onRestart(endpoint.name)}
+          >
+            <RotateCcw size={14} /> Restart
+          </button>
+        )}
         {stopped ? (
           <button
             type="button"
@@ -239,6 +270,7 @@ function EndpointRow({
             <Trash2 size={16} />
           </button>
         ) : (
+          // A failed Endpoint's Stop clears its Kubernetes objects; only a stopped one is deleted.
           <button
             type="button"
             className="button ghost small"
@@ -265,6 +297,7 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
   const [busy, setBusy] = useState(false);
 
   if (!schema || !form) return <LoaderCircle className="spin" size={16} />;
+  const nameErrors = errors?.byName.name;
 
   async function start(form: FormSection) {
     setBusy(true);
@@ -284,8 +317,15 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
       const located = Array.isArray(detail)
         ? (detail as FieldError[]).map((e) => ({ ...e, loc: e.loc.slice(1) }))
         : undefined;
+      const message = errorMessage(failure);
+      // A conflict is the name being taken.
+      const taken = failure instanceof ApiError && failure.status === 409;
       setErrors(
-        located ? placeErrors(form, located) : { byName: {}, unplaced: [errorMessage(failure)] },
+        taken
+          ? { byName: { name: [message] }, unplaced: [] }
+          : located
+            ? placeErrors(form, located)
+            : { byName: {}, unplaced: [message] },
       );
     }
     setBusy(false);
@@ -327,8 +367,14 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
             id="endpoint-name"
             value={name}
             autoComplete="off"
+            aria-describedby={nameErrors ? "endpoint-name-error" : undefined}
             onChange={(event) => setName(event.target.value)}
           />
+          {nameErrors && (
+            <p className="field-error" id="endpoint-name-error" role="alert">
+              {nameErrors.join("; ")}
+            </p>
+          )}
         </div>
       </div>
       <FormSectionView

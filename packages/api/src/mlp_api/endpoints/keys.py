@@ -19,11 +19,11 @@ def endpoint_key_opens(engine: Engine, endpoint_uuid: str, key: str) -> bool:
 
 
 def refresh_endpoint_key(engine: Engine, name: str) -> None:
-    """Replaces the Endpoint's key; the old one stops working. LookupError if it isn't running."""
+    """Replaces the Endpoint's key; the old one stops working. LookupError if there is none."""
     with engine.begin() as connection:
         named = endpoint.c.name == name
         refreshed = connection.execute(
-            update(endpoint).where(named, not_stopped).values(key=new_endpoint_key())
+            update(endpoint).where(named).values(key=new_endpoint_key())
         ).rowcount
     if not refreshed:
-        raise LookupError(f"No Endpoint {name} is running")
+        raise LookupError(f"No Endpoint {name}")
