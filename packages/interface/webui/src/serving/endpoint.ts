@@ -53,6 +53,25 @@ export type EndpointHistory = {
   latencies: Record<string, Record<string, Point[]>>;
 };
 
+// What `GET /endpoints/<name>/requests` answers: the span's slowest and most recent Request
+// Traces, times in seconds, and the sampling settings null where the request left them unset.
+export type RequestTrace = {
+  trace_id: string;
+  arrived_at: string;
+  end_to_end: number | null;
+  time_to_first_token: number | null;
+  queue_time: number | null;
+  prefill_time: number | null;
+  decode_time: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  temperature: number | null;
+  top_p: number | null;
+  max_tokens: number | null;
+  mlflow_url: string;
+};
+export type EndpointRequests = { slowest: RequestTrace[]; recent: RequestTrace[] };
+
 export type Metric = {
   name: string;
   type: string;

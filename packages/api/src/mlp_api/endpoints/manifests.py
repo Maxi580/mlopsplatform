@@ -12,8 +12,9 @@ def endpoint_manifests(
     gpus: int,
     model_cache_size: str,
     environment: EndpointEnvironment,
+    traces_experiment_id: str | None,
 ) -> dict[str, dict]:
-    """The Endpoint's Deployment, Service and Traefik route, by kind."""
+    """The Endpoint's Deployment, Service and Traefik route, by kind; traced to the experiment."""
     object_name = config.ENDPOINT_OBJECT_NAME.format(name=name)
     labels = {config.ENDPOINT_LABEL: name}
     metadata = {"name": object_name, "namespace": environment.namespace, "labels": labels}
@@ -50,15 +51,22 @@ def endpoint_manifests(
         )
 
     # 2. vLLM, offline, on whole GPUs; it reports ready once the model is loaded.
+    args = vllm_args(spec, model.vllm, name, gpus, spec.speculative)
+    env = {"HF_HOME": config.MODEL_CACHE_PATH, "HF_HUB_OFFLINE": "1"}
+    if traces_experiment_id is not None:
+        args.append(f"--otlp-traces-endpoint={environment.mlflow_url}{config.REQUEST_TRACES_PATH}")
+        header = f"{config.REQUEST_TRACES_EXPERIMENT_HEADER}={traces_experiment_id}"
+        env |= {
+            "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": config.REQUEST_TRACES_PROTOCOL,
+            "OTEL_EXPORTER_OTLP_TRACES_HEADERS": header,
+            "OTEL_SERVICE_NAME": name,
+        }
     vllm = {
         "name": "vllm",
         "image": environment.vllm_image,
         "command": ["vllm", "serve"],
-        "args": vllm_args(spec, model.vllm, name, gpus, spec.speculative),
-        "env": [
-            {"name": "HF_HOME", "value": config.MODEL_CACHE_PATH},
-            {"name": "HF_HUB_OFFLINE", "value": "1"},
-        ],
+        "args": args,
+        "env": [{"name": variable, "value": value} for variable, value in env.items()],
         "ports": [{"containerPort": config.VLLM_PORT}],
         "resources": {"limits": {config.GPU_RESOURCE: gpus}},
         "readinessProbe": {"httpGet": {"path": "/health", "port": config.VLLM_PORT}},

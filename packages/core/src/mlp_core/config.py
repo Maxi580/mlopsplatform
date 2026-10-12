@@ -638,7 +638,8 @@ ENDPOINT_SAMPLE_RATES = {
     "prompt_tokens_per_second": "prompt_tokens",
     "generation_tokens_per_second": "generation_tokens",
 }
-# Endpoint Stats History: the experiment of an Endpoint name, with one Run per UTC day.
+# Endpoint Stats History: the experiment of an Endpoint name, with one Run per UTC day; its
+# Request Traces go there too.
 ENDPOINT_HISTORY_EXPERIMENT = "endpoint/{name}"
 ENDPOINT_HISTORY_RUN_NAME = "%Y-%m-%d"
 ENDPOINT_HISTORY_RETENTION = timedelta(days=30)
@@ -651,6 +652,31 @@ ENDPOINT_HISTORY_SPANS = {
 }
 # Points per chart, shared out over the span's day Runs, which MLflow each downsamples evenly.
 ENDPOINT_HISTORY_POINTS = 300
+# Request Traces: vLLM's one span per finished request, sent to MLflow's OTLP endpoint over HTTP,
+# as vLLM defaults to gRPC, which MLflow doesn't take.
+REQUEST_TRACES_PATH = "/v1/traces"
+REQUEST_TRACES_PROTOCOL = "http/protobuf"
+REQUEST_TRACES_EXPERIMENT_HEADER = "x-mlflow-experiment-id"
+REQUEST_TRACE_SPAN = "llm_request"
+# Each row's value by the span attribute vLLM keeps it in; times in seconds, and the sampling
+# settings only when the request set them.
+REQUEST_TRACE_ATTRIBUTES = {
+    "end_to_end": "gen_ai.latency.e2e",
+    "time_to_first_token": "gen_ai.latency.time_to_first_token",
+    "queue_time": "gen_ai.latency.time_in_queue",
+    "prefill_time": "gen_ai.latency.time_in_model_prefill",
+    "decode_time": "gen_ai.latency.time_in_model_decode",
+    "prompt_tokens": "gen_ai.usage.prompt_tokens",
+    "completion_tokens": "gen_ai.usage.completion_tokens",
+    "temperature": "gen_ai.request.temperature",
+    "top_p": "gen_ai.request.top_p",
+    "max_tokens": "gen_ai.request.max_tokens",
+}
+# The stats page lists this many of the slowest and of the most recent requests, in MLflow's order.
+ENDPOINT_REQUEST_LIST_SIZE = 15
+ENDPOINT_REQUEST_LISTS = {"slowest": "execution_time_ms DESC", "recent": "timestamp_ms DESC"}
+# A Request Trace in the MLflow UI, behind the platform's /mlflow/ route.
+MLFLOW_TRACE_URL = "/mlflow/#/experiments/{experiment_id}/traces/{trace_id}"
 
 # Datasets
 # TRL's standard Dataset row formats -> required field -> its value; the first match wins.

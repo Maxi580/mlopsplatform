@@ -14,6 +14,7 @@ from mlp_api.endpoints.lifecycle import (
     start_endpoint,
     stop_endpoint,
 )
+from mlp_api.endpoints.request_traces import endpoint_request_traces
 from mlp_api.endpoints.stats import endpoint_stats_summary, fetch_endpoint_stats
 from mlp_api.endpoints.stats_history import endpoint_history
 from mlp_core import api_paths, config
@@ -60,6 +61,16 @@ def history(name: str, request: Request, span: str = "live") -> dict:
     if find_endpoint(request.app.state.engine, name) is None:
         raise HTTPException(404, f"No Endpoint {name}")
     return endpoint_history(request.app.state.model_registry, name, span, datetime.now(UTC))
+
+
+# Stopped Endpoints have their Request Traces too.
+@router.get(api_paths.ENDPOINT_REQUESTS)
+def requests(name: str, request: Request, span: str = "live") -> dict:
+    if span not in config.ENDPOINT_HISTORY_SPANS:
+        raise HTTPException(422, f"span is one of {', '.join(config.ENDPOINT_HISTORY_SPANS)}")
+    if find_endpoint(request.app.state.engine, name) is None:
+        raise HTTPException(404, f"No Endpoint {name}")
+    return endpoint_request_traces(request.app.state.model_registry, name, span, datetime.now(UTC))
 
 
 @router.post(api_paths.ENDPOINTS, status_code=201)

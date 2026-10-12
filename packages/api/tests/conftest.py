@@ -194,6 +194,10 @@ class FakeModelRegistry:
         self.experiments = {}
         self.metrics = {}
         self.history_reads = []
+        # Experiment ID -> its Request Traces, as `traces/batchGet` answers them; and each read.
+        self.traces = {}
+        self.trace_searches = []
+        self.trace_reads = []
 
     def model_versions(self):
         return list(self.versions)
@@ -241,6 +245,22 @@ class FakeModelRegistry:
             if found == key and steps[0] <= step <= steps[1]
         )
 
+    def search_traces(self, experiment_id, since_ms, order_by, max_results):
+        self.trace_searches.append((experiment_id, since_ms, order_by, max_results))
+        orders = {
+            "timestamp_ms DESC": lambda info: datetime.fromisoformat(info["request_time"]),
+            "execution_time_ms DESC": lambda info: float(info["execution_duration"][:-1]),
+        }
+        since = datetime.fromtimestamp(since_ms / 1000, UTC)
+        infos = [trace["trace_info"] for trace in self.traces.get(experiment_id, [])]
+        found = [info for info in infos if datetime.fromisoformat(info["request_time"]) >= since]
+        return sorted(found, key=orders[order_by], reverse=True)[:max_results]
+
+    def batch_get_traces(self, trace_ids):
+        self.trace_reads.append(trace_ids)
+        every = [trace for traces in self.traces.values() for trace in traces]
+        return [trace for trace in every if trace["trace_info"]["trace_id"] in trace_ids]
+
     def logged(self, endpoint_name):
         """Each logged Server Sample of the Endpoint name, by Run name: step -> key -> value."""
         runs = self.experiments.get(f"endpoint/{endpoint_name}", {})
@@ -278,6 +298,7 @@ class FakeCluster:
         stages_image="mlp-stages:test",
         model_cache_host_path="/var/lib/mlp/model-cache",
         object_store_url="http://seaweedfs.test:8333",
+        mlflow_url="http://mlflow.test",
     )
 
     def __init__(self):

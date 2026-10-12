@@ -1,7 +1,14 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { fakeApi, renderApp } from "../testApi";
-import type { Endpoint, EndpointHistory, EndpointStats, Histogram } from "./endpoint";
+import type {
+  Endpoint,
+  EndpointHistory,
+  EndpointRequests,
+  EndpointStats,
+  Histogram,
+  RequestTrace,
+} from "./endpoint";
 
 const ttftHistogram: Histogram = { p50: 0.05, p95: 0.2, mean: 0.1, sum: 1, count: 10 };
 const value = (key: string, label: string, explanation: string, reading: number) => ({
@@ -174,4 +181,84 @@ test("the stats page shows the running Endpoint's URL and key to copy", async ()
   expect(screen.getByText("key-of-chat")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Copy Endpoint Key" }));
   expect(await navigator.clipboard.readText()).toBe("key-of-chat");
+});
+
+const trace = (
+  id: string,
+  endToEnd: number,
+  sampling: Partial<RequestTrace> = {},
+): RequestTrace => ({
+  trace_id: id,
+  arrived_at: "2026-10-02T09:00:00Z",
+  end_to_end: endToEnd,
+  time_to_first_token: 0.25,
+  queue_time: 0.125,
+  prefill_time: 0.0625,
+  decode_time: endToEnd - 0.25,
+  prompt_tokens: 12,
+  completion_tokens: 40,
+  temperature: null,
+  top_p: null,
+  max_tokens: null,
+  mlflow_url: `/mlflow/#/experiments/7/traces/${id}`,
+  ...sampling,
+});
+const requests: EndpointRequests = {
+  slowest: [trace("tr-slow", 9.5), trace("tr-fast", 0.5, { temperature: 0.7, max_tokens: 256 })],
+  recent: [trace("tr-fast", 0.5, { temperature: 0.7, max_tokens: 256 })],
+};
+const requestsSection = () => screen.getByText("Requests", { selector: "summary" }).parentElement!;
+
+test("the Requests subsection is closed and fetches nothing until opened", async () => {
+  const calls = fakeApi({ ...routes, "GET /endpoints/chat/requests?span=live": [200, requests] });
+  renderApp("/serving/chat");
+  await screen.findByRole("heading", { name: "Running/waiting" });
+
+  expect(requestsSection()).not.toHaveAttribute("open");
+  expect(calls.map((call) => call.route)).not.toContain("GET /endpoints/chat/requests?span=live");
+
+  await userEvent.click(screen.getByText("Requests", { selector: "summary" }));
+
+  expect(requestsSection()).toHaveAttribute("open");
+  const slow = (await within(requestsSection()).findByText("9.50 s")).closest("tr")!;
+  expect(slow).toHaveTextContent("250 ms");
+  expect(within(slow).getByRole("link", { name: "Open in MLflow" })).toHaveAttribute(
+    "href",
+    "/mlflow/#/experiments/7/traces/tr-slow",
+  );
+  expect(
+    within(requestsSection()).getByText("temperature 0.7 · max_tokens 256"),
+  ).toBeInTheDocument();
+});
+
+test("the Requests tabs switch between the slowest and the most recent", async () => {
+  fakeApi({ ...routes, "GET /endpoints/chat/requests?span=live": [200, requests] });
+  renderApp("/serving/chat");
+  await userEvent.click(await screen.findByText("Requests", { selector: "summary" }));
+  expect(await within(requestsSection()).findAllByRole("row")).toHaveLength(3);
+  expect(screen.getByRole("tab", { name: "Slowest 15" })).toHaveAttribute("aria-selected", "true");
+
+  await userEvent.click(screen.getByRole("tab", { name: "Most recent 15" }));
+
+  expect(screen.getByRole("tab", { name: "Most recent 15" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(within(requestsSection()).getAllByRole("row")).toHaveLength(2);
+  expect(within(requestsSection()).queryByText("9.50 s")).not.toBeInTheDocument();
+});
+
+test("the Requests subsection asks for the picked timespan and says when it is empty", async () => {
+  const empty = { slowest: [], recent: [] };
+  const calls = fakeApi({
+    ...routes,
+    "GET /endpoints/chat/history?span=7d": [200, history],
+    "GET /endpoints/chat/requests?span=7d": [200, empty],
+  });
+  renderApp("/serving/chat");
+  await userEvent.click(await screen.findByRole("button", { name: "7d" }));
+  await userEvent.click(screen.getByText("Requests", { selector: "summary" }));
+
+  expect(await screen.findByText("No requests in this timespan.")).toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain("GET /endpoints/chat/requests?span=7d");
 });

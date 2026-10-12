@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 vi.mock("uplot", () => ({
   default: class {
     setData() {}
+    setScale() {}
     setSize() {}
     destroy() {}
   },

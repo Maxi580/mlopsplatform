@@ -239,7 +239,8 @@ def test_an_endpoint_without_samples_has_an_empty_history(
     found = history(logged_in_api).json()
 
     assert found["values"]["running"] == []
-    assert model_registry.experiments == {}
+    # The start made the experiment for Request Traces, but no sample made a Run.
+    assert model_registry.experiments == {"endpoint/chat": {}}
 
 
 @pytest.mark.parametrize(

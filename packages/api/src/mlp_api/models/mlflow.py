@@ -21,6 +21,8 @@ class MLflow:
     def __init__(self):
         self.artifact_bucket = os.environ["MLFLOW_BUCKET"]
         self.client = httpx.Client(base_url=f"{os.environ['MLFLOW_URL']}/api/2.0/mlflow")
+        # Traces are only in MLflow's 3.0 API.
+        self.traces_url = f"{os.environ['MLFLOW_URL']}/api/3.0/mlflow/traces"
 
     def model_versions(self) -> list[ModelVersion]:
         versions, params = [], {"max_results": config.MLFLOW_PAGE_SIZE}
@@ -122,6 +124,27 @@ class MLflow:
         response = self.client.get("/metrics/get-history-bulk-interval", params=params)
         response.raise_for_status()
         return sorted((m["step"], m["value"]) for m in response.json().get("metrics", []))
+
+    def search_traces(
+        self, experiment_id: str, since_ms: int, order_by: str, max_results: int
+    ) -> list[dict]:
+        """The infos of the experiment's traces since then, in the order; without their spans."""
+        location = {"experiment_id": experiment_id}
+        body = {
+            "locations": [{"type": "MLFLOW_EXPERIMENT", "mlflow_experiment": location}],
+            "filter": f"trace.timestamp_ms >= {since_ms}",
+            "order_by": [order_by],
+            "max_results": max_results,
+        }
+        response = self.client.post(f"{self.traces_url}/search", json=body)
+        response.raise_for_status()
+        return response.json().get("traces", [])
+
+    def batch_get_traces(self, trace_ids: list[str]) -> list[dict]:
+        """The traces, each its info and spans."""
+        response = self.client.get(f"{self.traces_url}/batchGet", params={"trace_ids": trace_ids})
+        response.raise_for_status()
+        return response.json().get("traces", [])
 
 
 def model_version(found: dict) -> ModelVersion:

@@ -486,9 +486,11 @@ td {
   white-space: nowrap;
 }
 
-/* The Endpoint table's ten columns fit a laptop only with tighter cells. */
+/* The Endpoint and Request Trace tables' ten columns fit a laptop only with tighter cells. */
 .endpoint-table th,
-.endpoint-table td {
+.endpoint-table td,
+.request-traces th,
+.request-traces td {
   padding-left: 8px;
   padding-right: 8px;
 }
@@ -782,7 +784,14 @@ textarea[aria-invalid="true"] {
   margin-top: 12px;
 }
 
-.all-settings summary {
+.request-traces {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.all-settings summary,
+.request-traces summary {
   cursor: pointer;
   font-weight: 600;
 }
