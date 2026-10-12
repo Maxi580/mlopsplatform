@@ -25,8 +25,11 @@ class ObjectStore:
     def upload_file(self, path: Path, key: str, bucket: str | None = None) -> None:
         self.client.upload_file(str(path), bucket or self.bucket, key)
 
-    def delete(self, key: str) -> None:
-        self.client.delete_object(Bucket=self.bucket, Key=key)
+    def write(self, key: str, content: bytes, bucket: str | None = None) -> None:
+        self.client.put_object(Bucket=bucket or self.bucket, Key=key, Body=content)
+
+    def delete(self, key: str, bucket: str | None = None) -> None:
+        self.client.delete_object(Bucket=bucket or self.bucket, Key=key)
 
     def download_url(self, key: str, bucket: str | None = None) -> str:
         return self.public_client.generate_presigned_url(

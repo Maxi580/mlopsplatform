@@ -1,4 +1,4 @@
-import { CircleAlert, Download, HardDrive, History, Upload } from "lucide-react";
+import { ChartLine, CircleAlert, Download, HardDrive, History, Upload } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { callApi, errorMessage, useApi } from "../api";
 import {
@@ -161,7 +161,21 @@ export default function StoragePage() {
               <span key="base_model" className="mono">
                 {v.tags.base_model}
               </span>,
-              v.tags.pipeline && `#${v.tags.pipeline}`,
+              v.tags.pipeline && (
+                <span key="pipeline" className="links">
+                  <span>{`#${v.tags.pipeline}`}</span>
+                  {v.pipeline_mlflow_run_url && (
+                    <a
+                      className="link-button"
+                      href={v.pipeline_mlflow_run_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ChartLine size={14} /> MLflow
+                    </a>
+                  )}
+                </span>
+              ),
               formatBytes(v.size_bytes),
             ],
             path: modelVersion(model.name, v.version),

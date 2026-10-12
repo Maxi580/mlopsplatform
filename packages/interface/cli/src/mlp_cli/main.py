@@ -15,6 +15,7 @@ app.add_typer(endpoints.app, name="endpoints")
 for command in (
     pipelines.validate,
     pipelines.run,
+    pipelines.request,
     pipelines.rerun,
     pipelines.resume,
     pipelines.ls,

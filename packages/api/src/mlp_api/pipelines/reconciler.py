@@ -4,8 +4,8 @@ import threading
 from sqlalchemy import Engine, select
 
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
-from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.lifecycle import pipeline, pipeline_secret_name, set_pipeline, unfinished
+from mlp_api.pipelines.mlflow_run import log_pipeline_request
 from mlp_api.smoke_tests.cases import case_results, has_pending_serving_cases
 from mlp_api.smoke_tests.lifecycle import clean_up_smoke_tests
 from mlp_api.smoke_tests.serving_cases import run_serving_cases
@@ -25,14 +25,15 @@ def reconcile_forever(state, stop: threading.Event) -> None:
 
 def reconcile_once(state) -> None:
     """One round: Pipelines and Endpoints follow the cluster, then Smoke Tests move on."""
-    reconcile_pipelines(state.engine, state.cluster)
+    reconcile_pipelines(state)
     reconcile_endpoints(state.engine, state.cluster)
     run_serving_cases(state)
     clean_up_smoke_tests(state)
 
 
-def reconcile_pipelines(engine: Engine, cluster: Cluster) -> None:
+def reconcile_pipelines(state) -> None:
     """Copies Kubeflow run and step states into the Pipelines and deletes unneeded Secrets."""
+    engine, cluster = state.engine, state.cluster
     # 1. The status of every unfinished Pipeline, and a Smoke Test's case results, from its run.
     for row in unfinished_pipelines(engine):
         if row.kubeflow_run_id is None:
@@ -46,10 +47,13 @@ def reconcile_pipelines(engine: Engine, cluster: Cluster) -> None:
         values = {"status": status}
         if row.cases is not None:
             values["cases"] = case_results(row.cases, run, finished)
-        if run is not None:
-            values["mlflow_run_url"] = run.mlflow_run_url
-            if not finished and cluster.is_waiting_for_gpu(row.kubeflow_run_id):
-                values["status"] = config.WAITING_FOR_GPU
+        # The request goes to the MLflow Run when KFP first reports it, retried while unfinished.
+        url = run and run.mlflow_run_url
+        first_seen = url and row.mlflow_run_url is None
+        if first_seen and (logged_pipeline_request(state, row, url) or finished):
+            values["mlflow_run_url"] = url
+        if run is not None and not finished and cluster.is_waiting_for_gpu(row.kubeflow_run_id):
+            values["status"] = config.WAITING_FOR_GPU
         set_pipeline(engine, row.id, **values)
 
     # 2. Secrets of finished or unknown Pipelines, and the backstop for old ones. Listed
@@ -59,6 +63,15 @@ def reconcile_pipelines(engine: Engine, cluster: Cluster) -> None:
     for name, age in secret_ages.items():
         if name not in needed or age > config.SECRET_MAX_AGE:
             cluster.delete_secret(name)
+
+
+def logged_pipeline_request(state, row, mlflow_run_url: str) -> bool:
+    try:
+        log_pipeline_request(state.model_registry, state.object_store, mlflow_run_url, row.request)
+    except Exception:
+        logger.exception("Logging Pipeline %s's request to MLflow failed", row.id)
+        return False
+    return True
 
 
 def unfinished_pipelines(engine: Engine) -> list:

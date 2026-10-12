@@ -637,7 +637,7 @@ def test_a_finished_smoke_test_can_be_deleted_once_it_is_cleaned_up(
 ):
     smoke_test_id = start(logged_in_api, WITHOUT_SERVING).json()["id"]
     cluster.runs["run-1"] = KubeflowRun("SUCCEEDED", None, {"fetch": "SUCCEEDED"})
-    reconcile_pipelines(logged_in_api.app.state.engine, cluster)
+    reconcile_pipelines(logged_in_api.app.state)
     path = api_paths.PIPELINE.format(id=smoke_test_id)
 
     refused = logged_in_api.delete(path)

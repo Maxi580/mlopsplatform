@@ -16,7 +16,7 @@ class ModelVersion:
 
 
 class MLflow:
-    """The MLflow Model Registry, which holds every Registered Model; tests swap in a fake."""
+    """The MLflow Model Registry and Runs' artifact locations; tests swap in a fake."""
 
     def __init__(self):
         self.artifact_bucket = os.environ["MLFLOW_BUCKET"]
@@ -32,6 +32,14 @@ class MLflow:
             if not page.get("next_page_token"):
                 return versions
             params["page_token"] = page["next_page_token"]
+
+    def run_artifact_prefix(self, run_id: str) -> str | None:
+        """Where the Run's artifacts lie in the artifact bucket, or None if there is no such Run."""
+        response = self.client.get("/runs/get", params={"run_id": run_id})
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return artifact_prefix(response.json()["run"]["info"]["artifact_uri"])
 
     def create_model_version(self, name: str, artifact_prefix: str, tags: dict[str, str]) -> int:
         """The new version's number, for files already in the artifact bucket."""
@@ -60,11 +68,15 @@ class MLflow:
         response.raise_for_status()
 
 
-# MLflow proxies artifacts: `mlflow-artifacts:/<path>` lives at `<path>` in its bucket.
 def model_version(found: dict) -> ModelVersion:
     return ModelVersion(
         name=found["name"],
         version=int(found["version"]),
         tags={tag["key"]: tag["value"] for tag in found.get("tags", [])},
-        artifact_prefix=found["source"].removeprefix("mlflow-artifacts:/").rstrip("/") + "/",
+        artifact_prefix=artifact_prefix(found["source"]),
     )
+
+
+# MLflow proxies artifacts: `mlflow-artifacts:/<path>` lives at `<path>` in its bucket.
+def artifact_prefix(uri: str) -> str:
+    return uri.removeprefix("mlflow-artifacts:/").rstrip("/") + "/"

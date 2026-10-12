@@ -7,7 +7,13 @@ export type Dataset = {
 
 export type RegisteredModel = {
   name: string;
-  versions: { version: number; size_bytes: number; tags: Record<string, string> }[];
+  versions: {
+    version: number;
+    size_bytes: number;
+    tags: Record<string, string>;
+    // Null for an uploaded version, or once its Pipeline is deleted or has no MLflow Run yet.
+    pipeline_mlflow_run_url: string | null;
+  }[];
 };
 
 export type Storage = {

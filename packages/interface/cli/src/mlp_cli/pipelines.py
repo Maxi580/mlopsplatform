@@ -1,3 +1,4 @@
+import json
 from typing import Annotated
 
 import typer
@@ -65,6 +66,13 @@ def rerun(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) 
         original = exit_on_error(client.get(api_paths.PIPELINE.format(id=pipeline_id))).json()
     pipeline = send_with_secrets(api_paths.PIPELINES, original["request"], load_profile())
     typer.echo(f"Submitted Pipeline {pipeline['id']}; follow it with `mlp ls`")
+
+
+def request(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:
+    """Print the resolved request a Pipeline ran with, as JSON."""
+    with api_client() as client:
+        pipeline = exit_on_error(client.get(api_paths.PIPELINE.format(id=pipeline_id))).json()
+    typer.echo(json.dumps(pipeline["request"], indent=2))
 
 
 def resume(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:

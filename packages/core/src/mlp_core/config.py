@@ -478,6 +478,10 @@ RECONCILE_INTERVAL = timedelta(seconds=10)
 SECRET_MAX_AGE = timedelta(hours=48)
 # The KFP UI's run page, behind the platform's /pipeline/ route.
 KUBEFLOW_RUN_URL = "/pipeline/#/runs/details/{run_id}"
+# The Run ID in the MLflow UI link KFP's plugin reports, e.g. `…/#/experiments/1/runs/<id>`.
+MLFLOW_RUN_ID_IN_URL = re.compile(r"/runs/(\w+)")
+# The resolved request, logged to the Pipeline's MLflow Run and beside each Model Version's weights.
+PIPELINE_REQUEST_FILE = "pipeline_request.json"
 
 # Endpoints
 # Names an Endpoint's Deployment, Service and route.

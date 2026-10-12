@@ -64,7 +64,7 @@ def register_model_version(
     """The files' `model:` Reference, logged as the next version of `name` or the Pipeline's."""
     name = name or request.name
     # 1. The resolved request travels with the weights.
-    (model_directory / "pipeline_request.json").write_text(request.model_dump_json(indent=1))
+    (model_directory / config.PIPELINE_REQUEST_FILE).write_text(request.model_dump_json(indent=1))
 
     # 2. Into the step's Run, where the step logged its params and metrics.
     client = mlflow.MlflowClient()

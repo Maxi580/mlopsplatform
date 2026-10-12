@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -47,6 +48,32 @@ def delete(model_version: Annotated[str, typer.Argument(help="name@version")]) -
     with api_client() as client:
         exit_on_error(client.delete(api_paths.MODEL_VERSION.format(name=name, version=version)))
     typer.echo(f"Deleted {name}@{version}")
+
+
+@app.command()
+def request(model_version: Annotated[str, typer.Argument(help="name@version")]) -> None:
+    """Print the resolved request of the Pipeline that made a Model Version, as JSON."""
+    # 1. The Pipeline, from the version's `pipeline` tag.
+    name, version = split_version(model_version)
+    with api_client() as client:
+        models = exit_on_error(client.get(api_paths.MODELS)).json()
+    versions = [v for m in models if m["name"] == name for v in m["versions"]]
+    found = [v for v in versions if v["version"] == version]
+    if not found:
+        typer.echo(f"No Model Version {model_version}", err=True)
+        raise typer.Exit(1)
+    pipeline_id = found[0]["tags"].get("pipeline")
+    if pipeline_id is None:
+        typer.echo(f"{model_version} was uploaded; no Pipeline made it", err=True)
+        raise typer.Exit(1)
+
+    # 2. Its request, while the Pipeline is kept.
+    with api_client() as client:
+        response = client.get(api_paths.PIPELINE.format(id=pipeline_id))
+    if response.status_code == 404:
+        typer.echo(f"Pipeline {pipeline_id}, which made {model_version}, was deleted", err=True)
+        raise typer.Exit(1)
+    typer.echo(json.dumps(exit_on_error(response).json()["request"], indent=2))
 
 
 @app.command()

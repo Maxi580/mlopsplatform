@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from huggingface_hub import constants as hugging_face_constants
 from typer.testing import CliRunner
@@ -232,3 +234,16 @@ def test_run_dry_run_prints_the_downloads_without_submitting(
     assert "base_model  hf:Qwen/a@1  9.4 GB" in result.output
     assert "base_model  hf:Qwen/b@2  2.1 GB  cached" in result.output
     assert "9.4 GB to download, 2.1 GB already cached" in result.output
+
+
+def test_request_prints_the_pipelines_resolved_request_as_json(
+    logged_in, home, fake_api, platform_ca
+):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE)
+    request = {"name": "qwen-sft", "finetune": {"base_model": "hf:Qwen/Qwen3@abc"}}
+    fake_api.answers[api_paths.PIPELINE.format(id=7)] = (200, {"id": 7, "request": request})
+
+    result = mlp("request", "7")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == request

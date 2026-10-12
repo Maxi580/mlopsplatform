@@ -231,7 +231,7 @@ def test_an_unknown_pipeline_is_not_found(logged_in_api):
 
 
 def reconcile(api):
-    reconcile_pipelines(api.app.state.engine, api.app.state.cluster)
+    reconcile_pipelines(api.app.state)
 
 
 def finish_run(cluster, state, mlflow_run_url=None):
@@ -297,16 +297,70 @@ def test_secrets_older_than_48_hours_or_of_no_running_pipeline_are_swept(
     assert list(cluster.secrets) == [f"pipeline-{fresh}"]
 
 
-def test_the_list_links_the_kubeflow_run_and_the_mlflow_run(logged_in_api, submittable, cluster):
+MLFLOW_RUN_URL = "https://platform.test/mlflow/#/experiments/1/runs/abc"
+REQUEST_ARTIFACT = "1/abc/artifacts/pipeline_request.json"
+
+
+@pytest.fixture
+def mlflow_run(model_registry):
+    """The MLflow Run KFP's plugin made for the Pipeline, at MLFLOW_RUN_URL."""
+    model_registry.runs["abc"] = "1/abc/artifacts/"
+
+
+def test_the_list_links_the_kubeflow_run_and_the_mlflow_run(
+    logged_in_api, submittable, cluster, mlflow_run
+):
     submit(logged_in_api)
-    finish_run(cluster, "RUNNING", mlflow_run_url="https://mlflow.test/#/runs/abc")
+    finish_run(cluster, "RUNNING", mlflow_run_url=MLFLOW_RUN_URL)
 
     reconcile(logged_in_api)
 
     [pipeline] = pipelines(logged_in_api)
     [run_id] = cluster.runs
     assert pipeline["kubeflow_run_url"] == f"/pipeline/#/runs/details/{run_id}"
-    assert pipeline["mlflow_run_url"] == "https://mlflow.test/#/runs/abc"
+    assert pipeline["mlflow_run_url"] == MLFLOW_RUN_URL
+
+
+@pytest.mark.parametrize("state", ["RUNNING", "SUCCEEDED"])
+def test_the_mlflow_run_holds_the_pipelines_request(
+    logged_in_api, submittable, cluster, object_store, mlflow_run, state
+):
+    pipeline_id = submit(logged_in_api, secrets={"hf_token": HF_TOKEN}).json()["id"]
+    finish_run(cluster, state, mlflow_run_url=MLFLOW_RUN_URL)
+
+    reconcile(logged_in_api)
+
+    logged = json.loads(object_store.read("mlflow", REQUEST_ARTIFACT))
+    assert logged == pipeline(logged_in_api, pipeline_id).json()["request"]
+    assert HF_TOKEN not in json.dumps(logged)
+
+
+def test_a_pipeline_that_finished_keeps_its_mlflow_link_though_the_request_failed(
+    logged_in_api, submittable, cluster, object_store
+):
+    submit(logged_in_api)
+    finish_run(cluster, "SUCCEEDED", mlflow_run_url=MLFLOW_RUN_URL)
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["mlflow_run_url"] == MLFLOW_RUN_URL
+    assert REQUEST_ARTIFACT not in object_store.buckets["mlflow"]
+
+
+def test_the_mlflow_link_waits_until_the_run_holds_the_request(
+    logged_in_api, submittable, cluster, model_registry, object_store
+):
+    submit(logged_in_api)
+    finish_run(cluster, "RUNNING", mlflow_run_url=MLFLOW_RUN_URL)
+
+    reconcile(logged_in_api)
+    linked_before = pipelines(logged_in_api)[0]["mlflow_run_url"]
+    model_registry.runs["abc"] = "1/abc/artifacts/"
+    reconcile(logged_in_api)
+
+    assert linked_before is None
+    assert pipelines(logged_in_api)[0]["mlflow_run_url"] == MLFLOW_RUN_URL
+    assert REQUEST_ARTIFACT in object_store.buckets["mlflow"]
 
 
 def cancel(api, pipeline_id):
@@ -360,6 +414,22 @@ def test_delete_removes_a_finished_pipeline_and_its_run(logged_in_api, submittab
     assert response.status_code == 204, response.text
     assert pipelines(logged_in_api) == []
     assert cluster.deleted_runs == [run_id]
+
+
+def test_delete_removes_the_request_from_the_mlflow_run_and_keeps_the_rest(
+    logged_in_api, submittable, cluster, object_store, mlflow_run
+):
+    pipeline_id = submit(logged_in_api).json()["id"]
+    finish_run(cluster, "SUCCEEDED", mlflow_run_url=MLFLOW_RUN_URL)
+    reconcile(logged_in_api)
+    weights = {"1/def/artifacts/model/adapter_model.safetensors", "1/def/artifacts/model/x.json"}
+    for key in weights:
+        object_store.buckets["mlflow"][key] = b"kept"
+
+    response = delete(logged_in_api, pipeline_id)
+
+    assert response.status_code == 204, response.text
+    assert set(object_store.buckets["mlflow"]) == weights
 
 
 def test_a_cancelled_pipeline_can_be_deleted(logged_in_api, submittable, cluster):

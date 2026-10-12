@@ -124,8 +124,11 @@ class FakeObjectStore:
     def upload_file(self, path, key, bucket="platform"):
         self.buckets[bucket][key] = path.read_bytes()
 
-    def delete(self, key):
-        self.objects.pop(key, None)
+    def write(self, key, content, bucket="platform"):
+        self.buckets[bucket][key] = content
+
+    def delete(self, key, bucket="platform"):
+        self.buckets[bucket].pop(key, None)
 
     def download_url(self, key, bucket="platform"):
         return f"https://objects.test/{bucket}/{key}?signature=x"
@@ -185,9 +188,14 @@ class FakeModelRegistry:
     def __init__(self):
         self.versions = []
         self.deleted_models = []
+        # MLflow Run ID -> where its artifacts lie in the mlflow bucket.
+        self.runs = {}
 
     def model_versions(self):
         return list(self.versions)
+
+    def run_artifact_prefix(self, run_id):
+        return self.runs.get(run_id)
 
     def create_model_version(self, name, artifact_prefix, tags):
         version = 1 + max((v.version for v in self.versions if v.name == name), default=0)

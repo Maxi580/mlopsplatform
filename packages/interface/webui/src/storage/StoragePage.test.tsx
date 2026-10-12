@@ -14,7 +14,14 @@ const models: RegisteredModel[] = [
         version: 3,
         size_bytes: 5 * 2 ** 20,
         tags: { weights: "adapter", base_model: "hf:Qwen/Qwen3@abc", pipeline: "7" },
+        pipeline_mlflow_run_url: "https://platform.test/mlflow/#/runs/abc",
       },
+    ],
+  },
+  {
+    name: "uploaded",
+    versions: [
+      { version: 1, size_bytes: 9, tags: { weights: "full" }, pipeline_mlflow_run_url: null },
     ],
   },
 ];
@@ -76,6 +83,17 @@ test("Datasets and Registered Models are listed with versions, sizes and lineage
   for (const text of ["adapter", "hf:Qwen/Qwen3@abc", "#7", "5.0 MB"]) {
     expect(within(model).getByText(text)).toBeInTheDocument();
   }
+});
+
+test("a Model Version links the MLflow Run of the Pipeline that made it", async () => {
+  fakeApi({ ...routes });
+  renderApp("/storage");
+
+  const made = (await screen.findByText("qwen-sft@3")).closest("tr")!;
+  const link = within(made).getByRole("link", { name: "MLflow" });
+  expect(link).toHaveAttribute("href", "https://platform.test/mlflow/#/runs/abc");
+  const uploaded = screen.getByText("uploaded@1").closest("tr")!;
+  expect(within(uploaded).queryByRole("link")).not.toBeInTheDocument();
 });
 
 test("kept Checkpoints are listed with their Pipeline, Phase and size, and deletable", async () => {

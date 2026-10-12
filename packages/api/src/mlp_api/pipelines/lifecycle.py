@@ -19,6 +19,7 @@ from sqlalchemy import (
 from mlp_api.auth.session import issue_step_token
 from mlp_api.pipelines.cluster import Cluster
 from mlp_api.pipelines.compiler import Resume, compile_pipeline
+from mlp_api.pipelines.mlflow_run import delete_pipeline_request
 from mlp_api.smoke_tests.cases import case_results
 from mlp_api.storage.database import metadata
 from mlp_core import config
@@ -112,14 +113,17 @@ def cancel_pipeline(engine: Engine, cluster: Cluster, pipeline_id: int) -> None:
 
 
 # What it made stays: Storage deletes that, and an Endpoint may serve it.
-def delete_pipeline(engine: Engine, cluster: Cluster, pipeline_id: int) -> None:
-    """Deletes the finished Pipeline and its run; LookupError if unknown, ValueError if it can't."""
+def delete_pipeline(state, pipeline_id: int) -> None:
+    """Deletes the finished Pipeline, its run and MLflow request; LookupError/ValueError if not."""
+    engine, cluster = state.engine, state.cluster
     row = find_pipeline(engine, pipeline_id)
     if row.status not in config.FINISHED_STATUSES:
         raise ValueError(f"Pipeline {pipeline_id} is {row.status}; cancel it first")
     # The reconciler finds a Smoke Test's leftovers only through its row.
     if row.cases is not None and not row.cleaned_up:
         raise ValueError(f"Smoke Test {pipeline_id} is still cleaning up; try again shortly")
+    if row.mlflow_run_url is not None:
+        delete_pipeline_request(state.model_registry, state.object_store, row.mlflow_run_url)
     if row.kubeflow_run_id is not None:
         cluster.delete_run(row.kubeflow_run_id)
     with engine.begin() as connection:
@@ -137,6 +141,15 @@ def get_pipeline(engine: Engine, pipeline_id: int) -> dict:
     """The Pipeline as listed, plus its resolved request; LookupError if unknown."""
     row = find_pipeline(engine, pipeline_id)
     return {**pipeline_summary(row), "request": row.request}
+
+
+def mlflow_run_urls(engine: Engine) -> dict[str, str]:
+    """Each Pipeline's ID, as a Model Version's tag holds it -> its MLflow Run's link, if any."""
+    query = select(pipeline.c.id, pipeline.c.mlflow_run_url).where(
+        pipeline.c.mlflow_run_url.is_not(None)
+    )
+    with engine.connect() as connection:
+        return {str(id): url for id, url in connection.execute(query)}
 
 
 def pipeline_summary(row) -> dict:

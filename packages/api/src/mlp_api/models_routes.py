@@ -38,7 +38,8 @@ class ModelUpload(BaseModel):
 
 @router.get(api_paths.MODELS)
 def models(request: Request) -> list[dict]:
-    return list_models(request.app.state.model_registry, request.app.state.object_store)
+    state = request.app.state
+    return list_models(state.engine, state.model_registry, state.object_store)
 
 
 # The files go straight to the object store, in parts; only their names pass through here.

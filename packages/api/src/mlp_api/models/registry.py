@@ -2,17 +2,23 @@ from sqlalchemy import Engine
 
 from mlp_api.in_use.users import refuse_while_in_use
 from mlp_api.models.mlflow import MLflow, ModelVersion
+from mlp_api.pipelines.lifecycle import mlflow_run_urls
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core.pipeline_request.references import model_reference, split_model_reference
 
 
-def list_models(model_registry: MLflow, object_store: ObjectStore) -> list[dict]:
-    """Every Registered Model with its versions, oldest first, with sizes and lineage tags."""
-    models = {}
+def list_models(engine: Engine, model_registry: MLflow, object_store: ObjectStore) -> list[dict]:
+    """Every Registered Model's versions, oldest first, with sizes, lineage and Pipeline's Run."""
+    models, run_urls = {}, mlflow_run_urls(engine)
     for found in sorted(model_registry.model_versions(), key=lambda v: (v.name, v.version)):
         size = object_store.size_of(model_registry.artifact_bucket, found.artifact_prefix)
         models.setdefault(found.name, []).append(
-            {"version": found.version, "size_bytes": size, "tags": found.tags}
+            {
+                "version": found.version,
+                "size_bytes": size,
+                "tags": found.tags,
+                "pipeline_mlflow_run_url": run_urls.get(found.tags.get("pipeline")),
+            }
         )
     return [{"name": name, "versions": versions} for name, versions in models.items()]
 

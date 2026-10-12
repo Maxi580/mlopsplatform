@@ -1,3 +1,5 @@
+import json
+
 from typer.testing import CliRunner
 
 from mlp_cli.main import app
@@ -128,3 +130,38 @@ def test_download_saves_every_file_of_the_version(logged_in, fake_api, tmp_path)
     assert result.exit_code == 0, result.output
     for file, content in MODEL_FILES.items():
         assert (tmp_path / "out" / file).read_bytes() == content
+
+
+def answer_models(fake_api, tags):
+    versions = [{"version": 2, "size_bytes": 1, "tags": tags, "pipeline_mlflow_run_url": None}]
+    fake_api.answers[api_paths.MODELS] = (200, [{"name": "qwen-sft", "versions": versions}])
+
+
+def test_request_prints_the_request_of_the_pipeline_that_made_the_version(logged_in, fake_api):
+    answer_models(fake_api, {"weights": "adapter", "pipeline": "7"})
+    request = {"name": "qwen-sft", "finetune": {"base_model": "hf:Qwen/Qwen3@abc"}}
+    fake_api.answers[api_paths.PIPELINE.format(id=7)] = (200, {"id": 7, "request": request})
+
+    result = mlp_models("request", "qwen-sft@2")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == request
+
+
+def test_request_of_an_uploaded_version_says_no_pipeline_made_it(logged_in, fake_api):
+    answer_models(fake_api, {"weights": "full"})
+
+    result = mlp_models("request", "qwen-sft@2")
+
+    assert result.exit_code == 1
+    assert "qwen-sft@2 was uploaded" in result.output
+
+
+def test_request_after_the_pipeline_was_deleted_says_so(logged_in, fake_api):
+    answer_models(fake_api, {"weights": "adapter", "pipeline": "7"})
+    fake_api.answers[api_paths.PIPELINE.format(id=7)] = (404, {"detail": "No Pipeline 7"})
+
+    result = mlp_models("request", "qwen-sft@2")
+
+    assert result.exit_code == 1
+    assert "Pipeline 7, which made qwen-sft@2, was deleted" in result.output

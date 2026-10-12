@@ -147,7 +147,7 @@ def cancel(id: int, request: Request) -> dict:
 @router.delete(api_paths.PIPELINE, status_code=204)
 def delete(id: int, request: Request) -> Response:
     try:
-        delete_pipeline(request.app.state.engine, request.app.state.cluster, id)
+        delete_pipeline(request.app.state, id)
     except LookupError as error:
         raise HTTPException(404, str(error)) from None
     except ValueError as error:

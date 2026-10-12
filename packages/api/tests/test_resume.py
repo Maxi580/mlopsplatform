@@ -37,7 +37,7 @@ def end(api, pipeline_id, state):
     cluster = api.app.state.cluster
     run_id = pipeline(api, pipeline_id).json()["kubeflow_run_url"].rsplit("/", 1)[-1]
     cluster.runs[run_id] = KubeflowRun(state, None)
-    reconcile_pipelines(api.app.state.engine, cluster)
+    reconcile_pipelines(api.app.state)
 
 
 def failed_pipeline(api, request=None) -> int:

@@ -1,4 +1,5 @@
 from mlp_api.models.mlflow import ModelVersion
+from mlp_api.pipelines.lifecycle import create_pipeline
 from mlp_core import api_paths
 
 
@@ -36,6 +37,23 @@ def test_the_list_shows_versions_with_sizes_and_lineage(
     assert (second["version"], second["size_bytes"]) == (2, 102)
     assert second["tags"]["weights"] == "adapter"
     assert second["tags"]["pipeline"] == "1"
+
+
+def test_a_version_links_the_mlflow_run_of_the_pipeline_that_made_it(
+    logged_in_api, model_registry, object_store
+):
+    engine = logged_in_api.app.state.engine
+    made_by = create_pipeline(engine, "qwen-sft", {}, mlflow_run_url="https://mlflow.test/#/runs/a")
+    unlinked = create_pipeline(engine, "qwen-sft", {})
+    register(model_registry, object_store, "qwen-sft", 1, pipeline_id=made_by)
+    register(model_registry, object_store, "qwen-sft", 2, pipeline_id=unlinked)
+    register(model_registry, object_store, "qwen-sft", 3, pipeline_id=99)
+    model_registry.versions.append(ModelVersion("uploaded", 1, {"weights": "full"}, "u/"))
+
+    found = models(logged_in_api)
+
+    links = [v["pipeline_mlflow_run_url"] for v in found["qwen-sft"] + found["uploaded"]]
+    assert links == ["https://mlflow.test/#/runs/a", None, None, None]
 
 
 def test_deleting_an_unused_version_removes_it_and_its_files(
