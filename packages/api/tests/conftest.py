@@ -198,6 +198,8 @@ class FakeModelRegistry:
         self.traces = {}
         self.trace_searches = []
         self.trace_reads = []
+        # Each delete of traces, Runs and experiments, in order.
+        self.deletions = []
 
     def model_versions(self):
         return list(self.versions)
@@ -260,6 +262,32 @@ class FakeModelRegistry:
         self.trace_reads.append(trace_ids)
         every = [trace for traces in self.traces.values() for trace in traces]
         return [trace for trace in every if trace["trace_info"]["trace_id"] in trace_ids]
+
+    def experiment_ids(self, prefix):
+        return [name for name in self.experiments if name.startswith(prefix)]
+
+    def delete_traces(self, experiment_id, max_timestamp_ms):
+        self.deletions.append(("traces", experiment_id, max_timestamp_ms))
+        before = datetime.fromtimestamp(max_timestamp_ms / 1000, UTC)
+        self.traces[experiment_id] = [
+            trace
+            for trace in self.traces.get(experiment_id, [])
+            if datetime.fromisoformat(trace["trace_info"]["request_time"]) > before
+        ]
+
+    def delete_run(self, run_id):
+        self.deletions.append(("run", run_id))
+        for runs in self.experiments.values():
+            for name in [name for name, found in runs.items() if found == run_id]:
+                del runs[name]
+
+    def rename_experiment(self, experiment_id, new_name):
+        self.deletions.append(("rename", experiment_id, new_name))
+
+    # A deleted experiment's ID stays unknown, so a reused name gets a fresh one.
+    def delete_experiment(self, experiment_id):
+        self.deletions.append(("experiment", experiment_id))
+        del self.experiments[experiment_id]
 
     def logged(self, endpoint_name):
         """Each logged Server Sample of the Endpoint name, by Run name: step -> key -> value."""

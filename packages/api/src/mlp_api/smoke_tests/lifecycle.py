@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 
 from mlp_api.auth.session import issue_step_token
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
-from mlp_api.endpoints.lifecycle import list_endpoints, stop_endpoint
+from mlp_api.endpoints.lifecycle import delete_endpoint, list_endpoints, stop_endpoint
 from mlp_api.model_cache.downloads import preview_downloads
 from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.models.registry import delete_model_version
@@ -185,10 +185,13 @@ def clean_up_smoke_tests(state) -> None:
         ).all()
     for row in rows:
         prefix = f"{row.name}-"
-        # 1. Its Endpoints, which would keep their models in use.
+        # 1. Its Endpoints, which would keep their models in use, with their Stats History.
         for found in list_endpoints(engine, state.cluster.endpoint_environment.domain):
-            if found["name"].startswith(prefix) and found["status"] != "stopped":
+            if not found["name"].startswith(prefix):
+                continue
+            if found["status"] != "stopped":
                 stop_endpoint(engine, state.cluster, found["name"])
+            delete_endpoint(state, found["name"])
 
         # 2. Its Datasets.
         for dataset in list_datasets(engine):

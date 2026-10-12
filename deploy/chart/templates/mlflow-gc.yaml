@@ -1,0 +1,49 @@
+# MLflow's REST deletes are soft; without gc, deleted Runs and experiments would stay forever.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mlflow-gc
+  namespace: {{ .Values.namespaces.mlflow }}
+spec:
+  schedule: {{ .Values.mlflowGcSchedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: mlflow-gc
+              image: {{ .Values.images.mlflow }}
+              # Without --experiment-ids, gc purges every deleted Run and experiment.
+              command:
+                - mlflow
+                - gc
+                - --backend-store-uri
+                - postgresql://$(PGUSER):$(PGPASSWORD)@postgres.{{ .Values.namespaces.platform }}.svc.cluster.local:{{ .Values.ports.postgres }}/{{ .Values.mlflow.backendStore.postgres.database }}
+                - --artifacts-destination
+                - s3://{{ .Values.mlflow.artifactRoot.s3.bucket }}/
+              # The credentials and object store the MLflow server gets.
+              env:
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: mlflow-credentials
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mlflow-credentials
+                      key: password
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: mlflow-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: mlflow-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: MLFLOW_S3_ENDPOINT_URL
+                  value: http://seaweedfs.{{ .Values.namespaces.kubeflow }}.svc.cluster.local:{{ .Values.ports.seaweedfs }}

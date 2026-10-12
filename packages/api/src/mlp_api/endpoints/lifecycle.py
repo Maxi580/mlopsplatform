@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import Engine, delete, insert, select, update
 
 from mlp_api.endpoints.endpoint_model import EndpointModel, add_drafter, find_endpoint_model
+from mlp_api.endpoints.history_retention import delete_endpoint_history
 from mlp_api.endpoints.keys import new_endpoint_key
 from mlp_api.endpoints.manifests import endpoint_manifests
 from mlp_api.endpoints.table import endpoint, not_stopped
@@ -151,13 +152,17 @@ def stop_endpoint(engine: Engine, cluster: Cluster, name: str) -> None:
         set_status(engine, name, "stopped")
 
 
-def delete_endpoint(engine: Engine, name: str) -> None:
-    """Deletes the stopped Endpoints with the name; LookupError if none, ValueError if it runs."""
-    with endpoints_lock, engine.begin() as connection:
-        named = endpoint.c.name == name
-        deleted = connection.execute(delete(endpoint).where(named, ~not_stopped)).rowcount
-    if deleted:
-        return
+def delete_endpoint(state, name: str) -> None:
+    """Deletes the name's stopped Endpoints and history; LookupError if none, ValueError if runs."""
+    engine = state.engine
+    # The history goes under the lock, so an Endpoint started meanwhile keeps a fresh experiment.
+    with endpoints_lock:
+        with engine.begin() as connection:
+            named = endpoint.c.name == name
+            deleted = connection.execute(delete(endpoint).where(named, ~not_stopped)).rowcount
+        if deleted:
+            delete_endpoint_history(state, name, datetime.now(UTC))
+            return
     found = find_endpoint(engine, name)
     if found is None:
         raise LookupError(f"No Endpoint {name}")

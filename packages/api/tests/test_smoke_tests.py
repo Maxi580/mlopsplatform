@@ -878,15 +878,19 @@ def endpoint_specs(api) -> dict[str, dict]:
     return {e["name"]: e for e in api.get(api_paths.ENDPOINTS).json() if e["status"] != "stopped"}
 
 
-def test_a_cancelled_smoke_test_stops_its_endpoints(logged_in_api, qwen_on_the_hub, cluster):
-    smoke_test_id = start(logged_in_api).json()["id"]
+def test_a_cancelled_smoke_test_deletes_its_endpoints_and_their_history(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry
+):
+    name = start(logged_in_api).json()["name"]
+    smoke_test_id = smoke_test(logged_in_api)["id"]
     reconcile(logged_in_api)
 
     logged_in_api.post(api_paths.CANCEL_PIPELINE.format(id=smoke_test_id))
     reconcile(logged_in_api)
 
     assert cluster.endpoints == {}
-    assert running_endpoints(logged_in_api) == {}
+    assert logged_in_api.get(api_paths.ENDPOINTS).json() == []
+    assert not any(e.startswith(f"endpoint/{name}-") for e in model_registry.experiments)
 
 
 def test_a_smoke_test_without_distill_or_sweep_has_no_secret(

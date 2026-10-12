@@ -84,6 +84,30 @@ class MLflow:
         response.raise_for_status()
         return response.json()["experiment_id"]
 
+    def experiment_ids(self, prefix: str) -> list[str]:
+        """The IDs of the experiments whose name starts with the prefix, deleted ones left out."""
+        experiment_ids = []
+        body = {"filter": f"name LIKE '{prefix}%'", "max_results": config.MLFLOW_PAGE_SIZE}
+        while True:
+            response = self.client.post("/experiments/search", json=body)
+            response.raise_for_status()
+            page = response.json()
+            experiment_ids += [e["experiment_id"] for e in page.get("experiments", [])]
+            if not page.get("next_page_token"):
+                return experiment_ids
+            body["page_token"] = page["next_page_token"]
+
+    # Renamed, as a deleted experiment keeps its name until `mlflow gc`.
+    def rename_experiment(self, experiment_id: str, new_name: str) -> None:
+        response = self.client.post(
+            "/experiments/update", json={"experiment_id": experiment_id, "new_name": new_name}
+        )
+        response.raise_for_status()
+
+    def delete_experiment(self, experiment_id: str) -> None:
+        response = self.client.post("/experiments/delete", json={"experiment_id": experiment_id})
+        response.raise_for_status()
+
     def run_ids(self, experiment_id: str) -> dict[str, str]:
         """The experiment's Runs: name -> ID."""
         response = self.client.post(
@@ -101,6 +125,10 @@ class MLflow:
         )
         response.raise_for_status()
         return response.json()["run"]["info"]["run_id"]
+
+    def delete_run(self, run_id: str) -> None:
+        response = self.client.post("/runs/delete", json={"run_id": run_id})
+        response.raise_for_status()
 
     def log_metrics(self, run_id: str, values: dict[str, float], step: int, time_ms: int) -> None:
         metrics = [
@@ -145,6 +173,12 @@ class MLflow:
         response = self.client.get(f"{self.traces_url}/batchGet", params={"trace_ids": trace_ids})
         response.raise_for_status()
         return response.json().get("traces", [])
+
+    # Unlike Runs and experiments, traces are deleted for good, with their spans.
+    def delete_traces(self, experiment_id: str, max_timestamp_ms: int) -> None:
+        body = {"experiment_id": experiment_id, "max_timestamp_millis": max_timestamp_ms}
+        response = self.client.post(f"{self.traces_url}/delete-traces", json=body)
+        response.raise_for_status()
 
 
 def model_version(found: dict) -> ModelVersion:

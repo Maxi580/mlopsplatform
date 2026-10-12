@@ -44,6 +44,8 @@ images:
   webui: mlp-webui
   # Endpoints run the upstream vLLM image as is.
   vllm: vllm/vllm-openai:v0.30.0
+  # The daily `mlflow gc` runs the image of the MLflow chart's appVersion; bump with mlflowChart.
+  mlflow: burakince/mlflow:3.16.0
   # Set by install.sh to the short git SHA.
   tag: ""
 
@@ -73,6 +75,8 @@ modelCachePvc: model-cache
 modelCacheHostPath: /var/lib/mlp/model-cache
 # Memory of a Sandbox replica beyond its snippets' own: the server and gVisor.
 sandboxServerMemoryMb: 512
+# When `mlflow gc` purges what was deleted in MLflow, as cron.
+mlflowGcSchedule: "0 3 * * *"
 # install.sh prunes the BuildKit cache down to this size after building.
 buildCacheGb: 50
 

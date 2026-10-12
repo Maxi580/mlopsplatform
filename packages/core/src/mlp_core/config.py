@@ -643,6 +643,10 @@ ENDPOINT_SAMPLE_RATES = {
 ENDPOINT_HISTORY_EXPERIMENT = "endpoint/{name}"
 ENDPOINT_HISTORY_RUN_NAME = "%Y-%m-%d"
 ENDPOINT_HISTORY_RETENTION = timedelta(days=30)
+# How often the reconciler deletes history older than the retention.
+ENDPOINT_HISTORY_TRIM_INTERVAL = timedelta(hours=1)
+# A deleted Endpoint's experiment, renamed so its name is free until `mlflow gc` purges it.
+ENDPOINT_HISTORY_DELETED_EXPERIMENT = "{experiment}/deleted-{uuid}"
 ENDPOINT_HISTORY_SPANS = {
     "live": timedelta(minutes=15),
     "1h": timedelta(hours=1),

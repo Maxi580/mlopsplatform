@@ -112,7 +112,7 @@ def restart(name: str, request: Request) -> dict:
 @router.delete(api_paths.ENDPOINT, status_code=204)
 def delete(name: str, request: Request) -> Response:
     try:
-        delete_endpoint(request.app.state.engine, name)
+        delete_endpoint(request.app.state, name)
     except LookupError as error:
         raise HTTPException(404, str(error)) from None
     except ValueError as error:

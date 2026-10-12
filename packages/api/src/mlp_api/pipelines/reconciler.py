@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import Engine, select
 
+from mlp_api.endpoints.history_retention import trim_endpoint_history
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
 from mlp_api.endpoints.stats_history import sample_endpoint_stats
 from mlp_api.pipelines.lifecycle import pipeline, pipeline_secret_name, set_pipeline, unfinished
@@ -27,9 +28,11 @@ def reconcile_forever(state, stop: threading.Event) -> None:
 
 def reconcile_once(state) -> None:
     """One round: Pipelines and Endpoints follow the cluster and are sampled; Smoke Tests go on."""
+    now = datetime.now(UTC)
     reconcile_pipelines(state)
     reconcile_endpoints(state.engine, state.cluster)
-    sample_endpoint_stats(state, datetime.now(UTC))
+    sample_endpoint_stats(state, now)
+    trim_endpoint_history(state, now)
     run_serving_cases(state)
     clean_up_smoke_tests(state)
 
