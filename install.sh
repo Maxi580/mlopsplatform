@@ -329,7 +329,7 @@ remove_outdated_images() {
     | select(.repoTags | any_c(. as $tag | $current | any_c(. == $tag)) | not)
     | select((.repoTags | length) == 0 or (.repoTags | any_c(sub(":[^:/]+$"; "") as $repository | $repositories | any_c(. == $repository))))
     | .id')
-  [[ -z $outdated ]] || echo "$outdated" | xargs sudo k3s crictl rmi
+  [[ -z $outdated ]] || echo "$outdated" | xargs sudo k3s crictl --timeout 5m rmi
 }
 
 prune_build_cache() {
