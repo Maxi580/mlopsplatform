@@ -181,7 +181,7 @@ def object_store(api):
 
 
 class FakeModelRegistry:
-    """Holds Model Versions in memory; their files go in the fake object store's mlflow bucket."""
+    """Model Versions, files in the fake object store's mlflow bucket, and experiments' metrics."""
 
     artifact_bucket = "mlflow"
 
@@ -190,6 +190,10 @@ class FakeModelRegistry:
         self.deleted_models = []
         # MLflow Run ID -> where its artifacts lie in the mlflow bucket.
         self.runs = {}
+        # Experiment name -> Run name -> Run ID, and Run ID -> its logged metrics.
+        self.experiments = {}
+        self.metrics = {}
+        self.history_reads = []
 
     def model_versions(self):
         return list(self.versions)
@@ -208,6 +212,44 @@ class FakeModelRegistry:
     def delete_registered_model(self, name):
         self.versions = [v for v in self.versions if v.name != name]
         self.deleted_models.append(name)
+
+    # Experiments are known by their name.
+    def experiment_id(self, name, create=True):
+        if create:
+            self.experiments.setdefault(name, {})
+        return name if name in self.experiments else None
+
+    def run_ids(self, experiment_id):
+        return dict(self.experiments[experiment_id])
+
+    def create_run(self, experiment_id, name, start_time_ms):
+        run_id = f"{experiment_id}:{name}"
+        self.experiments[experiment_id][name] = run_id
+        self.metrics[run_id] = []
+        return run_id
+
+    def log_metrics(self, run_id, values, step, time_ms):
+        self.metrics[run_id] += [(key, value, step) for key, value in values.items()]
+
+    # Every point within the steps, without MLflow's downsampling.
+    def metric_history(self, run_ids, key, steps, max_results):
+        self.history_reads.append((run_ids, key, steps, max_results))
+        return sorted(
+            (step, value)
+            for run_id in run_ids
+            for found, value, step in self.metrics[run_id]
+            if found == key and steps[0] <= step <= steps[1]
+        )
+
+    def logged(self, endpoint_name):
+        """Each logged Server Sample of the Endpoint name, by Run name: step -> key -> value."""
+        runs = self.experiments.get(f"endpoint/{endpoint_name}", {})
+        logged = {}
+        for run_name, run_id in runs.items():
+            samples = logged.setdefault(run_name, {})
+            for key, value, step in self.metrics[run_id]:
+                samples.setdefault(step, {})[key] = value
+        return logged
 
 
 @pytest.fixture

@@ -1347,3 +1347,12 @@ legend .switch-button {
 .stats-value .muted {
   font-size: 12px;
 }
+
+.span-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+}

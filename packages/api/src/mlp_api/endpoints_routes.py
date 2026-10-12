@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -14,6 +15,7 @@ from mlp_api.endpoints.lifecycle import (
     stop_endpoint,
 )
 from mlp_api.endpoints.stats import endpoint_stats_summary, fetch_endpoint_stats
+from mlp_api.endpoints.stats_history import endpoint_history
 from mlp_core import api_paths, config
 from mlp_core.endpoint_spec import EndpointName, EndpointSpec
 
@@ -48,6 +50,16 @@ def stats(name: str, request: Request) -> dict:
     if read is None:
         raise HTTPException(502, f"Endpoint {name} did not answer with its metrics")
     return read
+
+
+# Stopped Endpoints have their history too.
+@router.get(api_paths.ENDPOINT_HISTORY)
+def history(name: str, request: Request, span: str = "live") -> dict:
+    if span not in config.ENDPOINT_HISTORY_SPANS:
+        raise HTTPException(422, f"span is one of {', '.join(config.ENDPOINT_HISTORY_SPANS)}")
+    if find_endpoint(request.app.state.engine, name) is None:
+        raise HTTPException(404, f"No Endpoint {name}")
+    return endpoint_history(request.app.state.model_registry, name, span, datetime.now(UTC))
 
 
 @router.post(api_paths.ENDPOINTS, status_code=201)

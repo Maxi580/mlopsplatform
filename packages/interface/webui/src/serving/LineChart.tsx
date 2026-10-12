@@ -12,6 +12,7 @@ export default function LineChart({
   series,
   times,
   values,
+  span,
   format,
 }: {
   title: string;
@@ -19,6 +20,8 @@ export default function LineChart({
   // Seconds since the epoch, and per series one value (or null for a gap) per time.
   times: number[];
   values: (number | null)[][];
+  // The first and last second the x-axis shows, wherever the points lie.
+  span: [number, number];
   format: (value: number | null) => string;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -61,10 +64,11 @@ export default function LineChart({
     };
   }, [series, format]);
 
-  // 2. Its data, each time a reading arrives.
+  // 2. Its data and span, each time they arrive.
   useEffect(() => {
     chart.current?.setData([times, ...values] as uPlot.AlignedData);
-  }, [times, values]);
+    chart.current?.setScale("x", { min: span[0], max: span[1] });
+  }, [times, values, span]);
 
   return (
     <figure className="card chart">

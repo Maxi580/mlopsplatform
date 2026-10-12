@@ -1,6 +1,7 @@
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from prometheus_client.metrics_core import Metric
@@ -59,21 +60,38 @@ def metric_summary(family: Metric) -> dict:
         names = (family.name, f"{family.name}_total")
         summary["value"] = sum(s.value for s in family.samples if s.name in names)
         return summary
+    found = histogram(family)
+    summary["histogram"] = {
+        **{
+            key: quantile(q, found.cumulative) for key, q in config.ENDPOINT_STATS_QUANTILES.items()
+        },
+        "mean": found.total / found.count if found.count else None,
+        "sum": found.total,
+        "count": found.count,
+    }
+    return summary
+
+
+@dataclass(frozen=True)
+class Histogram:
+    # (upper bound, observations up to it), ascending.
+    cumulative: list[tuple[float, float]]
+    total: float
+    count: float
+
+
+def histogram(family: Metric) -> Histogram:
+    """The histogram summed over its series."""
     buckets: dict[float, float] = {}
     for sample in family.samples:
         if sample.name.endswith("_bucket"):
             bound = float(sample.labels["le"])
             buckets[bound] = buckets.get(bound, 0) + sample.value
-    total = sum(s.value for s in family.samples if s.name.endswith("_sum"))
-    count = sum(s.value for s in family.samples if s.name.endswith("_count"))
-    cumulative = sorted(buckets.items())
-    summary["histogram"] = {
-        **{key: quantile(q, cumulative) for key, q in config.ENDPOINT_STATS_QUANTILES.items()},
-        "mean": total / count if count else None,
-        "sum": total,
-        "count": count,
-    }
-    return summary
+    return Histogram(
+        cumulative=sorted(buckets.items()),
+        total=sum(s.value for s in family.samples if s.name.endswith("_sum")),
+        count=sum(s.value for s in family.samples if s.name.endswith("_count")),
+    )
 
 
 def quantile(q: float, cumulative: list[tuple[float, float]]) -> float | None:

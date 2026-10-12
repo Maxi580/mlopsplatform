@@ -1,9 +1,11 @@
 import logging
 import threading
+from datetime import UTC, datetime
 
 from sqlalchemy import Engine, select
 
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
+from mlp_api.endpoints.stats_history import sample_endpoint_stats
 from mlp_api.pipelines.lifecycle import pipeline, pipeline_secret_name, set_pipeline, unfinished
 from mlp_api.pipelines.mlflow_run import log_pipeline_request
 from mlp_api.smoke_tests.cases import case_results, has_pending_serving_cases
@@ -24,9 +26,10 @@ def reconcile_forever(state, stop: threading.Event) -> None:
 
 
 def reconcile_once(state) -> None:
-    """One round: Pipelines and Endpoints follow the cluster, then Smoke Tests move on."""
+    """One round: Pipelines and Endpoints follow the cluster and are sampled; Smoke Tests go on."""
     reconcile_pipelines(state)
     reconcile_endpoints(state.engine, state.cluster)
+    sample_endpoint_stats(state, datetime.now(UTC))
     run_serving_cases(state)
     clean_up_smoke_tests(state)
 

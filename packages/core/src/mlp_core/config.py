@@ -597,6 +597,16 @@ ENDPOINT_STATS_SECTIONS = {
             "Queue time",
             "Seconds a request waited before the GPU started on it.",
         ),
+        "prefill_time": (
+            "vllm:request_prefill_time_seconds",
+            "Prefill time",
+            "Seconds the GPU spent reading a request's prompt, before its first token.",
+        ),
+        "decode_time": (
+            "vllm:request_decode_time_seconds",
+            "Decode time",
+            "Seconds the GPU spent generating a request's tokens after the first.",
+        ),
     },
     "Speculative decoding": {
         "acceptance_rate": (
@@ -618,6 +628,29 @@ ENDPOINT_STATS_SECTIONS = {
 }
 # The quantiles every histogram shows, estimated from its buckets as Prometheus does.
 ENDPOINT_STATS_QUANTILES = {"p50": 0.5, "p95": 0.95}
+# A Server Sample, from two readings of the curated values above: these gauges as they are, these
+# counters as rates per second, each pair as the change of one over the other's, and each Latency
+# histogram as the quantiles and mean of the requests the interval observed.
+ENDPOINT_SAMPLE_GAUGES = ("running", "waiting", "kv_cache_usage")
+ENDPOINT_SAMPLE_RATES = {
+    "preemptions_per_second": "preemptions",
+    "finished_per_second": "finished",
+    "prompt_tokens_per_second": "prompt_tokens",
+    "generation_tokens_per_second": "generation_tokens",
+}
+# Endpoint Stats History: the experiment of an Endpoint name, with one Run per UTC day.
+ENDPOINT_HISTORY_EXPERIMENT = "endpoint/{name}"
+ENDPOINT_HISTORY_RUN_NAME = "%Y-%m-%d"
+ENDPOINT_HISTORY_RETENTION = timedelta(days=30)
+ENDPOINT_HISTORY_SPANS = {
+    "live": timedelta(minutes=15),
+    "1h": timedelta(hours=1),
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+    "all": ENDPOINT_HISTORY_RETENTION,
+}
+# Points per chart, shared out over the span's day Runs, which MLflow each downsamples evenly.
+ENDPOINT_HISTORY_POINTS = 300
 
 # Datasets
 # TRL's standard Dataset row formats -> required field -> its value; the first match wins.

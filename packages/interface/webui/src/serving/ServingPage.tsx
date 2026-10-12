@@ -217,7 +217,7 @@ function EndpointRow({
     <tr>
       <td className="pipeline-name" title={endpoint.name}>
         <span className="cut-off-name">
-          {stopped ? endpoint.name : <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>}
+          <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>
         </span>
       </td>
       <td className="cut-off">

@@ -16,7 +16,7 @@ class ModelVersion:
 
 
 class MLflow:
-    """The MLflow Model Registry and Runs' artifact locations; tests swap in a fake."""
+    """MLflow's Model Registry, Runs' artifacts, and experiments' metrics; tests swap in a fake."""
 
     def __init__(self):
         self.artifact_bucket = os.environ["MLFLOW_BUCKET"]
@@ -66,6 +66,62 @@ class MLflow:
     def delete_registered_model(self, name: str) -> None:
         response = self.client.request("DELETE", "/registered-models/delete", json={"name": name})
         response.raise_for_status()
+
+    def experiment_id(self, name: str, create: bool = True) -> str | None:
+        """The experiment's ID, created if missing; with `create` off, None if missing."""
+        response = self.client.get("/experiments/get-by-name", params={"experiment_name": name})
+        if response.status_code != 404:
+            response.raise_for_status()
+            return response.json()["experiment"]["experiment_id"]
+        if not create:
+            return None
+        response = self.client.post("/experiments/create", json={"name": name})
+        # Created meanwhile by another caller.
+        if response.json().get("error_code") == "RESOURCE_ALREADY_EXISTS":
+            return self.experiment_id(name, create=False)
+        response.raise_for_status()
+        return response.json()["experiment_id"]
+
+    def run_ids(self, experiment_id: str) -> dict[str, str]:
+        """The experiment's Runs: name -> ID."""
+        response = self.client.post(
+            "/runs/search",
+            json={"experiment_ids": [experiment_id], "max_results": config.MLFLOW_PAGE_SIZE},
+        )
+        response.raise_for_status()
+        runs = response.json().get("runs", [])
+        return {run["info"]["run_name"]: run["info"]["run_id"] for run in runs}
+
+    def create_run(self, experiment_id: str, name: str, start_time_ms: int) -> str:
+        response = self.client.post(
+            "/runs/create",
+            json={"experiment_id": experiment_id, "run_name": name, "start_time": start_time_ms},
+        )
+        response.raise_for_status()
+        return response.json()["run"]["info"]["run_id"]
+
+    def log_metrics(self, run_id: str, values: dict[str, float], step: int, time_ms: int) -> None:
+        metrics = [
+            {"key": key, "value": value, "step": step, "timestamp": time_ms}
+            for key, value in values.items()
+        ]
+        response = self.client.post("/runs/log-batch", json={"run_id": run_id, "metrics": metrics})
+        response.raise_for_status()
+
+    def metric_history(
+        self, run_ids: list[str], key: str, steps: tuple[int, int], max_results: int
+    ) -> list[tuple[int, float]]:
+        """The Runs' (step, value) points within the steps, by step; MLflow downsamples each Run."""
+        params = {
+            "run_ids": run_ids,
+            "metric_key": key,
+            "start_step": steps[0],
+            "end_step": steps[1],
+            "max_results": max_results,
+        }
+        response = self.client.get("/metrics/get-history-bulk-interval", params=params)
+        response.raise_for_status()
+        return sorted((m["step"], m["value"]) for m in response.json().get("metrics", []))
 
 
 def model_version(found: dict) -> ModelVersion:

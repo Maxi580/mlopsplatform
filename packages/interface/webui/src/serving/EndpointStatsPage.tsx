@@ -1,33 +1,37 @@
 import { ArrowLeft, CircleAlert, LoaderCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useApi } from "../api";
-import { ENDPOINTS, endpointStats } from "../apiPaths";
+import { ENDPOINTS, endpointHistory, endpointStats } from "../apiPaths";
 import {
-  ENDPOINT_STATS_HISTORY_MS,
+  ENDPOINT_HISTORY_REFRESH_MS,
+  ENDPOINT_HISTORY_RETENTION_DAYS,
+  ENDPOINT_HISTORY_SPANS,
   ENDPOINT_STATS_REFRESH_MS,
   KV_CACHE_DANGER_PERCENT,
   KV_CACHE_WARNING_PERCENT,
-  MS_PER_MINUTE,
   PERCENT_STATS,
 } from "../config";
 import CopyValue from "./CopyValue";
 import {
   type Endpoint,
+  type EndpointHistory,
   type EndpointStats,
   formatSeconds,
   type Histogram,
+  type Point,
   type StatsValue,
   statsValues,
 } from "./endpoint";
 import LineChart, { type ChartSeries } from "./LineChart";
 
-// What the charts need of one reading: its time, gauges, and the counters they take rates of.
-type Reading = { at: number; values: Record<string, number | null> };
+type Span = keyof typeof ENDPOINT_HISTORY_SPANS;
 type Chart = {
   title: string;
-  series: (ChartSeries & { point: (earlier: Reading, later: Reading) => number | null })[];
+  series: (ChartSeries & { points: (history: EndpointHistory) => Point[] })[];
   format: (value: number | null) => string;
+  // Shown only once it has points, as speculative decoding may be off.
+  optional?: boolean;
 };
 
 // Dot decimals, as everywhere else in the Web UI.
@@ -35,67 +39,95 @@ const count = (value: number | null) =>
   value == null ? "—" : value.toLocaleString("en", { maximumFractionDigits: 2 });
 const perSecond = (value: number | null) => (value == null ? "—" : `${value.toFixed(1)}/s`);
 const percent = (value: number | null) => (value == null ? "—" : `${(value * 100).toFixed(1)} %`);
-const gauge = (key: string) => (_: Reading, later: Reading) => later.values[key];
-// The change in `part` over the change in `whole` between two readings, e.g. tokens per second.
-const rate = (part: string, whole?: string) => (earlier: Reading, later: Reading) => {
-  const change = (key: string) => (later.values[key] ?? 0) - (earlier.values[key] ?? 0);
-  const divisor = whole ? change(whole) : (later.at - earlier.at) / 1000;
-  return divisor > 0 ? change(part) / divisor : null;
-};
-const CHARTS: Chart[] = [
+const value = (key: string) => (history: EndpointHistory) => history.values[key] ?? [];
+const latency = (key: string, statistic: string) => (history: EndpointHistory) =>
+  history.latencies[key]?.[statistic] ?? [];
+const latencyChart = (title: string, key: string): Chart => ({
+  title,
+  series: [
+    { label: "p50", color: "--accent", points: latency(key, "p50") },
+    { label: "p95", color: "--warning", points: latency(key, "p95") },
+    { label: "Mean", color: "--info", points: latency(key, "mean") },
+  ],
+  format: formatSeconds,
+});
+// Stats per request.
+const REQUEST_CHARTS: Chart[] = [
+  latencyChart("Time to first token", "time_to_first_token"),
+  latencyChart("Time per output token", "time_per_output_token"),
+  latencyChart("End-to-end latency", "end_to_end"),
+  latencyChart("Queue time", "queue_time"),
   {
-    title: "Requests",
+    title: "Prefill and decode time",
     series: [
-      { label: "Running", color: "--accent", point: gauge("running") },
-      { label: "Waiting", color: "--warning", point: gauge("waiting") },
-    ],
-    format: count,
-  },
-  {
-    title: "Tokens/s",
-    series: [
-      { label: "Generated", color: "--accent", point: rate("generation_tokens") },
-      { label: "Prompt", color: "--info", point: rate("prompt_tokens") },
-    ],
-    format: perSecond,
-  },
-  {
-    title: "Latency (mean per interval)",
-    series: [
-      {
-        label: "Time to first token",
-        color: "--accent",
-        point: rate("time_to_first_token.sum", "time_to_first_token.count"),
-      },
-      {
-        label: "Time per output token",
-        color: "--info",
-        point: rate("time_per_output_token.sum", "time_per_output_token.count"),
-      },
+      { label: "Prefill p50", color: "--accent", points: latency("prefill_time", "p50") },
+      { label: "Prefill p95", color: "--info", points: latency("prefill_time", "p95") },
+      { label: "Prefill mean", color: "--text-muted", points: latency("prefill_time", "mean") },
+      { label: "Decode p50", color: "--success", points: latency("decode_time", "p50") },
+      { label: "Decode p95", color: "--warning", points: latency("decode_time", "p95") },
+      { label: "Decode mean", color: "--danger", points: latency("decode_time", "mean") },
     ],
     format: formatSeconds,
   },
   {
-    title: "Prefix-cache hit rate",
+    title: "Tokens/s",
     series: [
-      {
-        label: "Hit rate",
-        color: "--success",
-        point: rate("prefix_cache_hits", "prefix_cache_queries"),
-      },
+      { label: "Generated", color: "--accent", points: value("generation_tokens_per_second") },
+      { label: "Prompt", color: "--info", points: value("prompt_tokens_per_second") },
     ],
+    format: perSecond,
+  },
+  {
+    title: "Finished requests/s",
+    series: [{ label: "Finished", color: "--success", points: value("finished_per_second") }],
+    format: perSecond,
+  },
+];
+// The state of the vLLM server.
+const SERVER_CHARTS: Chart[] = [
+  {
+    title: "Running/waiting",
+    series: [
+      { label: "Running", color: "--accent", points: value("running") },
+      { label: "Waiting", color: "--warning", points: value("waiting") },
+    ],
+    format: count,
+  },
+  {
+    title: "KV-cache usage",
+    series: [{ label: "Usage", color: "--accent", points: value("kv_cache_usage") }],
     format: percent,
+  },
+  {
+    title: "Preemptions/s",
+    series: [{ label: "Preemptions", color: "--danger", points: value("preemptions_per_second") }],
+    format: perSecond,
+  },
+  {
+    title: "Prefix-cache hit rate",
+    series: [{ label: "Hit rate", color: "--success", points: value("prefix_cache_hit_rate") }],
+    format: percent,
+  },
+  {
+    title: "Speculative acceptance rate",
+    series: [{ label: "Accepted", color: "--success", points: value("acceptance_rate") }],
+    format: percent,
+    optional: true,
   },
 ];
 
 export default function EndpointStatsPage() {
   const { name = "" } = useParams();
+  const [span, setSpan] = useState<Span>("live");
+  const history = useApi<EndpointHistory>(
+    endpointHistory(name, span),
+    span === "live" ? ENDPOINT_STATS_REFRESH_MS : ENDPOINT_HISTORY_REFRESH_MS,
+  );
   const stats = useApi<EndpointStats>(endpointStats(name), ENDPOINT_STATS_REFRESH_MS);
   // A stopped Endpoint keeps its row, and its name may be running again.
   const endpoint = useApi<Endpoint[]>(ENDPOINTS).data?.find(
     (found) => found.name === name && found.status !== "stopped",
   );
-  const readings = useReadings(stats.data);
   const values = stats.data && statsValues(stats.data);
 
   return (
@@ -107,8 +139,8 @@ export default function EndpointStatsPage() {
           </Link>
           <h1>{name}</h1>
           <p className="muted">
-            Live from the Endpoint's vLLM, counting every request it serves. Charts fill while this
-            page stays open, for up to {ENDPOINT_STATS_HISTORY_MS / MS_PER_MINUTE} minutes.
+            The charts show the stored history of this Endpoint name, kept{" "}
+            {ENDPOINT_HISTORY_RETENTION_DAYS} days; the values below them are live from its vLLM.
           </p>
           {endpoint && (
             <dl className="endpoint-access">
@@ -125,109 +157,137 @@ export default function EndpointStatsPage() {
         </div>
       </header>
 
-      {stats.error && (
+      <fieldset className="span-picker" aria-label="Timespan">
+        {Object.entries(ENDPOINT_HISTORY_SPANS).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={`button small ${key === span ? "primary" : "ghost"}`}
+            aria-pressed={key === span}
+            onClick={() => setSpan(key as Span)}
+          >
+            {label}
+          </button>
+        ))}
+      </fieldset>
+
+      {history.error && (
         <p className="banner danger">
-          <CircleAlert size={16} /> {stats.error.message}
+          <CircleAlert size={16} /> {history.error.message}
         </p>
       )}
-      {!stats.data && !stats.error && <LoaderCircle className="spin" size={16} />}
-
-      {values?.kv_cache_usage && <KvCacheBar usage={values.kv_cache_usage} />}
-
-      {stats.data && (
+      {!history.data && !history.error && <LoaderCircle className="spin" size={16} />}
+      {history.data && (
         <>
-          <div className="charts">
-            {CHARTS.map((chart) => (
-              <ChartOfReadings key={chart.title} chart={chart} readings={readings} />
-            ))}
-          </div>
-
-          <div className="stats-sections">
-            {stats.data.sections.map((section) => (
-              <section key={section.title} className="card stats-section">
-                <h2>{section.title}</h2>
-                <dl>
-                  {section.values.map((value) => (
-                    <StatsValueView key={value.key} value={value} />
-                  ))}
-                </dl>
-              </section>
-            ))}
-          </div>
-
-          <section className="storage-section">
-            <h2>All metrics</h2>
-            <div className="card table-card">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Metric</th>
-                    <th>Value</th>
-                    <th>What vLLM says it is</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.data.metrics.map((metric) => (
-                    <tr key={metric.name}>
-                      <td className="mono">{metric.name}</td>
-                      <td>
-                        {metric.histogram
-                          ? histogramText(
-                              metric.histogram,
-                              metric.name.endsWith("_seconds") ? formatSeconds : count,
-                            )
-                          : count(metric.value ?? null)}
-                      </td>
-                      <td className="muted">{metric.help}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <ChartArea title="Requests" charts={REQUEST_CHARTS} history={history.data} />
+          <ChartArea title="Server" charts={SERVER_CHARTS} history={history.data} />
         </>
       )}
+
+      <section className="storage-section">
+        <h2>Live values</h2>
+        {/* The API answers 409 while the Endpoint isn't running. */}
+        {stats.error?.status === 409 && (
+          <p className="muted">Live values appear while the Endpoint runs.</p>
+        )}
+        {stats.error && stats.error.status !== 409 && (
+          <p className="banner danger">
+            <CircleAlert size={16} /> {stats.error.message}
+          </p>
+        )}
+        {values?.kv_cache_usage && <KvCacheBar usage={values.kv_cache_usage} />}
+        {stats.data && <LiveValues stats={stats.data} />}
+      </section>
     </>
   );
 }
 
-/** The readings of the last ENDPOINT_STATS_HISTORY_MS, one per answer. */
-function useReadings(stats?: EndpointStats): Reading[] {
-  const [readings, setReadings] = useState<Reading[]>([]);
-  useEffect(() => {
-    if (!stats) return;
-    const values: Reading["values"] = {};
-    for (const value of Object.values(statsValues(stats))) {
-      values[value.key] = value.value ?? null;
-      if (value.histogram) {
-        values[`${value.key}.sum`] = value.histogram.sum;
-        values[`${value.key}.count`] = value.histogram.count;
-      }
-    }
-    const at = Date.parse(stats.read_at);
-    setReadings((earlier) => [
-      ...earlier.filter(
-        (reading) => reading.at > at - ENDPOINT_STATS_HISTORY_MS && reading.at < at,
-      ),
-      { at, values },
-    ]);
-  }, [stats]);
-  return readings;
+function ChartArea({
+  title,
+  charts,
+  history,
+}: {
+  title: string;
+  charts: Chart[];
+  history: EndpointHistory;
+}) {
+  return (
+    <section className="storage-section">
+      <h2>{title}</h2>
+      <div className="charts">
+        {charts.map((chart) => (
+          <ChartOfHistory key={chart.title} chart={chart} history={history} />
+        ))}
+      </div>
+    </section>
+  );
 }
 
-function ChartOfReadings({ chart, readings }: { chart: Chart; readings: Reading[] }) {
-  // Each point is taken between a reading and the one before it.
-  const pairs = readings.slice(1).map((later, index) => [readings[index], later] as const);
+function ChartOfHistory({ chart, history }: { chart: Chart; history: EndpointHistory }) {
+  // One time per Server Sample, which all log `running`; a series without a point there has a gap.
+  const points = chart.series.map((line) => new Map(line.points(history)));
+  const logged = [history.values.running ?? [], ...points.map((found) => [...found])];
+  const times = [...new Set(logged.flat().map(([time]) => time))].sort((a, b) => a - b);
+  if (chart.optional && !times.length) return null;
   return (
     <LineChart
       title={chart.title}
       series={chart.series}
-      times={pairs.map(([, later]) => later.at / 1000)}
-      values={chart.series.map((line) =>
-        pairs.map(([earlier, later]) => line.point(earlier, later)),
-      )}
+      times={times}
+      values={points.map((found) => times.map((time) => found.get(time) ?? null))}
+      span={[history.start, history.end]}
       format={chart.format}
     />
+  );
+}
+
+function LiveValues({ stats }: { stats: EndpointStats }) {
+  return (
+    <>
+      <div className="stats-sections">
+        {stats.sections.map((section) => (
+          <section key={section.title} className="card stats-section">
+            <h2>{section.title}</h2>
+            <dl>
+              {section.values.map((value) => (
+                <StatsValueView key={value.key} value={value} />
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+
+      <section className="storage-section">
+        <h2>All metrics</h2>
+        <div className="card table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>What vLLM says it is</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.metrics.map((metric) => (
+                <tr key={metric.name}>
+                  <td className="mono">{metric.name}</td>
+                  <td>
+                    {metric.histogram
+                      ? histogramText(
+                          metric.histogram,
+                          metric.name.endsWith("_seconds") ? formatSeconds : count,
+                        )
+                      : count(metric.value ?? null)}
+                  </td>
+                  <td className="muted">{metric.help}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
   );
 }
 

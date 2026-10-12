@@ -36,3 +36,5 @@ export const refreshEndpointKey = (name: string) => `${endpointByName(name)}/ref
 export const modelCacheEntry = (reference: string) =>
   `${MODEL_CACHE}?reference=${encodeURIComponent(reference)}`;
 export const endpointStats = (name: string) => `/endpoints/${name}/stats`;
+export const endpointHistory = (name: string, span: string) =>
+  `/endpoints/${name}/history?span=${span}`;

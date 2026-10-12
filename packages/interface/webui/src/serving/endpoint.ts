@@ -43,6 +43,16 @@ export type Histogram = {
   count: number;
 };
 
+// What `GET /endpoints/<name>/history` answers: per Server Sample key its [unix seconds, value]
+// points, and the latencies' p50, p95 and mean by their chart.
+export type Point = [number, number];
+export type EndpointHistory = {
+  start: number;
+  end: number;
+  values: Record<string, Point[]>;
+  latencies: Record<string, Record<string, Point[]>>;
+};
+
 export type Metric = {
   name: string;
   type: string;

@@ -109,7 +109,11 @@ test("Endpoints are listed with model, status and URL", async () => {
   const stopped = screen.getByText("old").closest("tr")!;
   expect(within(stopped).queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
   expect(within(stopped).queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
-  expect(within(stopped).queryByRole("link")).not.toBeInTheDocument();
+  // Its stats page keeps its history.
+  expect(within(stopped).getByRole("link", { name: "old" })).toHaveAttribute(
+    "href",
+    "/serving/old",
+  );
 });
 
 test("an Endpoint's URL is copied from its row", async () => {

@@ -35,10 +35,19 @@ export const DOWNLOAD_PREVIEW_DELAY_MS = 400;
 export const TUNED_RANGE_SPREAD = 0.5;
 // The form's value under an optional section's name, e.g. the `speculate` Stage, once switched on.
 export const SWITCHED_ON = "on";
-// An Endpoint's stats page reloads this often and charts the readings of this long while open.
+// An Endpoint's stats page reloads its live values and Live charts this often, and the charts of
+// the longer spans less often.
 export const ENDPOINT_STATS_REFRESH_MS = 5000;
-export const MS_PER_MINUTE = 60 * 1000;
-export const ENDPOINT_STATS_HISTORY_MS = 15 * MS_PER_MINUTE;
+export const ENDPOINT_HISTORY_REFRESH_MS = 60 * 1000;
+// The spans its charts show, by the API's name for them; ALL is everything the API keeps.
+export const ENDPOINT_HISTORY_SPANS = {
+  live: "Live",
+  "1h": "1h",
+  "24h": "24h",
+  "7d": "7d",
+  all: "ALL",
+};
+export const ENDPOINT_HISTORY_RETENTION_DAYS = 30;
 // KV cache usage, in percent, from which its bar turns amber and then red.
 export const KV_CACHE_WARNING_PERCENT = 70;
 export const KV_CACHE_DANGER_PERCENT = 90;
