@@ -103,6 +103,9 @@ spec:
               value: {{ .Values.images.vllm }}
             - name: MODEL_CACHE_HOST_PATH
               value: {{ .Values.modelCacheHostPath }}
+            # GPU steps and Endpoints wait for their GPUs in this Kueue queue.
+            - name: GPU_QUEUE
+              value: {{ .Values.gpuQueue }}
           # The janitor lists and evicts Base Models where the steps' HF_HOME puts them.
           volumeMounts:
             - name: model-cache

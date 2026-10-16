@@ -192,6 +192,13 @@ install_cert_manager() {
     --set crds.enabled=true --set crds.keep=false --wait
 }
 
+# Before the platform chart, which creates the GPU queue.
+install_kueue() {
+  log "Installing Kueue"
+  NAMESPACES="$(value .namespaces.platform),$(value .namespaces.kubeflow)" yq     '.kueue | .managedJobsNamespaceSelector.matchExpressions[0].values = (strenv(NAMESPACES) | split(","))'     "$VALUES" > "$WORK/kueue.yaml"
+  helm upgrade --install kueue oci://registry.k8s.io/kueue/charts/kueue --version "$(value .versions.kueue)"     --namespace "$(value .namespaces.kueue)" --create-namespace     --set-file managerConfig.controllerManagerConfigYaml="$WORK/kueue.yaml" --wait --timeout 10m
+}
+
 install_platform_chart() {
   log "Installing the platform chart (API, Sandbox, Web UI, Postgres, TLS, routes)"
   helm upgrade --install mlp "$ROOT/deploy/chart" --namespace "$(value .namespaces.platform)" \
@@ -202,6 +209,10 @@ install_platform_chart() {
 stop_running_work() {
   log "Cancelling running Pipelines and stopping Endpoints"
   kubectl -n "$(value .namespaces.platform)" exec deploy/api -- stop-running-work
+  # Kueue's record of each GPU workload; nothing runs any more, so none may hold a GPU.
+  for namespace in "$(value .namespaces.platform)" "$(value .namespaces.kubeflow)"; do
+    kubectl -n "$namespace" delete workloads.kueue.x-k8s.io --all --ignore-not-found
+  done
 }
 
 # Asked on the first run only; the API stores just its hash, which survives re-installs.
@@ -367,6 +378,7 @@ build_images
 create_credentials
 kubectl apply -f "$(device_plugin_manifest)"
 install_cert_manager
+install_kueue
 install_platform_chart
 stop_running_work
 set_shared_password

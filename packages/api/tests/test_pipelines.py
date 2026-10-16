@@ -655,3 +655,16 @@ def test_schema_publishes_the_serving_options_and_speculative_decoding(logged_in
     speculative = defs["Speculative"]["properties"]
     assert speculative["num_speculative_tokens"]["default"] == 3
     assert speculative["num_speculative_tokens"]["exclusiveMinimum"] == 0
+
+
+def test_only_gpu_steps_wait_in_the_gpu_queue(logged_in_api, submittable, cluster):
+    assert submit(logged_in_api).status_code == 202
+
+    _, platform = submitted_pipeline(cluster)
+    executors = platform["deploymentSpec"]["executors"]
+    queued = {
+        name: executor.get("podMetadata", {}).get("labels", {}).get("kueue.x-k8s.io/queue-name")
+        for name, executor in executors.items()
+    }
+    assert queued["exec-finetune"] == "gpu"
+    assert queued["exec-fetch"] is None

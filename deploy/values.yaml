@@ -9,6 +9,7 @@ namespaces:
   mlflow: mlflow
   certManager: cert-manager
   kubeSystem: kube-system
+  kueue: kueue-system
 
 versions:
   k3s: v1.37.1+k3s1
@@ -19,6 +20,7 @@ versions:
   kfp: 2.17.2
   mlflowChart: 1.11.7
   nvidiaDevicePlugin: v0.20.1
+  kueue: 0.20.1
   # BFCL, which `evaluate` runs for tool calling in a virtualenv of its own.
   bfcl: 2026.3.23
   # The oldest NVIDIA driver install.sh accepts.
@@ -79,6 +81,33 @@ sandboxServerMemoryMb: 512
 mlflowGcSchedule: "0 3 * * *"
 # install.sh prunes the BuildKit cache down to this size after building.
 buildCacheGb: 50
+# The Kueue queue every GPU workload waits in: KFP GPU steps, Endpoints and TrainJobs.
+gpuQueue: gpu
+
+# Kueue's Configuration; install.sh limits its pod and Deployment webhooks to the platform's
+# namespaces, so k3s's own pods are never held back.
+kueue:
+  apiVersion: config.kueue.x-k8s.io/v1beta2
+  kind: Configuration
+  health:
+    healthProbeBindAddress: :8081
+  metrics:
+    bindAddress: :8443
+  webhook:
+    port: 9443
+  leaderElection:
+    leaderElect: true
+    resourceName: c1f6bfd2.kueue.x-k8s.io
+  managedJobsNamespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values: []
+  integrations:
+    frameworks: [pod, deployment, trainer.kubeflow.org/trainjob]
+  # Only GPUs are counted; CPU and memory stay the scheduler's.
+  resources:
+    excludeResourcePrefixes: [cpu, memory, ephemeral-storage, hugepages-]
 
 # Rendered into the platform settings ConfigMap, read through mlp_core.settings.
 settings:

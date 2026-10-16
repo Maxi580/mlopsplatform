@@ -38,6 +38,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("DOMAIN", "platform.test")
     monkeypatch.setenv("VLLM_IMAGE", "vllm/vllm-openai:real")
     monkeypatch.setenv("MODEL_CACHE_HOST_PATH", "/var/lib/mlp/model-cache")
+    monkeypatch.setenv("GPU_QUEUE", "gpu")
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
     monkeypatch.setattr(config, "EVICTION_INTERVAL", timedelta(days=1))
@@ -318,6 +319,7 @@ class FakeCluster:
         api_url="http://api.mlp.test:8000",
         sandbox_url="http://sandbox.mlp.test:8090",
         platform_namespace="mlp",
+        gpu_queue="gpu",
     )
     endpoint_environment = EndpointEnvironment(
         namespace="mlp",
@@ -327,6 +329,7 @@ class FakeCluster:
         model_cache_host_path="/var/lib/mlp/model-cache",
         object_store_url="http://seaweedfs.test:8333",
         mlflow_url="http://mlflow.test",
+        gpu_queue="gpu",
     )
 
     def __init__(self):

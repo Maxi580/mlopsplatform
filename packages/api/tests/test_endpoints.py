@@ -570,3 +570,10 @@ def test_endpoints_require_login(api, cluster):
     assert stop(api).status_code == 401
     assert restart(api).status_code == 401
     assert delete_endpoint(api).status_code == 401
+
+
+def test_an_endpoint_waits_in_the_gpu_queue(logged_in_api, qwen_on_the_hub, cluster):
+    assert start(logged_in_api, f"hf:{QWEN}").status_code == 201
+
+    labels = cluster.endpoints["chat"]["deployment"]["metadata"]["labels"]
+    assert labels["kueue.x-k8s.io/queue-name"] == "gpu"

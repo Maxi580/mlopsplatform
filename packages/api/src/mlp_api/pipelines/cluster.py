@@ -99,8 +99,13 @@ class Cluster:
             label_selector=f"pipeline/runid={run_id}",
             field_selector="status.phase=Pending",
         )
+        # Kueue holds a GPU step back until its GPUs are free; the scheduler may still find none.
         return any(
-            condition.reason == "Unschedulable" and config.GPU_RESOURCE in (condition.message or "")
+            condition.reason == "SchedulingGated"
+            or (
+                condition.reason == "Unschedulable"
+                and config.GPU_RESOURCE in (condition.message or "")
+            )
             for pod in pods.items
             for condition in pod.status.conditions or []
         )

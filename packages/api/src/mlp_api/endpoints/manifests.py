@@ -18,6 +18,8 @@ def endpoint_manifests(
     object_name = config.ENDPOINT_OBJECT_NAME.format(name=name)
     labels = {config.ENDPOINT_LABEL: name}
     metadata = {"name": object_name, "namespace": environment.namespace, "labels": labels}
+    # Kueue starts the Deployment's pod once its GPUs are free.
+    queued = {**metadata, "labels": {**labels, config.QUEUE_NAME_LABEL: environment.gpu_queue}}
     model_cache = {"name": "model-cache", "mountPath": config.MODEL_CACHE_PATH}
     models = {"name": "models", "mountPath": config.ENDPOINT_MODEL_DIRECTORY}
 
@@ -75,7 +77,7 @@ def endpoint_manifests(
     deployment = {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
-        "metadata": metadata,
+        "metadata": queued,
         "spec": {
             "replicas": 1,
             # A new pod would wait for the GPUs the old one holds.

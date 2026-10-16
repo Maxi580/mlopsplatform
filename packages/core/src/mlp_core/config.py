@@ -433,6 +433,8 @@ STEP_REQUEST_TIMEOUT = timedelta(minutes=5)
 MODEL_CACHE_PATH = "/model-cache"
 # The Kubernetes resource the NVIDIA device plugin offers GPUs as.
 GPU_RESOURCE = "nvidia.com/gpu"
+# Kueue admits a pod, Deployment or TrainJob with this label once the queue's GPUs are free.
+QUEUE_NAME_LABEL = "kueue.x-k8s.io/queue-name"
 # KFP's own object store keys in its namespace, which install.sh fills with the platform's keys.
 OBJECT_STORE_SECRET = "mlpipeline-minio-artifact"
 OBJECT_STORE_SECRET_ENV_VARS = {
@@ -490,7 +492,7 @@ RECONCILE_INTERVAL = timedelta(seconds=10)
 SECRET_MAX_AGE = timedelta(hours=48)
 # The KFP UI's run page, behind the platform's /pipeline/ route.
 KUBEFLOW_RUN_URL = "/pipeline/#/runs/details/{run_id}"
-# The Run ID in the MLflow UI link KFP's plugin reports, e.g. `…/#/experiments/1/runs/<id>`.
+# The Run ID in the MLflow UI link KFP's plugin reports, e.g. `â€¦/#/experiments/1/runs/<id>`.
 MLFLOW_RUN_ID_IN_URL = re.compile(r"/runs/(\w+)")
 # The resolved request, logged to the Pipeline's MLflow Run and beside each Model Version's weights.
 PIPELINE_REQUEST_FILE = "pipeline_request.json"

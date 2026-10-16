@@ -27,6 +27,8 @@ class StepEnvironment:
     sandbox_url: str
     # Where `evaluate` reaches an Endpoint's Service.
     platform_namespace: str
+    # The Kueue LocalQueue every GPU step waits in.
+    gpu_queue: str
 
     @classmethod
     def from_environment(cls) -> "StepEnvironment":
@@ -42,6 +44,7 @@ class StepEnvironment:
             api_url=os.environ["API_URL"],
             sandbox_url=os.environ["SANDBOX_URL"],
             platform_namespace=os.environ["PLATFORM_NAMESPACE"],
+            gpu_queue=os.environ["GPU_QUEUE"],
         )
 
 
@@ -386,8 +389,7 @@ def trainer_gpus(backend: str, settings: Settings) -> int:
 def use_trainer(task, steps: StepEnvironment, gpus: int) -> None:
     use_model_cache(task, steps)
     task.set_env_variable("HF_HUB_OFFLINE", "1")
-    task.set_accelerator_type(config.GPU_RESOURCE)
-    task.set_accelerator_limit(gpus)
+    use_gpus(task, steps, gpus)
     use_object_store(task, steps)
     task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
 
@@ -515,9 +517,15 @@ def use_vllm(task, steps: StepEnvironment, gpus: int) -> None:
     task.set_env_variable("HF_HUB_OFFLINE", "1")
     task.set_env_variable("HF_DATASETS_OFFLINE", "1")
     if gpus:
-        task.set_accelerator_type(config.GPU_RESOURCE)
-        task.set_accelerator_limit(gpus)
+        use_gpus(task, steps, gpus)
     use_object_store(task, steps)
+
+
+# Kueue holds the step back until its GPUs are free, so steps wait in order instead of in a heap.
+def use_gpus(task, steps: StepEnvironment, gpus: int) -> None:
+    task.set_accelerator_type(config.GPU_RESOURCE)
+    task.set_accelerator_limit(gpus)
+    kubernetes.add_pod_label(task, config.QUEUE_NAME_LABEL, steps.gpu_queue)
 
 
 # Runs snippets in the Sandbox, which only Pipeline steps can reach.

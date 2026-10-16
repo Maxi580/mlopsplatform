@@ -6,7 +6,7 @@ source "$(dirname "$0")/deploy/values.sh"
 install_yq
 load_values
 platform=$(value .namespaces.platform) kubeflow=$(value .namespaces.kubeflow)
-mlflow=$(value .namespaces.mlflow) cert_manager=$(value .namespaces.certManager)
+mlflow=$(value .namespaces.mlflow) cert_manager=$(value .namespaces.certManager) kueue=$(value .namespaces.kueue)
 
 domain=$(helm get values mlp --namespace "$platform" 2>/dev/null | yq '.domain // ""')
 [[ -n $domain ]] || domain=$platform
@@ -16,12 +16,13 @@ read -rp "This deletes the platform and ALL its data. Type '$domain' to confirm:
 log "Removing releases and manifests"
 helm uninstall mlp --namespace "$platform" --ignore-not-found --wait
 helm uninstall mlflow --namespace "$mlflow" --ignore-not-found --wait
+helm uninstall kueue --namespace "$kueue" --ignore-not-found --wait
 kubectl delete -k "$(kfp_manifests cluster-scoped-resources)" --ignore-not-found
 helm uninstall cert-manager --namespace "$cert_manager" --ignore-not-found --wait
 kubectl delete -f "$(device_plugin_manifest)" --ignore-not-found
 
 log "Removing namespaces and volumes"
-namespaces=("$platform" "$kubeflow" "$mlflow" "$cert_manager")
+namespaces=("$platform" "$kubeflow" "$mlflow" "$cert_manager" "$kueue")
 kubectl delete namespace "${namespaces[@]}" --ignore-not-found
 for namespace in "${namespaces[@]}"; do
   kubectl get pv -o yaml \
