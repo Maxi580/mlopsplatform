@@ -128,3 +128,29 @@ def test_the_finetune_step_reaches_the_sandbox(logged_in_api, cluster):
         variable["name"]: variable["value"] for variable in container(cluster, "finetune")["env"]
     }
     assert env["SANDBOX_URL"]
+
+
+@pytest.mark.parametrize("algorithm", ["grpo", "rloo"])
+def test_an_rl_phase_on_several_gpus_is_rejected_until_it_runs_there(logged_in_api, algorithm):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpus_per_stage": 2})
+
+    response = validate(logged_in_api, reinforcing(algorithm))
+
+    assert response.status_code == 422
+    [error] = response.json()["detail"]
+    assert error["loc"] == ["finetune", "phases", 0, "algorithm"]
+    assert f"{algorithm} with lora doesn't train on several GPUs" in error["msg"]
+    assert "gpus_per_stage: 1" in error["msg"]
+
+
+def test_an_rl_phase_on_unsloth_trains_on_one_gpu_however_many_a_stage_gets(logged_in_api):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpus_per_stage": 2})
+
+    request = reinforcing()
+    request["finetune"]["backend"] = "unsloth"
+
+    response = validate(logged_in_api, request)
+
+    assert response.status_code == 200, response.text

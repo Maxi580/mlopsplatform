@@ -10,6 +10,7 @@ from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.storage.database import create_tables
 from mlp_core import config
 from mlp_core.pipeline_request.schema import Phase
+from mlp_core.settings import Settings
 
 from .conftest import FakeHuggingFace, FakeModelRegistry, FakeObjectStore
 from .test_models import register
@@ -100,10 +101,11 @@ def object_store():
 
 
 @pytest.fixture
-def validate(hugging_face, engine, chat_dataset, model_registry, object_store):
+def validate(hugging_face, engine, chat_dataset, model_registry, object_store, platform_settings):
     def run(request, secrets=None):
+        settings = Settings(**platform_settings)
         return validate_pipeline_request(
-            request, secrets or {}, hugging_face, engine, model_registry, object_store
+            request, secrets or {}, hugging_face, engine, model_registry, object_store, settings
         )
 
     return run

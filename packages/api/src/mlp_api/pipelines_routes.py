@@ -41,7 +41,7 @@ class ResumeSubmission(BaseModel):
 class SweepOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The best Trial's values, as `{settings: …, lora: …}`.
+    # The best Trial's values, as `{settings: â€¦, lora: â€¦}`.
     parameters: dict[str, dict[str, Any]]
     objective: float
 
@@ -164,6 +164,7 @@ def resolve(submission: Submission, request: Request) -> PipelineRequest:
         request.app.state.engine,
         request.app.state.model_registry,
         request.app.state.object_store,
+        request.app.state.settings,
     )
     if errors:
         raise HTTPException(422, errors)

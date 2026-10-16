@@ -491,7 +491,7 @@ def test_finetune_trains_after_fetch_on_the_backends_trainer_image_with_the_plat
     assert finetune["dependentTasks"] == ["fetch"]
     container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
     assert container["image"] == "mlp-trainer-hf:test"
-    assert container["command"] == ["mlp-stage", "finetune"]
+    assert container["command"][-3:] == ["-m", "mlp_stages.main", "finetune"]
     assert container["resources"]["accelerator"]["resourceType"] == "nvidia.com/gpu"
     assert container["resources"]["accelerator"]["resourceCount"] == "1"
     parameters = finetune["inputs"]["parameters"]
@@ -501,6 +501,38 @@ def test_finetune_trains_after_fetch_on_the_backends_trainer_image_with_the_plat
     request = json.loads(inputs["request"])
     assert request["finetune"]["base_model"] == f"hf:{BASE_MODEL}@{COMMIT}"
     assert request["finetune"]["phases"][0]["dataset"] == "dataset:chat@1"
+
+
+@pytest.mark.parametrize(
+    ("method", "gpus", "accelerate_config"),
+    [("lora", 1, "ddp"), ("qlora", 2, "ddp"), ("full", 1, "fsdp"), ("full", 2, "fsdp")],
+)
+def test_a_phase_launches_one_process_per_gpu_with_its_weight_methods_accelerate_config(
+    logged_in_api, submittable, cluster, method, gpus, accelerate_config
+):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpus_per_stage": gpus})
+
+    request = pipeline_request(phase={"method": method})
+    if method == "full":
+        request = without(request, "finetune", "phases", 0, "lora")
+
+    assert submit(logged_in_api, request).status_code == 202
+
+    pipeline, _ = submitted_pipeline(cluster)
+    container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
+    assert container["command"] == [
+        "accelerate",
+        "launch",
+        "--config_file",
+        f"/app/packages/stages/src/mlp_stages/finetune/accelerate/{accelerate_config}.yaml",
+        "--num_processes",
+        str(gpus),
+        "-m",
+        "mlp_stages.main",
+        "finetune",
+    ]
+    assert container["resources"]["accelerator"]["resourceCount"] == str(gpus)
 
 
 def test_an_unsloth_phase_trains_on_its_trainer_image_with_one_gpu(

@@ -34,3 +34,8 @@ def main() -> None:
     step, *args = sys.argv[1:]
     module, function = STEPS[step].split(":")
     getattr(importlib.import_module(module), function)(*args)
+
+
+# `accelerate launch -m mlp_stages.main` starts every finetune process here.
+if __name__ == "__main__":
+    main()

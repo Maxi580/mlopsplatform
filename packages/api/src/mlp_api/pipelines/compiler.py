@@ -311,36 +311,47 @@ def finetune_steps(
     """One step per unfinished Phase, handed the previous Model Version and `swept` if it asks."""
     backend = request.finetune.backend
     trainer_image = steps.trainer_images[backend]
+    gpus = trainer_gpus(backend, settings)
 
-    @dsl.container_component
-    def finetune(
-        pipeline_id: str,
-        phase_index: str,
-        request: str,
-        distilled_dataset: str,
-        previous_model_version: str,
-        swept_parameters: str,
-        checkpoint_minutes: str,
-        resume_checkpoint: str,
-        stop_after_checkpoint: str,
-        model_version: dsl.OutputPath(str),
-    ):
-        return dsl.ContainerSpec(
-            image=trainer_image,
-            command=["mlp-stage", "finetune"],
-            args=[
-                pipeline_id,
-                phase_index,
-                request,
-                distilled_dataset,
-                previous_model_version,
-                swept_parameters,
-                checkpoint_minutes,
-                resume_checkpoint,
-                stop_after_checkpoint,
-                model_version,
-            ],
+    def finetune_component(method: str):
+        """The Phase's step: one process per GPU, with its weight method's accelerate config."""
+        accelerate_config = config.ACCELERATE_CONFIG_PATH.format(
+            name=config.ACCELERATE_CONFIGS[method]
         )
+        launch = ["accelerate", "launch", "--config_file", accelerate_config]
+        launch += ["--num_processes", str(gpus), "-m", "mlp_stages.main", "finetune"]
+
+        @dsl.container_component
+        def finetune(
+            pipeline_id: str,
+            phase_index: str,
+            request: str,
+            distilled_dataset: str,
+            previous_model_version: str,
+            swept_parameters: str,
+            checkpoint_minutes: str,
+            resume_checkpoint: str,
+            stop_after_checkpoint: str,
+            model_version: dsl.OutputPath(str),
+        ):
+            return dsl.ContainerSpec(
+                image=trainer_image,
+                command=launch,
+                args=[
+                    pipeline_id,
+                    phase_index,
+                    request,
+                    distilled_dataset,
+                    previous_model_version,
+                    swept_parameters,
+                    checkpoint_minutes,
+                    resume_checkpoint,
+                    stop_after_checkpoint,
+                    model_version,
+                ],
+            )
+
+        return finetune
 
     # A resume skips the Phases that registered a Model Version and continues the next one.
     resume = resume or Resume()
@@ -348,7 +359,7 @@ def finetune_steps(
     tasks, previous_model_version = [], (resume.model_versions or [""])[-1]
     for index, phase in list(enumerate(request.finetune.phases))[finished:]:
         # The request holds no Secret value, so it can be a parameter.
-        task = finetune(
+        task = finetune_component(phase.method)(
             pipeline_id=str(pipeline_id),
             phase_index=str(index),
             request=request.model_dump_json(),
@@ -360,7 +371,7 @@ def finetune_steps(
             resume_checkpoint=(index == finished and resume.checkpoint) or "",
             stop_after_checkpoint="true" if interrupt else "",
         ).set_display_name(f"finetune-{phase.algorithm}")
-        use_trainer(task, steps, trainer_gpus(backend, settings))
+        use_trainer(task, steps, gpus)
         tasks.append(task)
         previous_model_version = task.outputs["model_version"]
     return tasks

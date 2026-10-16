@@ -270,6 +270,18 @@ BACKENDS = {
 }
 # Its open-source version trains on one GPU only (#23).
 SINGLE_GPU_BACKENDS = ("unsloth",)
+# A Phase runs one process per GPU through `accelerate launch`: Adapters under DDP, as each GPU
+# holds the whole model, and full weights under FSDP, sharded across the GPUs.
+ACCELERATE_CONFIGS = {"lora": "ddp", "qlora": "ddp", "full": "fsdp"}
+ACCELERATE_CONFIG_PATH = "/app/packages/stages/src/mlp_stages/finetune/accelerate/{name}.yaml"
+# Phase algorithm -> the weight methods it can't train with on several GPUs yet: `grpo` and `rloo`
+# start a colocated vLLM in every process, `distillation` a Teacher. None of these, nor any other
+# combination, has run on 2 GPUs yet; this list is the expected failures, to be confirmed.
+SINGLE_PROCESS_PHASES = {
+    "grpo": WEIGHT_METHODS,
+    "rloo": WEIGHT_METHODS,
+    "distillation": WEIGHT_METHODS,
+}
 # LoraConfig settings the platform sets.
 LORA_CONFIG = "LoraConfig"
 # The platform sets `task_type`; PEFT wants the others as dataclasses, not dicts (#79).

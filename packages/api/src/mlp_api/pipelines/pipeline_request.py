@@ -24,6 +24,7 @@ from mlp_core.pipeline_request.references import (
     split_endpoint_reference,
 )
 from mlp_core.pipeline_request.schema import Phase, PhaseConfiguration, PipelineRequest, Sweep
+from mlp_core.settings import Settings
 
 
 def validate_pipeline_request(
@@ -33,6 +34,7 @@ def validate_pipeline_request(
     engine: Engine,
     model_registry: MLflow,
     object_store: ObjectStore,
+    settings: Settings,
 ) -> tuple[PipelineRequest | None, list[dict]]:
     """The request with every Reference pinned, or None and every error with its path."""
     # 1. The schema: required values, types, no unknown fields.
@@ -41,9 +43,11 @@ def validate_pipeline_request(
     except ValidationError as validation_error:
         return None, [error(e["loc"], e["msg"]) for e in validation_error.errors()]
 
-    # 2. Phases and Sweeps the backend can train, the settings TRL/PEFT would receive, rewards
-    # that can run, parameters Trials can set and Phases can take, and no Secret value anywhere.
-    errors = backend_errors(request) + trainer_config_errors(request)
+    # 2. Phases and Sweeps the backend can train, on the GPUs a Phase gets, the settings TRL/PEFT
+    # would receive, rewards that can run, parameters Trials can set and Phases can take, and no
+    # Secret value anywhere.
+    errors = backend_errors(request) + multi_process_errors(request, settings)
+    errors += trainer_config_errors(request)
     errors += sweep_parameter_errors(request.sweep) + params_from_errors(request)
     errors += reward_errors(request)
     errors += secret_value_errors(request, secrets)
@@ -196,6 +200,24 @@ def backend_errors(request: PipelineRequest) -> list[dict]:
             supported = ", ".join(methods)
             msg = f"{backend} trains {phase.algorithm} Phases with {supported}, not {phase.method}"
             errors.append(error([*loc, "method"], f"{msg}; use backend `hf`"))
+    return errors
+
+
+def multi_process_errors(request: PipelineRequest, settings: Settings) -> list[dict]:
+    """An error for each Phase that would train in several processes but can't yet."""
+    finetune = request.finetune
+    if not finetune or finetune.backend in config.SINGLE_GPU_BACKENDS:
+        return []
+    if settings.gpus_per_stage == 1:
+        return []
+    errors = []
+    for index, phase in enumerate(finetune.phases):
+        if phase.method in config.SINGLE_PROCESS_PHASES.get(phase.algorithm, ()):
+            msg = (
+                f"{phase.algorithm} with {phase.method} doesn't train on several GPUs yet, and "
+                f"a Stage gets {settings.gpus_per_stage}; ask an admin to set `gpus_per_stage: 1`"
+            )
+            errors.append(error(["finetune", "phases", index, "algorithm"], msg))
     return errors
 
 

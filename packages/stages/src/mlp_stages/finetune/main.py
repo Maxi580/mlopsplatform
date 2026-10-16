@@ -49,7 +49,13 @@ def finetune(
     # save_model_version.
     backend = importlib.import_module(f"mlp_stages.finetune.backends.{resolved.finetune.backend}")
     # Imports transformers, so only after the backend.
+    from accelerate import PartialState
+
     from mlp_stages.finetune import checkpoints
+
+    # `accelerate launch` starts one process per GPU; this pins each to its own GPU before a model
+    # loads, and only the main one uploads, registers and writes the output.
+    main_process = PartialState().is_main_process
 
     with tempfile.TemporaryDirectory() as output_directory:
         # 3. What the Phase starts from (#19), and the Teacher a `distillation` Phase loads too.
@@ -99,13 +105,16 @@ def finetune(
             ) from None
         # The Smoke Test's interrupted step leaves its Checkpoint and registers nothing.
         if stop_after_checkpoint:
-            Path(model_version).write_text("")
+            if main_process:
+                Path(model_version).write_text("")
             return
 
         # 7. The output with the tokenizer and chat template, registered as the next Model Version,
-        # which the next Phase starts from.
+        # which the next Phase starts from; every process saves, as FSDP gathers the weights there.
         model_directory = scratch / "model"
         backend.save_model_version(trainer, phase, tokenizer, model_directory, base_directory)
+        if not main_process:
+            return
         model_type = trainer.model.config.model_type
         parent = previous_model_version or starting_model
         tags = phase_tags(resolved, pipeline_id, index, parent, base, tokenizer, model_type)
