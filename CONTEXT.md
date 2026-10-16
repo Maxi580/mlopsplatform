@@ -71,6 +71,7 @@ _Avoid_: Credential, key, token (when meaning the platform concept)
 
 **Job**:
 A Kubernetes object that executes part of a user's submitted work. Internal: users never see or manage Jobs directly.
+A finetune Phase runs as one Job (a Kubeflow Trainer TrainJob) across `nodes_per_stage` nodes.
 _Avoid_: Task, pod (when meaning the unit of work)
 
 **Sandbox**:

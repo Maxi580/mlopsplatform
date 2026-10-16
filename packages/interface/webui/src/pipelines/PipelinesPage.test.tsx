@@ -15,11 +15,11 @@ const running: Pipeline = {
   mlflow_run_url: "https://platform.test/mlflow/#/runs/abc",
 };
 
-test("the page shows the GPU count and links the KFP and MLflow UIs", async () => {
-  fakeApi({ "GET /pipelines": [200, []], "GET /settings": [200, { gpu_count: 4 }] });
+test("the page shows the nodes and GPUs and links the KFP and MLflow UIs", async () => {
+  fakeApi({ "GET /pipelines": [200, []], "GET /settings": [200, { node_count: 2, gpu_count: 4 }] });
   renderApp("/");
 
-  expect(await screen.findByText("4 GPUs")).toBeInTheDocument();
+  expect(await screen.findByText("2 nodes · 4 GPUs")).toBeInTheDocument();
   const sidebar = screen.getByRole("complementary");
   expect(within(sidebar).getByRole("link", { name: /kubeflow/i })).toHaveAttribute(
     "href",

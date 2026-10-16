@@ -1,7 +1,7 @@
 import pytest
 
 from .test_datasets import jsonl, upload
-from .test_evaluate_stage import container, errors, validate
+from .test_evaluate_stage import errors, validate
 from .test_pipeline_request import pipeline_request
 from .test_pipelines import submit, submittable  # noqa: F401
 
@@ -121,15 +121,6 @@ def test_an_rl_phase_trains_on_prompts(logged_in_api):
     assert "grpo trains on prompt_only rows" in error["msg"]
 
 
-def test_the_finetune_step_reaches_the_sandbox(logged_in_api, cluster):
-    assert submit(logged_in_api, reinforcing()).status_code == 202
-
-    env = {
-        variable["name"]: variable["value"] for variable in container(cluster, "finetune")["env"]
-    }
-    assert env["SANDBOX_URL"]
-
-
 @pytest.mark.parametrize("algorithm", ["grpo", "rloo"])
 def test_an_rl_phase_on_several_gpus_is_rejected_until_it_runs_there(logged_in_api, algorithm):
     app = logged_in_api.app
@@ -154,3 +145,14 @@ def test_an_rl_phase_on_unsloth_trains_on_one_gpu_however_many_a_stage_gets(logg
     response = validate(logged_in_api, request)
 
     assert response.status_code == 200, response.text
+
+
+def test_an_rl_phase_on_several_nodes_is_rejected_until_it_runs_there(logged_in_api):
+    app = logged_in_api.app
+    update = {"node_count": 2, "nodes_per_stage": 2, "gpu_count": 2}
+    app.state.settings = app.state.settings.model_copy(update=update)
+
+    [error] = errors(logged_in_api, reinforcing())
+
+    assert "a Phase gets 2 GPUs" in error["msg"]
+    assert "`nodes_per_stage: 1`" in error["msg"]

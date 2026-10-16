@@ -208,14 +208,15 @@ def multi_process_errors(request: PipelineRequest, settings: Settings) -> list[d
     finetune = request.finetune
     if not finetune or finetune.backend in config.SINGLE_GPU_BACKENDS:
         return []
-    if settings.gpus_per_stage == 1:
+    if settings.phase_gpus == 1:
         return []
     errors = []
     for index, phase in enumerate(finetune.phases):
         if phase.method in config.SINGLE_PROCESS_PHASES.get(phase.algorithm, ()):
             msg = (
                 f"{phase.algorithm} with {phase.method} doesn't train on several GPUs yet, and "
-                f"a Stage gets {settings.gpus_per_stage}; ask an admin to set `gpus_per_stage: 1`"
+                f"a Phase gets {settings.phase_gpus} GPUs; ask an admin to set "
+                "`gpus_per_stage: 1` and `nodes_per_stage: 1`"
             )
             errors.append(error(["finetune", "phases", index, "algorithm"], msg))
     return errors

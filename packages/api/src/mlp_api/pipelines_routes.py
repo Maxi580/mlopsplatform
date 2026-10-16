@@ -41,7 +41,7 @@ class ResumeSubmission(BaseModel):
 class SweepOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The best Trial's values, as `{settings: â€¦, lora: â€¦}`.
+    # The best Trial's values, as `{settings: …, lora: …}`.
     parameters: dict[str, dict[str, Any]]
     objective: float
 

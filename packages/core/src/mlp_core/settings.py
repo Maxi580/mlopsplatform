@@ -9,8 +9,12 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="forbid")
 
+    # The cluster's GPU machines and all their GPUs, counted by install.sh; machines are identical.
+    node_count: int
     gpu_count: int
+    # GPUs per node for a Stage; a finetune Phase trains on nodes_per_stage nodes, the rest on one.
     gpus_per_stage: int
+    nodes_per_stage: int
     gpus_per_endpoint: int
     sandbox_timeout_seconds: int
     sandbox_memory_mb: int
@@ -29,7 +33,21 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"{name} ({getattr(self, name)}) exceeds gpu_count ({self.gpu_count})"
                 )
+        if self.nodes_per_stage > self.node_count:
+            raise ValueError(
+                f"nodes_per_stage ({self.nodes_per_stage}) exceeds node_count ({self.node_count})"
+            )
+        if self.phase_gpus > self.gpu_count:
+            raise ValueError(
+                f"nodes_per_stage × gpus_per_stage ({self.phase_gpus}) exceeds gpu_count "
+                f"({self.gpu_count})"
+            )
         return self
+
+    @property
+    def phase_gpus(self) -> int:
+        """The GPUs a finetune Phase trains on, across its nodes."""
+        return self.nodes_per_stage * self.gpus_per_stage
 
 
 def size_in_bytes(quantity: str) -> int:

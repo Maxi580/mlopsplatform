@@ -83,6 +83,10 @@ spec:
               value: {{ .Values.images.trainerHf }}:{{ .Values.images.tag }}
             - name: TRAINER_UNSLOTH_IMAGE
               value: {{ .Values.images.trainerUnsloth }}:{{ .Values.images.tag }}
+            - name: LAUNCHER_IMAGE
+              value: {{ .Values.images.launcher }}:{{ .Values.images.tag }}
+            - name: FINETUNE_RUNTIME
+              value: {{ .Values.finetuneRuntime }}
             - name: MODEL_CACHE_PVC
               value: {{ .Values.modelCachePvc }}
             # Where a Pipeline's `serve` step asks the API to start its Endpoint, inside the cluster.

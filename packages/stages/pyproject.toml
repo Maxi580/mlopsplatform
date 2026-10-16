@@ -16,6 +16,9 @@ unsloth = ["unsloth>=2026.10.1", "mlflow-skinny", "bitsandbytes", "optuna", "vll
 # against vLLM, which the image's vLLM base provides; quantize merges Adapters with PEFT and
 # quantizes with llm-compressor; speculate trains Speculators with speculators.
 evaluate = ["lm-eval[api,ifeval]>=0.4.13", "evalscope>=1.12", "mlflow-skinny", "guidellm>=0.7.4; sys_platform == 'linux'", "llmcompressor>=0.14", "peft", "speculators>=0.8"]
+# The launcher image: a finetune Phase's step creates its TrainJob, follows it with the Kubeflow SDK
+# and finds the Model Version it registered in MLflow.
+launch = ["kubeflow>=0.5,<0.6", "mlflow-skinny"]
 
 [project.scripts]
 mlp-stage = "mlp_stages.main:main"

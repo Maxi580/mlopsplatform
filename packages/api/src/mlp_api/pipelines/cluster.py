@@ -93,7 +93,10 @@ class Cluster:
         if response.status_code != 404:
             response.raise_for_status()
 
-    def is_waiting_for_gpu(self, run_id: str) -> bool:
+    def is_waiting_for_gpu(self, run_id: str, pipeline_id: int) -> bool:
+        # Kueue suspends a Phase's TrainJob until all its nodes' GPUs are free.
+        if any(job["spec"].get("suspend") for job in self.trainjobs(pipeline_id)):
+            return True
         pods = self.kubernetes.list_namespaced_pod(
             self.namespace,
             label_selector=f"pipeline/runid={run_id}",
@@ -109,6 +112,31 @@ class Cluster:
             for pod in pods.items
             for condition in pod.status.conditions or []
         )
+
+    def trainjobs(self, pipeline_id: int | None = None) -> list[dict]:
+        """The Pipeline's TrainJobs, or every Pipeline's."""
+        label = config.PIPELINE_ID_LABEL
+        selector = label if pipeline_id is None else f"{label}={pipeline_id}"
+        return self.custom_objects.list_namespaced_custom_object(
+            **config.TRAINJOB_RESOURCE, namespace=self.namespace, label_selector=selector
+        )["items"]
+
+    def trainjob_pipelines(self) -> set[int]:
+        """The ids of the Pipelines that have TrainJobs."""
+        return {
+            int(job["metadata"]["labels"][config.PIPELINE_ID_LABEL]) for job in self.trainjobs()
+        }
+
+    def delete_trainjobs(self, pipeline_id: int) -> None:
+        self.custom_objects.delete_collection_namespaced_custom_object(
+            **config.TRAINJOB_RESOURCE,
+            namespace=self.namespace,
+            label_selector=f"{config.PIPELINE_ID_LABEL}={pipeline_id}",
+        )
+
+    @property
+    def custom_objects(self) -> client.CustomObjectsApi:
+        return client.CustomObjectsApi(self.kubernetes_client)
 
     def create_endpoint(self, manifests: dict[str, dict]) -> None:
         namespace = self.endpoint_environment.namespace
