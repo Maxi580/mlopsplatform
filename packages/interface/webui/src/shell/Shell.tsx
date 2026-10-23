@@ -16,7 +16,7 @@ import { KUBEFLOW_UI_URL, MLFLOW_UI_URL } from "../config";
 import Logo from "./Logo";
 
 export default function Shell() {
-  const settings = useApi<{ gpu_count: number }>(SETTINGS).data;
+  const settings = useApi<{ node_count: number; gpu_count: number }>(SETTINGS).data;
   const user = useApi<{ name: string }>(VERIFY).data;
   const navigate = useNavigate();
 
@@ -55,7 +55,7 @@ export default function Shell() {
             <Cpu size={18} />
             <div>
               <strong>
-                {settings.gpu_count} GPU{settings.gpu_count === 1 ? "" : "s"}
+                {plural(settings.node_count, "node")} · {plural(settings.gpu_count, "GPU")}
               </strong>
               <span>on this platform</span>
             </div>
@@ -76,4 +76,9 @@ export default function Shell() {
       </main>
     </div>
   );
+}
+
+// "1 node", "4 GPUs".
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }

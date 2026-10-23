@@ -164,6 +164,7 @@ def resolve(submission: Submission, request: Request) -> PipelineRequest:
         request.app.state.engine,
         request.app.state.model_registry,
         request.app.state.object_store,
+        request.app.state.settings,
     )
     if errors:
         raise HTTPException(422, errors)

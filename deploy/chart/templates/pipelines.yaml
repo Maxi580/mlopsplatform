@@ -14,10 +14,14 @@ rules:
   - apiGroups: [""]
     resources: [secrets]
     verbs: [create, delete, list]
-  # Pending step pods show as "waiting for GPU".
+  # Pending step pods and queued TrainJobs show as "waiting for GPU"; the TrainJobs of finished
+  # Pipelines are deleted.
   - apiGroups: [""]
     resources: [pods]
     verbs: [list]
+  - apiGroups: [trainer.kubeflow.org]
+    resources: [trainjobs]
+    verbs: [list, deletecollection]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -32,6 +36,38 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: mlp-api
+---
+# A finetune Phase's launcher step runs its TrainJob, follows its log and deletes it on cancel.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlp-launcher
+  namespace: {{ .Values.namespaces.kubeflow }}
+rules:
+  - apiGroups: [trainer.kubeflow.org]
+    resources: [trainjobs]
+    verbs: [create, get, list, watch, delete]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlp-launcher
+  namespace: {{ .Values.namespaces.kubeflow }}
+subjects:
+  # KFP runs every step as this ServiceAccount.
+  - kind: ServiceAccount
+    name: pipeline-runner
+    namespace: {{ .Values.namespaces.kubeflow }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mlp-launcher
 ---
 # A host directory rather than a provisioned volume, so the API in its own namespace mounts it too.
 apiVersion: v1

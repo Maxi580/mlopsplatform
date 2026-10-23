@@ -5,8 +5,19 @@ set -euo pipefail
 source "$(dirname "$0")/deploy/values.sh"
 install_yq
 load_values
+
+# A machine `install.sh join` added only runs a k3s agent and keeps its own Model Cache.
+if [[ -x /usr/local/bin/k3s-agent-uninstall.sh ]]; then
+  read -rp "This removes this machine from the cluster. Continue? [y/N] " answer
+  [[ $answer == [yY] ]] || die "aborted"
+  sudo /usr/local/bin/k3s-agent-uninstall.sh
+  sudo rm -rf "$(value .modelCacheHostPath)"
+  log "Machine removed; on the host, run kubectl delete node $(hostname) and ./install.sh again"
+  exit
+fi
 platform=$(value .namespaces.platform) kubeflow=$(value .namespaces.kubeflow)
-mlflow=$(value .namespaces.mlflow) cert_manager=$(value .namespaces.certManager)
+mlflow=$(value .namespaces.mlflow) cert_manager=$(value .namespaces.certManager) kueue=$(value .namespaces.kueue)
+trainer=$(value .namespaces.kubeflowTrainer)
 
 domain=$(helm get values mlp --namespace "$platform" 2>/dev/null | yq '.domain // ""')
 [[ -n $domain ]] || domain=$platform
@@ -16,12 +27,14 @@ read -rp "This deletes the platform and ALL its data. Type '$domain' to confirm:
 log "Removing releases and manifests"
 helm uninstall mlp --namespace "$platform" --ignore-not-found --wait
 helm uninstall mlflow --namespace "$mlflow" --ignore-not-found --wait
+helm uninstall kueue --namespace "$kueue" --ignore-not-found --wait
+helm uninstall kubeflow-trainer --namespace "$trainer" --ignore-not-found --wait
 kubectl delete -k "$(kfp_manifests cluster-scoped-resources)" --ignore-not-found
 helm uninstall cert-manager --namespace "$cert_manager" --ignore-not-found --wait
 kubectl delete -f "$(device_plugin_manifest)" --ignore-not-found
 
 log "Removing namespaces and volumes"
-namespaces=("$platform" "$kubeflow" "$mlflow" "$cert_manager")
+namespaces=("$platform" "$kubeflow" "$mlflow" "$cert_manager" "$kueue" "$trainer")
 kubectl delete namespace "${namespaces[@]}" --ignore-not-found
 for namespace in "${namespaces[@]}"; do
   kubectl get pv -o yaml \

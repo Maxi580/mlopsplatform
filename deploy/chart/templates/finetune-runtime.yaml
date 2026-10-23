@@ -1,0 +1,90 @@
+# Every finetune Phase runs as a TrainJob of this runtime, based on upstream's torch-distributed:
+# one pod per node, each running `accelerate launch` with one process per GPU. The launcher step
+# sets the trainer image, command, node count and GPUs; Kueue admits it once all its GPUs are free.
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: ClusterTrainingRuntime
+metadata:
+  name: {{ .Values.finetuneRuntime }}
+  labels:
+    trainer.kubeflow.org/framework: torch
+spec:
+  mlPolicy:
+    numNodes: 1
+    torch: {}
+  template:
+    metadata:
+      annotations:
+        # One pod per node, so nodes_per_stage nodes train together.
+        alpha.jobset.sigs.k8s.io/exclusive-topology: kubernetes.io/hostname
+    spec:
+      replicatedJobs:
+        - name: node
+          template:
+            metadata:
+              labels:
+                trainer.kubeflow.org/trainjob-ancestor-step: trainer
+            spec:
+              # A failed Phase fails its step; a resume continues it from its Checkpoint.
+              backoffLimit: 0
+              template:
+                spec:
+                  # The only pods that run on joined GPU machines.
+                  tolerations:
+                    - key: {{ .Values.trainingNodeTaint }}
+                      operator: Exists
+                      effect: NoSchedule
+                  # A node other than the host fills its own Model Cache with the Pipeline's
+                  # Base Models; the TrainJob names them and the Pipeline's token, if any.
+                  initContainers:
+                    - name: fetch
+                      image: {{ .Values.images.stages }}:{{ .Values.images.tag }}
+                      command: [mlp-stage, fetch, {{ .Values.settings.model_cache_size | quote }}, $(BASE_MODELS)]
+                      env:
+                        - name: BASE_MODELS
+                          value: ""
+                        - name: HF_HOME
+                          value: /model-cache
+                      volumeMounts:
+                        - name: model-cache
+                          mountPath: /model-cache
+                  containers:
+                    - name: node
+                      image: {{ .Values.images.trainerHf }}:{{ .Values.images.tag }}
+                      # Offline, from the Model Cache; Model Versions, Datasets and Checkpoints
+                      # in the object store; `grpo` and `rloo` score rewards in the Sandbox.
+                      env:
+                        - name: HF_HOME
+                          value: /model-cache
+                        - name: HF_HUB_OFFLINE
+                          value: "1"
+                        - name: S3_ENDPOINT_URL
+                          value: http://seaweedfs.{{ .Values.namespaces.kubeflow }}.svc.cluster.local:{{ .Values.ports.seaweedfs }}
+                        - name: S3_BUCKET
+                          value: {{ .Values.platformBucket }}
+                        - name: AWS_ACCESS_KEY_ID
+                          valueFrom:
+                            secretKeyRef:
+                              name: mlpipeline-minio-artifact
+                              key: accesskey
+                        - name: AWS_SECRET_ACCESS_KEY
+                          valueFrom:
+                            secretKeyRef:
+                              name: mlpipeline-minio-artifact
+                              key: secretkey
+                        - name: SANDBOX_URL
+                          value: http://sandbox.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.sandbox }}
+                      volumeMounts:
+                        - name: model-cache
+                          mountPath: /model-cache
+                        # The processes share tensors through it.
+                        - name: shm
+                          mountPath: /dev/shm
+                  volumes:
+                    # Each node's own directory; only the host's is the one the janitor sees.
+                    - name: model-cache
+                      hostPath:
+                        path: {{ .Values.modelCacheHostPath }}
+                        type: DirectoryOrCreate
+                    - name: shm
+                      emptyDir:
+                        medium: Memory

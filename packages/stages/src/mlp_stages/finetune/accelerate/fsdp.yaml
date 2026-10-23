@@ -1,0 +1,8 @@
+# Full weights: sharded across the GPUs, saved whole so the Model Version stays plain HF weights.
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+fsdp_config:
+  fsdp_version: 2
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_reshard_after_forward: true

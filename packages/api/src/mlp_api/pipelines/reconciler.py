@@ -58,7 +58,8 @@ def reconcile_pipelines(state) -> None:
         first_seen = url and row.mlflow_run_url is None
         if first_seen and (logged_pipeline_request(state, row, url) or finished):
             values["mlflow_run_url"] = url
-        if run is not None and not finished and cluster.is_waiting_for_gpu(row.kubeflow_run_id):
+        waiting = run is not None and not finished
+        if waiting and cluster.is_waiting_for_gpu(row.kubeflow_run_id, row.id):
             values["status"] = config.WAITING_FOR_GPU
         set_pipeline(engine, row.id, **values)
 
@@ -69,6 +70,11 @@ def reconcile_pipelines(state) -> None:
     for name, age in secret_ages.items():
         if name not in needed or age > config.SECRET_MAX_AGE:
             cluster.delete_secret(name)
+
+    # 3. TrainJobs of finished or unknown Pipelines, whose launcher a KFP terminate killed hard.
+    running = {row.id for row in unfinished_pipelines(engine)}
+    for pipeline_id in cluster.trainjob_pipelines() - running:
+        cluster.delete_trainjobs(pipeline_id)
 
 
 def logged_pipeline_request(state, row, mlflow_run_url: str) -> bool:

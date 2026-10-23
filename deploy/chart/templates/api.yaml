@@ -83,6 +83,10 @@ spec:
               value: {{ .Values.images.trainerHf }}:{{ .Values.images.tag }}
             - name: TRAINER_UNSLOTH_IMAGE
               value: {{ .Values.images.trainerUnsloth }}:{{ .Values.images.tag }}
+            - name: LAUNCHER_IMAGE
+              value: {{ .Values.images.launcher }}:{{ .Values.images.tag }}
+            - name: FINETUNE_RUNTIME
+              value: {{ .Values.finetuneRuntime }}
             - name: MODEL_CACHE_PVC
               value: {{ .Values.modelCachePvc }}
             # Where a Pipeline's `serve` step asks the API to start its Endpoint, inside the cluster.
@@ -103,6 +107,9 @@ spec:
               value: {{ .Values.images.vllm }}
             - name: MODEL_CACHE_HOST_PATH
               value: {{ .Values.modelCacheHostPath }}
+            # GPU steps and Endpoints wait for their GPUs in this Kueue queue.
+            - name: GPU_QUEUE
+              value: {{ .Values.gpuQueue }}
           # The janitor lists and evicts Base Models where the steps' HF_HOME puts them.
           volumeMounts:
             - name: model-cache

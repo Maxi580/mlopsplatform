@@ -13,6 +13,8 @@ class EndpointEnvironment:
     model_cache_host_path: str
     object_store_url: str
     mlflow_url: str
+    # The Kueue LocalQueue an Endpoint waits in for its GPUs.
+    gpu_queue: str
 
     @classmethod
     def from_environment(cls) -> "EndpointEnvironment":
@@ -24,4 +26,5 @@ class EndpointEnvironment:
             model_cache_host_path=os.environ["MODEL_CACHE_HOST_PATH"],
             object_store_url=os.environ["S3_ENDPOINT_URL"],
             mlflow_url=os.environ["MLFLOW_URL"],
+            gpu_queue=os.environ["GPU_QUEUE"],
         )
