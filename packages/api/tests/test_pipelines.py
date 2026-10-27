@@ -43,6 +43,23 @@ def test_schema_publishes_when_each_field_applies(logged_in_api):
     assert schema["algorithms"]["grpo"]["learns_from_rewards"] is True
 
 
+def test_schema_publishes_the_acceleration_benchmarks_results_by_option(logged_in_api):
+    benchmark = logged_in_api.get(api_paths.SCHEMA).json()["acceleration_benchmark"]
+
+    assert benchmark["intro"].startswith("We benchmarked these methods on 7 open models")
+    results = benchmark["results"]
+    assert set(results["quantize.scheme"]) == {"fp8-dynamic", "w4a16-gptq", "nvfp4-gptq"}
+    assert results["quantize.scheme"]["nvfp4-gptq"]["rows"][0] == {
+        "label": "Speedup, all benchmarks",
+        "small": "1.36–1.81×",
+        "medium": "1.66–1.97×",
+    }
+    assert set(results["kv_cache_dtype"]) == {"fp8"}
+    assert set(results["speculative.method"]) == {"eagle3"}
+    # On-the-fly `quantization` was not measured with any option.
+    assert results["quantization"] == {}
+
+
 def test_schema_publishes_each_algorithms_defaults(logged_in_api):
     algorithms = logged_in_api.get(api_paths.SCHEMA).json()["algorithms"]
 

@@ -433,7 +433,8 @@ class Quantize(Strict):
     """The model to quantize, `@finetune`'s output when left out; an Adapter is merged first."""
     scheme: Literal[tuple(QUANTIZATION_SCHEMES)] = QUANTIZATION_SCHEME
     """`fp8-dynamic` needs no data and suits recent GPUs; the `w4a16` ones make 4-bit weights,
-    the smallest; `w8a8-int8` makes 8-bit weights and activations."""
+    the smallest; `w8a8-int8` makes 8-bit weights and activations; `nvfp4-gptq` makes 4-bit
+    weights and activations, fastest on Blackwell GPUs, as 4-bit weights only elsewhere."""
     ignore: list[str] = QUANTIZE_IGNORE
     """Layers kept unquantized."""
     calibration: Calibration | None = Field(

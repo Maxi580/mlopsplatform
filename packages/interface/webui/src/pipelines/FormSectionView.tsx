@@ -1,6 +1,7 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE } from "../config";
+import { BenchmarkIntro, BenchmarkResults } from "../fields/AccelerationBenchmark";
 import Combobox from "../fields/Combobox";
 import type { Catalog } from "../fields/catalog";
 import DatasetPicker from "../fields/DatasetPicker";
@@ -81,6 +82,7 @@ export default function FormSectionView({
   return (
     <>
       <FieldErrors messages={errors[section.name]} />
+      {section.benchmark && <BenchmarkIntro benchmark={section.benchmark} />}
       {fixed.length > 0 && (
         <div className="fixed-values">
           {fixed.map((field) => (
@@ -254,7 +256,7 @@ function FieldInput({
   };
 
   return (
-    <div className={field.kind === "code" ? "field wide" : "field"}>
+    <div className={field.kind === "code" || field.results ? "field wide" : "field"}>
       <div className="field-heading">
         <label className="field-label" htmlFor={field.name}>
           {field.title} <code>{lastPart(field.name)}</code>
@@ -334,6 +336,9 @@ function FieldInput({
           }
           autoComplete="off"
         />
+      )}
+      {field.results && (
+        <BenchmarkResults results={field.results} option={value} fallback={field.default} />
       )}
       <FieldErrors id={`${field.name}-error`} messages={errors} />
     </div>

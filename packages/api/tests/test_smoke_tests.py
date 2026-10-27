@@ -26,6 +26,7 @@ QUANTIZE_CASES = [
     "quantize-w4a16-gptq",
     "quantize-w4a16-awq",
     "quantize-w8a8-int8",
+    "quantize-nvfp4-gptq",
 ]
 SPECULATE_CASES = [
     "speculate-eagle3",
@@ -503,6 +504,7 @@ def test_the_quantize_cases_quantize_the_base_model_calibrating_on_bundled_rows_
         "quantize-w4a16-gptq": (base_model, "w4a16-gptq", calibration),
         "quantize-w4a16-awq": (base_model, "w4a16-awq", calibration),
         "quantize-w8a8-int8": (base_model, "w8a8-int8", calibration),
+        "quantize-nvfp4-gptq": (base_model, "nvfp4-gptq", calibration),
         "quantize-adapter": (f"model:{name}-sft-lora-hf@1", "fp8-dynamic", None),
     }
 

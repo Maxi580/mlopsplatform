@@ -933,37 +933,52 @@ test("with Distill on, Finetune's Dataset preselects the Distillation Dataset", 
   expect(screen.getByRole("option", { name: /^chat/ })).toHaveTextContent("messages");
 });
 
-test("Quantize shows Calibration, required, only for a scheme that calibrates", async () => {
-  const quantizeSchema = {
-    type: "object",
-    properties: {
-      quantize: { anyOf: [{ $ref: "#/$defs/Quantize" }, { type: "null" }], default: null },
+const benchmark = {
+  intro: "We benchmarked these methods on 7 open models.",
+  terms: "Ranges are across the models in each size class.",
+  results: {
+    "quantize.scheme": {
+      "fp8-dynamic": {
+        rows: [{ label: "Speedup, all benchmarks", small: "1.23–1.30×", medium: "1.36–1.50×" }],
+      },
+      "w4a16-gptq": {
+        rows: [{ label: "Size vs. original", small: "33–35%", medium: "33–35%" }],
+      },
     },
-    $defs: {
-      Quantize: {
-        type: "object",
-        properties: {
-          scheme: {
-            enum: ["fp8-dynamic", "w4a16-gptq"],
-            type: "string",
-            default: "fp8-dynamic",
-            title: "Scheme",
-          },
-          calibration: {
-            anyOf: [{ $ref: "#/$defs/Calibration" }, { type: "null" }],
-            default: null,
-            applies_if: "calibrates",
-            required_if_applies: true,
-          },
+  },
+};
+const quantizeSchema = {
+  type: "object",
+  properties: {
+    quantize: { anyOf: [{ $ref: "#/$defs/Quantize" }, { type: "null" }], default: null },
+  },
+  $defs: {
+    Quantize: {
+      type: "object",
+      properties: {
+        scheme: {
+          enum: ["fp8-dynamic", "w4a16-gptq", "w4a16-awq"],
+          type: "string",
+          default: "fp8-dynamic",
+          title: "Scheme",
+        },
+        calibration: {
+          anyOf: [{ $ref: "#/$defs/Calibration" }, { type: "null" }],
+          default: null,
+          applies_if: "calibrates",
+          required_if_applies: true,
         },
       },
-      Calibration: {
-        type: "object",
-        properties: { samples: { type: "integer", default: 512, title: "Samples" } },
-      },
     },
-    uncalibrated_schemes: ["fp8-dynamic"],
-  };
+    Calibration: {
+      type: "object",
+      properties: { samples: { type: "integer", default: 512, title: "Samples" } },
+    },
+  },
+  uncalibrated_schemes: ["fp8-dynamic"],
+};
+
+test("Quantize shows Calibration, required, only for a scheme that calibrates", async () => {
   const calls = fakeApi({
     "GET /schema": [200, quantizeSchema],
     "GET /datasets": [200, []],
@@ -990,6 +1005,31 @@ test("Quantize shows Calibration, required, only for a scheme that calibrates", 
     scheme: "w4a16-gptq",
     calibration: { samples: 512 },
   });
+});
+
+test("Quantize shows the benchmark, and the chosen scheme's results or that none were measured", async () => {
+  fakeApi({
+    "GET /schema": [200, { ...quantizeSchema, acceleration_benchmark: benchmark }],
+    "GET /datasets": [200, []],
+    "GET /pipelines": [200, []],
+  });
+  renderApp("/pipelines/new");
+  await userEvent.click(await screen.findByRole("button", { name: /add quantize/i }));
+
+  expect(screen.getByText(/We benchmarked these methods/)).toBeInTheDocument();
+  const results = () => screen.getByRole("table", { name: /benchmark results/i });
+  expect(within(results()).getByRole("row", { name: /Speedup, all benchmarks/ })).toHaveTextContent(
+    "1.23–1.30×1.36–1.50×",
+  );
+
+  await userEvent.selectOptions(screen.getByLabelText(/^Scheme/), "w4a16-gptq");
+  // The same result for both sizes shows once, across both.
+  expect(within(results()).getByRole("cell", { name: "33–35%" })).toHaveAttribute("colspan", "2");
+  expect(screen.queryByText("1.23–1.30×")).not.toBeInTheDocument();
+
+  await userEvent.selectOptions(screen.getByLabelText(/^Scheme/), "w4a16-awq");
+  expect(screen.queryByRole("table", { name: /benchmark results/i })).not.toBeInTheDocument();
+  expect(screen.getByText("Not measured in the benchmark")).toBeInTheDocument();
 });
 
 test("a Sweep tunes a setting picked by name, from a range around its default", async () => {

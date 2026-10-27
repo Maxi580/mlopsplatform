@@ -1248,6 +1248,28 @@ legend .switch-button {
   grid-column: 1 / -1;
 }
 
+/* Acceleration benchmark */
+
+.benchmark-intro {
+  margin-bottom: 14px;
+}
+
+.benchmark-results {
+  font-size: 13px;
+}
+
+/* Its quality notes run long, so its cells wrap. */
+.benchmark-results tr > * {
+  padding: 6px 10px;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.benchmark-results tbody th {
+  width: 30%;
+  background: none;
+}
+
 .choices {
   margin: 0;
   padding: 0;

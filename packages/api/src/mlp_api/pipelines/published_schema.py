@@ -1,3 +1,5 @@
+import json
+
 from mlp_api.pipelines.pipeline_request import trainer_config_fields
 from mlp_core import config
 from mlp_core.endpoint_spec import Speculative
@@ -18,11 +20,13 @@ def published_schema() -> dict:
         name: published_algorithm(algorithm) for name, algorithm in config.ALGORITHMS.items()
     }
 
-    # 3. The methods that train an Adapter, the schemes that quantize without calibrating, and
-    # the LoraConfig settings a form doesn't show directly, without those of an Adapter vLLM
-    # can't serve.
+    # 3. The methods that train an Adapter, the schemes that quantize without calibrating, the
+    # acceleration benchmark's results, and the LoraConfig settings a form doesn't show directly,
+    # without those of an Adapter vLLM can't serve.
     schema["adapter_methods"] = config.ADAPTER_METHODS
     schema["uncalibrated_schemes"] = config.UNCALIBRATED_SCHEMES
+    benchmark = config.ACCELERATION_BENCHMARK.read_text(encoding="utf-8")
+    schema["acceleration_benchmark"] = json.loads(benchmark)
     hidden = (*config.BLOCKED_LORA_SETTINGS, *config.HIDDEN_LORA_SETTINGS)
     schema["more_lora_settings"] = other_setting_schemas(
         config.LORA_CONFIG, (*config.SHOWN_LORA_SETTINGS, *hidden)

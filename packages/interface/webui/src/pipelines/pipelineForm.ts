@@ -1,4 +1,5 @@
 import { MODEL_REFERENCES, MORE_SETTINGS, SWITCHED_ON } from "../config";
+import type { AccelerationBenchmark, BenchmarkResult } from "../fields/AccelerationBenchmark";
 import { type Bounds, formatNumber } from "../fields/numbers";
 
 export type FieldKind =
@@ -33,6 +34,8 @@ export type FormSection = {
   list?: { item: string; minItems: number };
   // The settings its entries tune, which their names pick from, e.g. a Sweep's parameters.
   tunes?: FormField[];
+  // Shown at its top once one of its fields has results, e.g. Quantize's scheme.
+  benchmark?: AccelerationBenchmark;
 };
 
 export type FormField = {
@@ -59,6 +62,8 @@ export type FormField = {
   tuned?: boolean;
   // A list whose items read as JSON where they can, e.g. a Sweep parameter's `true,false`.
   jsonItems?: boolean;
+  // The acceleration benchmark's results by option, shown for the chosen one.
+  results?: Record<string, BenchmarkResult>;
 };
 
 export type FormNode = FormSection | FormField;
@@ -243,6 +248,8 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
       .map(([key, value]) => nodeOf(value as Schema, inner, child(key), key));
     // E.g. Calibration, which a calibrating scheme can't do without.
     const required = optional && !!schema.required_if_applies;
+    const benchmark: AccelerationBenchmark | undefined = context.root.acceleration_benchmark;
+    const benchmarked = children.some((child) => child.kind !== "section" && child.results);
     return {
       kind: "section",
       name,
@@ -251,6 +258,7 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
       moreSettings: node.additionalProperties === true,
       optional: optional && !required,
       ...(description && { description }),
+      ...(benchmarked && { benchmark }),
     };
   }
   if (node.type === "array" && resolveRef(node.items, context.defs).type === "object") {
@@ -273,6 +281,7 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
   const output =
     "references" in field ? references.filter((r) => r.startsWith("@")).at(-1) : undefined;
   const fallback = defaultOf(schema, node, field, context.defaults?.[lastPart(name)] ?? output);
+  const results = context.root.acceleration_benchmark?.results[name];
   return {
     ...field,
     name,
@@ -280,6 +289,7 @@ function nodeOf(schema: Schema, context: Context, name: string, title: string): 
     ...(description && { description }),
     ...(fallback !== undefined && { default: fallback }),
     ...(schema.placeholder != null && { placeholder: formatValue(schema.placeholder) }),
+    ...(results && { results }),
   };
 }
 

@@ -17,7 +17,7 @@ from .test_resume import failed_pipeline, parameters, registered_phase, resume
 # Every test submits or validates a request for the Base Model and the `chat` Dataset.
 pytestmark = pytest.mark.usefixtures("submittable")
 
-CALIBRATED_SCHEMES = ["w4a16-gptq", "w4a16-awq", "w8a8-int8"]
+CALIBRATED_SCHEMES = ["w4a16-gptq", "w4a16-awq", "w8a8-int8", "nvfp4-gptq"]
 QUANTIZED_CONFIG = json.dumps({"quantization_config": {"quant_method": "compressed-tensors"}})
 
 

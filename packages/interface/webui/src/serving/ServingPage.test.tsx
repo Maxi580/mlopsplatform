@@ -346,6 +346,65 @@ test("n-gram drafts without a Speculator", async () => {
   });
 });
 
+test("the benchmark's results show for an FP8 KV cache and a Speculator's method", async () => {
+  const kvCache = {
+    anyOf: [{ enum: ["auto", "fp8", "fp8_e5m2"], type: "string" }, { type: "null" }],
+    default: "auto",
+    title: "Kv Cache Dtype",
+  };
+  const serving = schema.$defs.ServingOptions;
+  const benchmark = {
+    intro: "We benchmarked these methods on 7 open models.",
+    terms: "Ranges are across the models in each size class.",
+    results: {
+      kv_cache_dtype: {
+        fp8: {
+          note: "Measured on top of FP8 weights.",
+          rows: [{ label: "Speedup, all benchmarks", small: "1.35–1.56×", medium: "1.47–1.64×" }],
+        },
+      },
+      "speculative.method": {
+        eagle3: { rows: [{ label: "Quality loss", small: "None", medium: "None" }] },
+      },
+    },
+  };
+  fakeApi({
+    ...routes,
+    "GET /schema": [
+      200,
+      {
+        ...schema,
+        $defs: {
+          ...schema.$defs,
+          ServingOptions: {
+            ...serving,
+            properties: { ...serving.properties, kv_cache_dtype: kvCache },
+          },
+        },
+        acceleration_benchmark: benchmark,
+      },
+    ],
+  });
+  renderApp("/serving");
+
+  expect(await screen.findByText(/We benchmarked these methods/)).toBeInTheDocument();
+  // `auto` is no choice the benchmark judged.
+  expect(screen.queryByText("Not measured in the benchmark")).not.toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText(/^Kv Cache Dtype/), "fp8");
+  expect(screen.getByRole("table", { name: "Benchmark results of fp8" })).toHaveTextContent(
+    "Measured on top of FP8 weights.",
+  );
+  await userEvent.selectOptions(screen.getByLabelText(/^Kv Cache Dtype/), "fp8_e5m2");
+  expect(screen.getByText("Not measured in the benchmark")).toBeInTheDocument();
+
+  await userEvent.type(screen.getByRole("combobox", { name: /^Model/ }), "model:qwen-sft@2");
+  const picker = screen.getByLabelText(/^Speculative decoding/);
+  await userEvent.selectOptions(picker, "model:qwen-sft-speculator@1");
+  expect(screen.getByRole("table", { name: "Benchmark results of eagle3" })).toBeInTheDocument();
+  await userEvent.selectOptions(picker, "ngram");
+  expect(screen.getAllByText("Not measured in the benchmark")).toHaveLength(2);
+});
+
 test("a refused start shows why, next to the option when it names one", async () => {
   fakeApi({
     ...routes,

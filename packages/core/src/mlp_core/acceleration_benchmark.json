@@ -1,0 +1,110 @@
+{
+  "intro": "We benchmarked these methods on 7 open models served by vLLM on one NVIDIA GB10 (Blackwell). Small: Llama 3.2 3B, Qwen3-4B, Ministral 3 3B. Medium: Qwen3-8B, Granite 4.2 8B, Llama 3.1 8B, Ministral 3 8B. Each method was compared with the original, unquantized model (BF16, 16-bit weights) on about 20 benchmarks. Speedup is how much faster it finished them. Size is the checkpoint as a share of the original. Quality lists only losses that were statistically significant.",
+  "terms": "Ranges are across the models in each size class. Speed is throughput at 32 concurrent requests. Long answers: hundreds to thousands of output tokens. Short answers: one-letter replies, where the prompt dominates the work. Long prompts: 4k–32k-token prompts.",
+  "results": {
+    "quantize.scheme": {
+      "fp8-dynamic": {
+        "rows": [
+          { "label": "Speedup, all benchmarks", "small": "1.23–1.30×", "medium": "1.36–1.50×" },
+          {
+            "label": "Speedup by task: long answers / short answers / long prompts",
+            "small": "1.42–1.54× / 1.44–1.50× / 1.17–1.21×",
+            "medium": "1.59–1.87× / 1.60–1.76× / 1.29–1.34×"
+          },
+          { "label": "Size vs. original", "small": "55–56%", "medium": "55–57%" },
+          { "label": "Quality loss", "small": "None on any model", "medium": "None on any model" }
+        ]
+      },
+      "w4a16-gptq": {
+        "rows": [
+          { "label": "Speedup, all benchmarks", "small": "0.95–1.09×", "medium": "0.94–1.03×" },
+          {
+            "label": "Speedup by task: long answers / short answers / long prompts",
+            "small": "1.62–1.97× / 0.87–0.95× (slower) / 0.88–0.94× (slower)",
+            "medium": "2.06–2.53× / 0.81–0.93× (slower) / 0.83–0.86× (slower)"
+          },
+          { "label": "Size vs. original", "small": "33–35%", "medium": "33–36%" },
+          {
+            "label": "Quality loss",
+            "small": "Qwen3-4B skips tool calls (BFCL 0.880 → 0.832, p = 6e-5). Ministral 3B loses multi-turn tool use (−11.5 pp) and GSM8K reasoning (−4.1 pp) while thinking 27% longer.",
+            "medium": "Llama 3.1 8B writes tool calls as prose in multi-turn (p = 0.007). Ministral 8B thinks ~⅓ longer and loses 5.5 pp on GSM8K reasoning."
+          }
+        ]
+      },
+      "nvfp4-gptq": {
+        "rows": [
+          { "label": "Speedup, all benchmarks", "small": "1.36–1.81×", "medium": "1.66–1.97×" },
+          {
+            "label": "Speedup by task: long answers / short answers / long prompts",
+            "small": "1.18–2.31× / 2.04–2.07× / 1.30–1.46×",
+            "medium": "1.78–2.53× / 2.44–2.80× / 1.57–1.74×"
+          },
+          { "label": "Size vs. original", "small": "35–37%", "medium": "35–39%" },
+          {
+            "label": "Quality loss",
+            "small": "Qwen3-4B: code −6.4 pp, repetition loops on instruction following. Llama 3.2 3B loses retrieval at 32k. Ministral 3B: MMLU −6.0 pp, reasoning −3.5 to −4.8 pp.",
+            "medium": "Accuracy holds. Granite falls into tool-call loops; Qwen3-8B thinks 8.8% longer."
+          },
+          {
+            "label": "Hardware",
+            "small": "Its 4-bit activations run only on Blackwell FP4 tensor cores, as on the benchmark's GB10. Other GPUs at best serve it as 4-bit weights only, at roughly W4A16 speed.",
+            "medium": "Its 4-bit activations run only on Blackwell FP4 tensor cores, as on the benchmark's GB10. Other GPUs at best serve it as 4-bit weights only, at roughly W4A16 speed."
+          }
+        ]
+      }
+    },
+    "kv_cache_dtype": {
+      "fp8": {
+        "note": "Measured on top of FP8 weights.",
+        "rows": [
+          { "label": "Speedup, all benchmarks", "small": "1.35–1.56×", "medium": "1.47–1.64×" },
+          {
+            "label": "Speedup by task: long answers / multi-turn tools / long prompts",
+            "small": "1.36–1.82× / 1.44–1.94× / 1.28–1.32×",
+            "medium": "1.76–1.90× / 1.68–2.03× / 1.36–1.49×"
+          },
+          {
+            "label": "Size vs. original",
+            "small": "Weights as FP8. The KV cache holds 2× the tokens (Qwen3-8B: 600k → 1.29M at 85% GPU memory).",
+            "medium": "Weights as FP8. The KV cache holds 2× the tokens (Qwen3-8B: 600k → 1.29M at 85% GPU memory)."
+          },
+          {
+            "label": "Quality loss",
+            "small": "None",
+            "medium": "Qwen3-8B loses long-context accuracy (RULER +3 / −17 items, p = 0.003), mostly by explaining instead of listing at 4k"
+          }
+        ]
+      }
+    },
+    "quantization": {},
+    "speculative.method": {
+      "eagle3": {
+        "note": "k = 3, our default; measured on Qwen3-4B, Qwen3-8B and Llama 3.1 8B.",
+        "rows": [
+          { "label": "Speedup on long answers, original model", "small": "1.45×", "medium": "1.93–2.16×" },
+          { "label": "Speedup on long answers, FP8 model", "small": "2.15×", "medium": "2.69–3.16×" },
+          {
+            "label": "Speedup on short answers",
+            "small": "0.99× (original), 1.46× (FP8)",
+            "medium": "0.86–1.00× (original), 1.49–1.52× (FP8)"
+          },
+          {
+            "label": "Size vs. original",
+            "small": "No smaller; the head takes memory from the KV cache",
+            "medium": "No smaller; the head takes memory from the KV cache"
+          },
+          {
+            "label": "Quality loss",
+            "small": "None (lossless on every model checked)",
+            "medium": "None (lossless on every model checked)"
+          },
+          {
+            "label": "Notes",
+            "small": "Qwen3-8B, one request at a time: time per token 72 ms → 39 ms (original) and 24 ms (FP8); 2.0–3.1 tokens accepted per step. Cost: on 4k-token prompts at 32 concurrent requests, time to first token rose from 2.9 s to 16.4 s. A stock head accepted fewer tokens on a fine-tuned Qwen3-4B (1.54–1.83 against 1.96–2.30), so train the Speculator on the final model.",
+            "medium": "Qwen3-8B, one request at a time: time per token 72 ms → 39 ms (original) and 24 ms (FP8); 2.0–3.1 tokens accepted per step. Cost: on 4k-token prompts at 32 concurrent requests, time to first token rose from 2.9 s to 16.4 s. A stock head accepted fewer tokens on a fine-tuned Qwen3-4B (1.54–1.83 against 1.96–2.30), so train the Speculator on the final model."
+          }
+        ]
+      }
+    }
+  }
+}

@@ -378,7 +378,12 @@ QUANTIZATION_SCHEMES = {
         "SmoothQuantModifier": {"smoothing_strength": 0.8},
         "GPTQModifier": {"targets": ["Linear"], "scheme": "W8A8"},
     },
+    # 4-bit weights and activations; only Blackwell computes in FP4, other GPUs unpack the weights.
+    "nvfp4-gptq": {"GPTQModifier": {"targets": ["Linear"], "scheme": "NVFP4"}},
 }
+# By form field, the options the acceleration benchmark measured with their results; forms say
+# any other option was not measured.
+ACCELERATION_BENCHMARK = Path(__file__).parent / "acceleration_benchmark.json"
 # Its scales come from the weights alone; every other scheme calibrates on Dataset rows.
 UNCALIBRATED_SCHEMES = ("fp8-dynamic",)
 # Needs no calibration rows, and recent GPUs run it natively.

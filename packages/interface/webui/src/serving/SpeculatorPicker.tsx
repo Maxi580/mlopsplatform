@@ -1,4 +1,5 @@
 import { NGRAM_LOOKUP } from "../config";
+import { type BenchmarkResult, BenchmarkResults } from "../fields/AccelerationBenchmark";
 import InfoBox from "../fields/InfoBox";
 import NumberInput from "../fields/NumberInput";
 import type { Schema } from "../pipelines/pipelineForm";
@@ -38,17 +39,20 @@ export function draftsFor(speculator: Speculator, model: string): boolean {
 }
 
 /** Off, n-gram, or a Speculator; only those trained for the model can be picked. Its numbers
- * are described, bounded and defaulted by the published `Speculative` schema. */
+ * are described, bounded and defaulted by the published `Speculative` schema, and the chosen
+ * method's acceleration benchmark results show below. */
 export default function SpeculatorPicker({
   models,
   model,
   schema,
+  results,
   value,
   onChange,
 }: {
   models: RegisteredModel[];
   model: string;
   schema: Schema;
+  results?: Record<string, BenchmarkResult>;
   value: Speculative | null;
   onChange: (value: Speculative | null) => void;
 }) {
@@ -73,7 +77,7 @@ export default function SpeculatorPicker({
 
   return (
     <div className="field-grid">
-      <div className="field">
+      <div className={results ? "field wide" : "field"}>
         <div className="field-heading">
           <label className="field-label" htmlFor="speculative">
             Speculative decoding <code>speculative</code>
@@ -98,6 +102,7 @@ export default function SpeculatorPicker({
             </option>
           ))}
         </select>
+        {results && <BenchmarkResults results={results} option={value?.method ?? ""} />}
       </div>
       {value &&
         shown.map((name) => (

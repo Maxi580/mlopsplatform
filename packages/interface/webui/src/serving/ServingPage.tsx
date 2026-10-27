@@ -20,6 +20,7 @@ import {
   stopEndpoint,
 } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
+import type { AccelerationBenchmark } from "../fields/AccelerationBenchmark";
 import { NO_CATALOG } from "../fields/catalog";
 import ModelPicker from "../fields/ModelPicker";
 import FormSectionView from "../pipelines/FormSectionView";
@@ -38,7 +39,10 @@ import { type Endpoint, formatSeconds, ratePerSecond } from "./endpoint";
 import SpeculatorPicker, { type Speculative } from "./SpeculatorPicker";
 
 type Notice = { text: string; failed: boolean };
-type PublishedSchema = { $defs: Record<string, Record<string, unknown>> };
+type PublishedSchema = {
+  $defs: Record<string, Record<string, unknown>>;
+  acceleration_benchmark?: AccelerationBenchmark;
+};
 
 export default function ServingPage() {
   const endpoints = useApi<Endpoint[]>(ENDPOINTS, ENDPOINT_LIST_REFRESH_MS);
@@ -388,6 +392,7 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
         models={models ?? []}
         model={model}
         schema={schema.$defs.Speculative ?? {}}
+        results={schema.acceleration_benchmark?.results["speculative.method"]}
         value={speculative}
         onChange={setSpeculative}
       />
@@ -403,5 +408,6 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
 
 // The serving options of `evaluate` and Teachers are an Endpoint's, so the schema publishes them.
 function servingOptionsForm(schema: PublishedSchema): FormSection {
-  return pipelineForm({ ...schema.$defs.ServingOptions, $defs: schema.$defs });
+  const { $defs, acceleration_benchmark } = schema;
+  return pipelineForm({ ...$defs.ServingOptions, $defs, acceleration_benchmark });
 }
