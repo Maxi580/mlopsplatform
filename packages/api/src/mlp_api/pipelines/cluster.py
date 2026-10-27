@@ -202,13 +202,19 @@ class Cluster:
         response.raise_for_status()
         return response.text
 
-    def send_chat_request(self, name: str, request: dict, key: str) -> None:
-        """Sends the Endpoint one chat completion request with its key; raises unless answered."""
-        url = (
-            f"{endpoint_service_url(name, self.endpoint_environment.namespace)}/v1/chat/completions"
+    def send_chat_request(self, name: str, request: dict, experiment_id: str) -> str:
+        """The trace ID of one chat completion request the Endpoint answered through the Endpoint
+        Proxy, routed as the Endpoint Key check would; raises unless answered."""
+        environment = self.endpoint_environment
+        headers = {
+            config.PROXY_UPSTREAM_HEADER: endpoint_service_url(name, environment.namespace),
+            config.PROXY_EXPERIMENT_HEADER: experiment_id,
+        }
+        response = httpx.post(
+            f"{environment.proxy_url}/v1/chat/completions",
+            json={"model": name, **request},
+            headers=headers,
+            timeout=config.SMOKE_TEST_CHAT_TIMEOUT.total_seconds(),
         )
-        timeout = config.SMOKE_TEST_CHAT_TIMEOUT.total_seconds()
-        headers = {"Authorization": f"Bearer {key}"}
-        httpx.post(
-            url, json={"model": name, **request}, headers=headers, timeout=timeout
-        ).raise_for_status()
+        response.raise_for_status()
+        return response.headers[config.TRACE_ID_HEADER]

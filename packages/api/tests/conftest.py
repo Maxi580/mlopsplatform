@@ -13,6 +13,11 @@ from mlp_api.pipelines.compiler import StepEnvironment
 from mlp_core import api_paths, config
 
 PASSWORD = "correct horse battery staple"
+# What every Endpoint answers a chat request with in tests.
+CHAT_ANSWER = {
+    "object": "chat.completion",
+    "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi!"}}],
+}
 JWT_SECRET = "test-jwt-secret-of-at-least-32-bytes"
 
 
@@ -26,6 +31,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("S3_BUCKET", "platform")
     monkeypatch.setenv("MLFLOW_URL", "http://mlflow.test")
     monkeypatch.setenv("MLFLOW_BUCKET", "mlflow")
+    monkeypatch.setenv("PROXY_URL", "http://proxy.mlp.test:8010")
     monkeypatch.setenv("KUBEFLOW_URL", "http://ml-pipeline.test:8888")
     monkeypatch.setenv("KUBEFLOW_NAMESPACE", "kubeflow")
     monkeypatch.setenv("STAGES_IMAGE", "mlp-stages:real")
@@ -309,6 +315,64 @@ def model_registry(api):
     return api.app.state.model_registry
 
 
+def otel_value(value) -> dict:
+    """The value as MLflow 3.16's `traces/batchGet` writes an OTel AnyValue to JSON."""
+    if isinstance(value, dict):
+        pairs = [{"key": key, "value": otel_value(found)} for key, found in value.items()]
+        return {"kvlist_value": {"values": pairs}}
+    if isinstance(value, list):
+        return {"array_value": {"values": [otel_value(found) for found in value]}}
+    if isinstance(value, bool):
+        return {"bool_value": value}
+    if isinstance(value, int):
+        return {"int_value": value}
+    if isinstance(value, float):
+        return {"double_value": value}
+    return {} if value is None else {"string_value": value}
+
+
+def span(name: str, attributes: dict) -> dict:
+    return {
+        "name": name,
+        "attributes": [{"key": key, "value": otel_value(v)} for key, v in attributes.items()],
+    }
+
+
+def record_request_trace(
+    model_registry, experiment_id, trace_id, arrived, e2e, request, response, tags=None, **sampling
+):
+    """A Request Trace: the Endpoint Proxy's root span and vLLM's span inside it, as MLflow 3.16
+    answers `traces/batchGet`; int64 values come as JSON strings."""
+    vllm = {
+        "gen_ai.latency.e2e": e2e,
+        "gen_ai.latency.time_to_first_token": 0.25,
+        "gen_ai.latency.time_in_queue": 0.125,
+        "gen_ai.latency.time_in_model_prefill": 0.0625,
+        "gen_ai.latency.time_in_model_decode": e2e - 0.25,
+        "gen_ai.latency.time_in_model_inference": e2e - 0.125,
+        "gen_ai.usage.prompt_tokens": "12",
+        "gen_ai.usage.completion_tokens": 40,
+        "gen_ai.request.id": f"chatcmpl-{trace_id}",
+        **sampling,
+    }
+    root = {"mlflow.spanInputs": request, "mlflow.spanOutputs": response, "http.status_code": 200}
+    location = {"type": "MLFLOW_EXPERIMENT", "mlflow_experiment": {"experiment_id": experiment_id}}
+    model_registry.traces.setdefault(experiment_id, []).append(
+        {
+            "trace_info": {
+                "trace_id": trace_id,
+                "trace_location": location,
+                "request_time": arrived.isoformat().replace("+00:00", "Z"),
+                "execution_duration": f"{e2e}s",
+                "state": "OK",
+                "tags": {"source": "api", "status": "ok", **(tags or {})},
+                "assessments": [],
+            },
+            "spans": [span("endpoint_request", root), span("llm_request", vllm)],
+        }
+    )
+
+
 class FakeCluster:
     """Records Secrets, Kubeflow runs and Endpoints; tests set run, pod and Endpoint states."""
 
@@ -333,6 +397,7 @@ class FakeCluster:
         model_cache_host_path="/var/lib/mlp/model-cache",
         object_store_url="http://seaweedfs.test:8333",
         mlflow_url="http://mlflow.test",
+        proxy_url="http://proxy.mlp.test:8010",
         gpu_queue="gpu",
     )
 
@@ -405,15 +470,23 @@ class FakeCluster:
             raise ConnectionError(f"endpoint-{name} timed out")
         return self.metrics[name]
 
-    def send_chat_request(self, name, request, key):
+    # Through the Endpoint Proxy, which with vLLM records the request's trace in full.
+    def send_chat_request(self, name, request, experiment_id):
         if name not in self.metrics:
             raise ConnectionError(f"endpoint-{name} timed out")
-        self.chat_requests.append((name, request, key))
+        self.chat_requests.append((name, request, experiment_id))
+        trace_id = f"tr-{name}-{len(self.chat_requests)}"
+        sent = {"model": name, **request}
+        record_request_trace(
+            self.model_registry, experiment_id, trace_id, datetime.now(UTC), 0.5, sent, CHAT_ANSWER
+        )
+        return trace_id
 
 
 @pytest.fixture
-def cluster(api):
+def cluster(api, model_registry):
     api.app.state.cluster = FakeCluster()
+    api.app.state.cluster.model_registry = model_registry
     return api.app.state.cluster
 
 

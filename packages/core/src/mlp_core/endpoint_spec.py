@@ -96,6 +96,8 @@ class VllmModel:
     adapter_rank: int | None = None
     # The parser the model's `model_type` maps to; None serves it without tool calling.
     tool_parser: str | None = None
+    # Endpoints only: splits the model's thinking into `reasoning_content`.
+    reasoning_parser: str | None = None
     # Where vLLM finds the speculative `model`, if one drafts.
     drafter_path: str | None = None
     drafter_revision: str | None = None
@@ -134,10 +136,12 @@ def vllm_args(
         else:
             args += [f"--{flag}", str(value)]
 
-    # 3. Tool calling, whenever a parser is known (#16).
+    # 3. Tool calling (#16) and reasoning, whenever a parser is known.
     tool_parser = spec.tool_parser or model.tool_parser
     if tool_parser:
         args += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
+    if model.reasoning_parser:
+        args += ["--reasoning-parser", model.reasoning_parser]
 
     # 4. Speculative decoding, an Endpoint option only.
     if speculative:

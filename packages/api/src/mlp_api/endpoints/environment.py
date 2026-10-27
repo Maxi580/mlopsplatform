@@ -13,6 +13,8 @@ class EndpointEnvironment:
     model_cache_host_path: str
     object_store_url: str
     mlflow_url: str
+    # Where the API reaches the Endpoint Proxy inside the cluster, as the Smoke Test does.
+    proxy_url: str
     # The Kueue LocalQueue an Endpoint waits in for its GPUs.
     gpu_queue: str
 
@@ -26,5 +28,6 @@ class EndpointEnvironment:
             model_cache_host_path=os.environ["MODEL_CACHE_HOST_PATH"],
             object_store_url=os.environ["S3_ENDPOINT_URL"],
             mlflow_url=os.environ["MLFLOW_URL"],
+            proxy_url=os.environ["PROXY_URL"],
             gpu_queue=os.environ["GPU_QUEUE"],
         )

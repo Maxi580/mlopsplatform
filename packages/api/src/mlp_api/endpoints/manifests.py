@@ -105,7 +105,8 @@ def endpoint_manifests(
         },
     }
 
-    # 3. The Service, and the route to it behind the Endpoint Key, with the URL prefix stripped.
+    # 3. The Service, and the route behind the Endpoint Key through the Endpoint Proxy, which the
+    # key check tells to go to the Service, with the URL prefix stripped.
     service = {
         "apiVersion": "v1",
         "kind": "Service",
@@ -125,7 +126,7 @@ def endpoint_manifests(
                     "kind": "Rule",
                     "match": f"Host(`{environment.domain}`) && PathPrefix(`{path}`)",
                     "middlewares": [{"name": m} for m in config.ENDPOINT_ROUTE_MIDDLEWARES],
-                    "services": [{"name": object_name, "port": config.VLLM_PORT}],
+                    "services": [config.ENDPOINT_PROXY_SERVICE],
                 }
             ],
         },

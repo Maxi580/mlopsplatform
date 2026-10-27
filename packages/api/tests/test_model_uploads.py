@@ -80,6 +80,7 @@ def test_full_weights_upload_and_register_as_uploaded(
         "source": "uploaded",
         "owner": config.OWNER,
         "tool_parser": "hermes",
+        "model_type": "qwen2",
     }
     assert version["size_bytes"] == sum(len(content) for content in FULL_WEIGHTS.values())
 

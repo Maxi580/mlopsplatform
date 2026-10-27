@@ -1,0 +1,19 @@
+[project]
+name = "mlp-proxy"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mlp-core",
+    "fastapi",
+    "uvicorn",
+    "httpx2>=2.13.1",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-http",
+]
+
+[tool.uv.sources]
+mlp-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

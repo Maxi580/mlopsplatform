@@ -10,12 +10,16 @@ def new_endpoint_key() -> str:
     return secrets.token_urlsafe(config.ENDPOINT_KEY_BYTES)
 
 
-def endpoint_key_opens(engine: Engine, endpoint_uuid: str, key: str) -> bool:
-    """Whether the key is the Endpoint Key of the Endpoint with the UUID, and it isn't stopped."""
+def endpoint_opened_by(engine: Engine, endpoint_uuid: str, key: str) -> str | None:
+    """The name of the Endpoint with the UUID, if the key is its Endpoint Key and it runs."""
     with engine.connect() as connection:
-        query = select(endpoint.c.key).where(endpoint.c.uuid == endpoint_uuid, not_stopped)
-        found = connection.execute(query).scalar()
-    return found is not None and secrets.compare_digest(found.encode(), key.encode())
+        query = select(endpoint.c.name, endpoint.c.key).where(
+            endpoint.c.uuid == endpoint_uuid, not_stopped
+        )
+        found = connection.execute(query).first()
+    if found is None or not secrets.compare_digest(found.key.encode(), key.encode()):
+        return None
+    return found.name
 
 
 def refresh_endpoint_key(engine: Engine, name: str) -> None:

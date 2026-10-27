@@ -98,8 +98,41 @@ def test_refreshing_a_key_requires_login(api, cluster):
     assert refresh(api).status_code == 401
 
 
-def test_the_route_lets_only_the_endpoint_key_through(logged_in_api, qwen_on_the_hub, cluster):
+def test_the_route_lets_only_the_endpoint_key_through_to_the_proxy(
+    logged_in_api, qwen_on_the_hub, cluster
+):
     start(logged_in_api)
 
     [route] = cluster.endpoints["chat"]["route"]["spec"]["routes"]
     assert [m["name"] for m in route["middlewares"]] == ["endpoint-key", "endpoint-strip-prefix"]
+    assert route["services"] == [{"name": "proxy", "port": "http"}]
+
+
+def test_the_key_check_tells_the_proxy_the_endpoints_vllm_and_experiment(
+    logged_in_api, qwen_on_the_hub
+):
+    chat = start(logged_in_api).json()
+    path = urlsplit(chat["url"]).path
+    headers = {"X-Forwarded-Uri": f"{path}/models", "Authorization": f"Bearer {chat['key']}"}
+
+    response = logged_in_api.get(api_paths.VERIFY_ENDPOINT_KEY, headers=headers)
+
+    assert response.headers["x-mlp-upstream"] == "http://endpoint-chat.mlp.svc:8000"
+    assert response.headers["x-mlp-experiment"] == "endpoint/chat"
+
+
+def test_the_key_check_fails_while_the_experiment_is_unknown_and_mlflow_unreachable(
+    logged_in_api, qwen_on_the_hub, model_registry, monkeypatch
+):
+    def unreachable(name, create=True):
+        raise ConnectionError("mlflow.test timed out")
+
+    monkeypatch.setattr(model_registry, "experiment_id", unreachable)
+    chat = start(logged_in_api).json()
+    path = urlsplit(chat["url"]).path
+    headers = {"X-Forwarded-Uri": f"{path}/models", "Authorization": f"Bearer {chat['key']}"}
+
+    response = logged_in_api.get(api_paths.VERIFY_ENDPOINT_KEY, headers=headers)
+
+    # Without both headers, Traefik would pass the client's own on to the proxy.
+    assert response.status_code == 503

@@ -157,6 +157,7 @@ build_images() {
   # The Python images build from the whole uv workspace, the Web UI from its own directory.
   build_image api "$ROOT" "$ROOT/packages/api/Dockerfile"
   build_image sandbox "$ROOT" "$ROOT/packages/sandbox/Dockerfile"
+  build_image proxy "$ROOT" "$ROOT/packages/proxy/Dockerfile"
   build_image stages "$ROOT" "$ROOT/packages/stages/Dockerfile"     --build-arg PYTHON_IMAGE="$(value .images.vllm)" --build-arg STAGES_EXTRA=evaluate \
     --build-arg BFCL_VERSION="$(value .versions.bfcl)"
   build_image trainerHf "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=hf
@@ -285,7 +286,7 @@ install_kueue() {
 }
 
 install_platform_chart() {
-  log "Installing the platform chart (API, Sandbox, Web UI, Postgres, TLS, routes)"
+  log "Installing the platform chart (API, Sandbox, Endpoint Proxy, Web UI, Postgres, TLS, routes)"
   helm upgrade --install mlp "$ROOT/deploy/chart" --namespace "$(value .namespaces.platform)" \
     -f "$VALUES" --set images.tag="$TAG" --set settings.node_count="$NODE_COUNT" \
     --set settings.gpu_count="$GPU_COUNT" --set settings.nodes_per_stage="$NODES_PER_STAGE" --wait --timeout 10m

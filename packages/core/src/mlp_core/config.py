@@ -320,6 +320,9 @@ TOOL_PARSERS = {
     "llama": "llama3_json",
     "mistral": "mistral",
 }
+# Base Model `model_type` -> the parser that splits an Endpoint's reasoning into
+# `reasoning_content`; other models keep their thinking inside the content.
+REASONING_PARSERS = {"qwen3": "qwen3", "qwen3_moe": "qwen3"}
 # The tool-call parsers built into the pinned vLLM; no parser plugins are allowed (#16).
 VLLM_TOOL_PARSERS = (
     "deepseek_v3",
@@ -538,6 +541,9 @@ ENDPOINT_URL = "https://{domain}/serving/{uuid}/v1"
 # The Traefik middlewares of the platform namespace on every Endpoint route: only its Endpoint Key
 # opens it, not the platform login.
 ENDPOINT_ROUTE_MIDDLEWARES = ("endpoint-key", "endpoint-strip-prefix")
+# Every Endpoint route goes to the Endpoint Proxy's Service, by its port's name, so the number
+# lives only in deploy/values.yaml.
+ENDPOINT_PROXY_SERVICE = {"name": "proxy", "port": "http"}
 # Random bytes in an Endpoint Key.
 ENDPOINT_KEY_BYTES = 32
 # Traefik's IngressRoute resource: its API group, version and plural.
@@ -699,12 +705,44 @@ ENDPOINT_HISTORY_SPANS = {
 }
 # Points per chart, shared out over the span's day Runs, which MLflow each downsamples evenly.
 ENDPOINT_HISTORY_POINTS = 300
-# Request Traces: vLLM's one span per finished request, sent to MLflow's OTLP endpoint over HTTP,
-# as vLLM defaults to gRPC, which MLflow doesn't take.
+# Request Traces: the Endpoint Proxy's root span per request, with vLLM's span inside it, both
+# sent to MLflow's OTLP endpoint over HTTP, as vLLM defaults to gRPC, which MLflow doesn't take.
 REQUEST_TRACES_PATH = "/v1/traces"
 REQUEST_TRACES_PROTOCOL = "http/protobuf"
 REQUEST_TRACES_EXPERIMENT_HEADER = "x-mlflow-experiment-id"
 REQUEST_TRACE_SPAN = "llm_request"
+REQUEST_TRACE_ROOT_SPAN = "endpoint_request"
+# The Endpoint Key check tells the Endpoint Proxy where a request goes and which experiment traces
+# it; Traefik overwrites whatever the client sent in them.
+PROXY_UPSTREAM_HEADER = "X-Mlp-Upstream"
+PROXY_EXPERIMENT_HEADER = "X-Mlp-Experiment"
+# A client sends `chat` in it to tag its traces `source=chat` instead of `api`.
+PROXY_SOURCE_HEADER = "X-Mlp-Source"
+REQUEST_SOURCES = ("api", "chat")
+# Every proxied response names its Request Trace, which Feedback refers to.
+TRACE_ID_HEADER = "x-mlp-trace-id"
+# Only these are traced; any other path passes through untraced.
+PROXY_TRACED_PATHS = ("/v1/chat/completions", "/v1/completions")
+# Not passed on to vLLM: hop-by-hop ones, the routing ones, the Endpoint Key, and compression, so
+# the proxy reads the answer as it streams.
+PROXY_DROPPED_REQUEST_HEADERS = {
+    "host",
+    "content-length",
+    "connection",
+    "transfer-encoding",
+    "accept-encoding",
+    "authorization",
+    *(header.lower() for header in (PROXY_UPSTREAM_HEADER, PROXY_EXPERIMENT_HEADER)),
+    PROXY_SOURCE_HEADER.lower(),
+}
+PROXY_DROPPED_RESPONSE_HEADERS = {"content-length", "connection", "transfer-encoding"}
+# The trace's MLflow ID from its OTel trace ID.
+MLFLOW_TRACE_ID = "tr-{otel_trace_id:032x}"
+# Root span attributes MLflow shows as the trace's inputs and outputs, and turns into trace tags.
+MLFLOW_SPAN_INPUTS = "mlflow.spanInputs"
+MLFLOW_SPAN_OUTPUTS = "mlflow.spanOutputs"
+MLFLOW_SPAN_TYPE = "mlflow.spanType"
+MLFLOW_TRACE_TAG = "mlflow.traceTag.{key}"
 # Each row's value by the span attribute vLLM keeps it in; times in seconds, and the sampling
 # settings only when the request set them.
 REQUEST_TRACE_ATTRIBUTES = {
@@ -902,6 +940,10 @@ SMOKE_TEST_SERVING_CASES = (
 # Each serving case's Endpoint answers one real chat request, which its stats must then count.
 SMOKE_TEST_CHAT_REQUEST = {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8}
 SMOKE_TEST_CHAT_TIMEOUT = timedelta(minutes=1)
+# How long a serving case waits for its chat's Request Trace, which the Endpoint Proxy and vLLM
+# export in the background, and how often it looks.
+SMOKE_TEST_TRACE_TIMEOUT = timedelta(seconds=30)
+SMOKE_TEST_TRACE_POLL_INTERVAL = timedelta(seconds=2)
 # Distills the bundled `distill` prompts with the Base Model as Teacher, offering it one tool, then
 # trains on `@distill` with SMOKE_TEST_TRAINING.
 SMOKE_TEST_DISTILL_CASE = "distill-tools"

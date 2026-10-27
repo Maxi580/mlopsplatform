@@ -47,6 +47,7 @@ members = [
     "mlp-api",
     "mlp-cli",
     "mlp-core",
+    "mlp-proxy",
     "mlp-sandbox",
     "mlp-stages",
 ]
@@ -3544,6 +3545,30 @@ dependencies = [
 requires-dist = [{ name = "pydantic-settings" }]
 
 [[package]]
+name = "mlp-proxy"
+version = "0.1.0"
+source = { editable = "packages/proxy" }
+dependencies = [
+    { name = "fastapi", version = "0.136.3", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-10-mlp-stages-hf') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth')" },
+    { name = "fastapi", version = "0.142.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin' or sys_platform == 'emscripten' or sys_platform == 'win32' or extra == 'extra-10-mlp-stages-evaluate' or (extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (extra != 'extra-10-mlp-stages-hf' and extra != 'extra-10-mlp-stages-unsloth')" },
+    { name = "httpx2" },
+    { name = "mlp-core" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi" },
+    { name = "httpx2", specifier = ">=2.13.1" },
+    { name = "mlp-core", editable = "packages/core" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "uvicorn" },
+]
+
+[[package]]
 name = "mlp-sandbox"
 version = "0.1.0"
 source = { editable = "packages/sandbox" }
@@ -4988,7 +5013,7 @@ name = "opentelemetry-exporter-http-transport"
 version = "0.66b0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "opentelemetry-api", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "opentelemetry-api" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5e/31/cbedb10e08c3c932b80f58edf055a16bb48a500c23c617b758fb3ec18f08/opentelemetry_exporter_http_transport-0.66b0.tar.gz", hash = "sha256:2c229b6593eaa22c86d9b8a15843dc23b406dbda00fb138339189aab07923b4e", size = 11694, upload-time = "2026-09-25T12:32:29.689Z" }
 wheels = [
@@ -4997,7 +5022,7 @@ wheels = [
 
 [package.optional-dependencies]
 urllib3 = [
-    { name = "urllib3", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "urllib3" },
 ]
 
 [[package]]
@@ -5018,7 +5043,7 @@ name = "opentelemetry-exporter-otlp-common"
 version = "0.66b0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "opentelemetry-sdk", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "opentelemetry-sdk" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/68/09/01239cdfe8a414d46ed625b68b6da92666ffd16d93cc6dadf89404b4bd85/opentelemetry_exporter_otlp_common-0.66b0.tar.gz", hash = "sha256:362268ec6aa705e183776ff938539df1e8ce45bc5509d242538b1d40c26fe6a6", size = 14323, upload-time = "2026-09-25T12:32:31.481Z" }
 wheels = [
@@ -5030,7 +5055,7 @@ name = "opentelemetry-exporter-otlp-proto-common"
 version = "1.45.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "opentelemetry-proto", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "opentelemetry-proto" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e5/e0/ee3823dbdc10da15b5750becc37b61194dd7c55e3b56764ecbbe446f659a/opentelemetry_exporter_otlp_proto_common-1.45.0.tar.gz", hash = "sha256:36495115a0c6a7aa946cfda9d59b6ed4e917b6ab0f75cdaf66bc1b176ec1be1f", size = 18870, upload-time = "2026-09-25T12:32:34.141Z" }
 wheels = [
@@ -5061,14 +5086,14 @@ name = "opentelemetry-exporter-otlp-proto-http"
 version = "1.45.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "googleapis-common-protos", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "opentelemetry-api", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "opentelemetry-exporter-http-transport", extra = ["urllib3"], marker = "(sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-10-mlp-stages-hf') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'darwin' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'emscripten' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-hf') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-evaluate' and extra == 'extra-10-mlp-stages-unsloth') or (sys_platform == 'win32' and extra == 'extra-10-mlp-stages-hf' and extra == 'extra-10-mlp-stages-unsloth')" },
-    { name = "opentelemetry-exporter-otlp-common", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "opentelemetry-exporter-otlp-proto-common", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "opentelemetry-proto", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "opentelemetry-sdk", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "typing-extensions", marker = "sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "googleapis-common-protos" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-http-transport", extra = ["urllib3"] },
+    { name = "opentelemetry-exporter-otlp-common" },
+    { name = "opentelemetry-exporter-otlp-proto-common" },
+    { name = "opentelemetry-proto" },
+    { name = "opentelemetry-sdk" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/94/78/a503801c1c8f80b1d8aad0e14106a7c57f39344001652a78a683f9a9089e/opentelemetry_exporter_otlp_proto_http-1.45.0.tar.gz", hash = "sha256:2f35496d96809f946f41b8805e6b93aec6c9b71b5fd759b75b6af4c084d992ae", size = 28818, upload-time = "2026-09-25T12:32:35.335Z" }
 wheels = [

@@ -38,6 +38,8 @@ images:
   api: mlp-api
   # Runs snippets under gVisor; Python only, with the packages the image pins.
   sandbox: mlp-sandbox
+  # The Endpoint Proxy: Python with httpx and OpenTelemetry, no torch.
+  proxy: mlp-proxy
   # Runs every Pipeline step but training, on the vLLM image, as `distill` and `evaluate` serve
   # models with it.
   stages: mlp-stages
@@ -60,6 +62,7 @@ images:
 ports:
   api: 8000
   sandbox: 8090
+  proxy: 8010
   webui: 8080
   postgres: 5432
   kfpUi: 80

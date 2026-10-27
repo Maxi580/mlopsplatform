@@ -50,8 +50,12 @@ _Avoid_: Monitoring, metrics (when meaning the stored history)
 **Server Sample**:
 The values the API reads from an Endpoint's vLLM `/metrics` every 10 seconds while it is busy and logs to MLflow: gauges such as KV-cache usage, rates, and latency percentiles over the interval.
 
+**Endpoint Proxy**:
+The one stateless service every Endpoint route goes through to the Endpoint's vLLM, after the Endpoint Key check; it records each chat and completion request in its Request Trace.
+_Avoid_: Gateway, router
+
 **Request Trace**:
-The record vLLM sends to MLflow for one request it served: when it arrived, its queue, prefill and decode times, its tokens and its sampling settings. Never its prompt or response.
+The Endpoint Proxy's record of one chat or completion request, kept in MLflow: its full content (messages, tools, sampling settings, the answer, its reasoning and tool calls, any error), its status and source, and inside it vLLM's span with when it arrived, its queue, prefill and decode times and its tokens.
 _Avoid_: Log, span (when meaning the whole record)
 
 **Smoke Test**:

@@ -31,8 +31,13 @@ def find_endpoint_model(
     if reference.startswith("hf:"):
         pinned, model = find_base_model(hugging_face, reference, None)
         repo, commit = split_base_model_reference(pinned)
-        tool_parser = config.TOOL_PARSERS.get(model.model_type)
-        return EndpointModel(VllmModel(repo, commit, tool_parser=tool_parser), [pinned], [pinned])
+        vllm = VllmModel(
+            repo,
+            commit,
+            tool_parser=config.TOOL_PARSERS.get(model.model_type),
+            reasoning_parser=config.REASONING_PARSERS.get(model.model_type),
+        )
+        return EndpointModel(vllm, [pinned], [pinned])
 
     # 2. Full weights, from the Model Version's files.
     found = find_referenced_model_version(model_registry, reference)
@@ -43,7 +48,12 @@ def find_endpoint_model(
     bucket = model_registry.artifact_bucket
     files = f"s3://{bucket}/{found.artifact_prefix}"
     if found.tags.get("weights") != "adapter":
-        vllm = VllmModel(config.ENDPOINT_WEIGHTS_DIRECTORY, tool_parser=tool_parser_tag(found.tags))
+        vllm = VllmModel(
+            config.ENDPOINT_WEIGHTS_DIRECTORY,
+            tool_parser=tool_parser_tag(found.tags),
+            # Model Versions registered before the tag serve without one.
+            reasoning_parser=config.REASONING_PARSERS.get(found.tags.get("model_type")),
+        )
         return EndpointModel(vllm, [pinned], downloads={files: config.ENDPOINT_WEIGHTS_DIRECTORY})
 
     # 3. An Adapter on its base; an uploaded one has no parser of its own and takes its base's.

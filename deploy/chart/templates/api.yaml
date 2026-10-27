@@ -95,6 +95,9 @@ spec:
             # Where Pipeline steps send snippets.
             - name: SANDBOX_URL
               value: http://sandbox.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.sandbox }}
+            # Where the Smoke Test sends its chat requests, traced like every user's.
+            - name: PROXY_URL
+              value: http://proxy.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.proxy }}
             # Endpoints run in this namespace, mount the Model Cache from the node and are routed
             # under the domain.
             - name: PLATFORM_NAMESPACE

@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 import pytest
 
@@ -783,9 +784,33 @@ def test_a_serving_case_passes_once_its_endpoint_answered_a_chat_request_and_the
     cases = smoke_test(logged_in_api)["cases"]
     assert (cases["serve-base-model"], cases["serve-full-weights"]) == ("passed", "failed")
     served = f"{name}-serve-base-model"
-    [key] = [e["key"] for e in logged_in_api.get(api_paths.ENDPOINTS).json() if e["name"] == served]
-    assert cluster.chat_requests == [(served, config.SMOKE_TEST_CHAT_REQUEST, key)]
+    # Through the Endpoint Proxy, traced to the Endpoint's experiment.
+    assert cluster.chat_requests == [(served, config.SMOKE_TEST_CHAT_REQUEST, f"endpoint/{served}")]
     assert cluster.endpoints == {}
+
+
+@pytest.mark.parametrize("lost", ["endpoint_request", "llm_request"])
+def test_a_serving_case_fails_unless_its_chat_is_traced_in_full(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry, monkeypatch, lost
+):
+    monkeypatch.setattr(config, "SMOKE_TEST_TRACE_TIMEOUT", timedelta(0))
+    sent = cluster.send_chat_request
+
+    def without_a_span(*args):
+        trace_id = sent(*args)
+        [trace] = [t for ts in model_registry.traces.values() for t in ts]
+        trace["spans"] = [found for found in trace["spans"] if found["name"] != lost]
+        return trace_id
+
+    monkeypatch.setattr(cluster, "send_chat_request", without_a_span)
+    name = start(logged_in_api, {"serving": True}).json()["name"]
+    reconcile(logged_in_api)
+    cluster.endpoint_states[f"{name}-serve-base-model"] = "running"
+    cluster.metrics[f"{name}-serve-base-model"] = SERVED
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["serve-base-model"] == "failed"
 
 
 @pytest.mark.parametrize(

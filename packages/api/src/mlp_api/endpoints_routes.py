@@ -3,7 +3,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from mlp_api.endpoints.keys import endpoint_key_opens, refresh_endpoint_key
+from mlp_api.endpoints.keys import endpoint_opened_by, refresh_endpoint_key
 from mlp_api.endpoints.lifecycle import (
     EndpointConflict,
     delete_endpoint,
@@ -13,10 +13,12 @@ from mlp_api.endpoints.lifecycle import (
     restart_endpoint,
     start_endpoint,
     stop_endpoint,
+    traces_experiment_id,
 )
 from mlp_api.endpoints.request_traces import endpoint_request_traces
 from mlp_api.endpoints.stats import endpoint_stats_summary, fetch_endpoint_stats
 from mlp_api.endpoints.stats_history import endpoint_history
+from mlp_api.pipelines.compiler import endpoint_service_url
 from mlp_core import api_paths, config
 from mlp_core.endpoint_spec import EndpointName, EndpointSpec
 
@@ -133,8 +135,9 @@ def refresh_key(name: str, request: Request) -> dict:
 
 # Traefik's forwardAuth on every Endpoint route, which it sends the request's path and headers.
 @router.get(api_paths.VERIFY_ENDPOINT_KEY)
-def verify_endpoint_key(request: Request) -> dict:
-    """Nothing, if the bearer token is the Endpoint Key of the Endpoint the request goes to; 401."""
+def verify_endpoint_key(request: Request, response: Response) -> dict:
+    """Where the Endpoint Proxy sends and traces the request, as headers, if the bearer token is
+    the Endpoint Key of the Endpoint it goes to; else 401."""
     # 1. The Endpoint's UUID, the path segment after the route prefix.
     path = urlsplit(request.headers.get("x-forwarded-uri", "")).path
     prefix = config.ENDPOINT_PATH_PREFIX.split("{")[0]
@@ -142,13 +145,22 @@ def verify_endpoint_key(request: Request) -> dict:
     if path.startswith(prefix):
         endpoint_uuid = path.removeprefix(prefix).split("/")[0]
 
-    # 2. The bearer token.
-    authorization = request.headers.get("authorization", "")
-    key = ""
-    if authorization.startswith("Bearer "):
-        key = authorization.removeprefix("Bearer ")
-
-    # 3. Whether it opens that Endpoint.
-    if not endpoint_key_opens(request.app.state.engine, endpoint_uuid, key):
+    # 2. Whether the bearer token opens that Endpoint.
+    state = request.app.state
+    name = endpoint_opened_by(state.engine, endpoint_uuid, bearer_token(request))
+    if name is None:
         raise HTTPException(401, "This Endpoint needs its Endpoint Key as the bearer token")
+
+    # 3. Its vLLM and experiment, which Traefik puts over whatever the client sent in them.
+    experiment_id = traces_experiment_id(state, name)
+    if experiment_id is None:
+        raise HTTPException(503, "MLflow is unreachable, so the request can't be traced")
+    namespace = state.cluster.endpoint_environment.namespace
+    response.headers[config.PROXY_UPSTREAM_HEADER] = endpoint_service_url(name, namespace)
+    response.headers[config.PROXY_EXPERIMENT_HEADER] = experiment_id
     return {}
+
+
+def bearer_token(request: Request) -> str:
+    authorization = request.headers.get("authorization", "")
+    return authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""

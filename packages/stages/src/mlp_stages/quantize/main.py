@@ -58,6 +58,7 @@ def quantize(pipeline_id: str, request: str, finetuned: str, model_version: str)
             "pipeline": pipeline_id,
             "tool_parser": tool_parser_of(model, loaded.config.model_type),
             "tools_rendered": str(renders_tools(tokenizer)).lower(),
+            "model_type": loaded.config.model_type,
         }
         Path(model_version).write_text(register_model_version(output, run_id, resolved, tags))
 

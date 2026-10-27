@@ -34,9 +34,10 @@ def trim_endpoint_history(state, now: datetime) -> None:
 
 def delete_endpoint_history(state, name: str, now: datetime) -> None:
     """Deletes the Endpoint name's Stats History; if MLflow fails, the window empties it later."""
-    # 1. Its cached reading and day Run.
+    # 1. Its cached reading, day Run and experiment.
     state.server_readings.pop(name, None)
     state.endpoint_day_runs.pop(name, None)
+    state.endpoint_experiments.pop(name, None)
 
     # 2. Its traces for good; its experiment renamed, freeing the name at once, then deleted.
     registry: MLflow = state.model_registry

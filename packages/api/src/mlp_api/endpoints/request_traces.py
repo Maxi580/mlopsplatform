@@ -37,12 +37,9 @@ def endpoint_request_traces(model_registry: MLflow, name: str, span: str, now: d
 
 def request_row(trace: dict, experiment_id: str) -> dict | None:
     """The request's arrival, breakdown and MLflow link; None if vLLM's span is missing."""
-    span = next((s for s in trace.get("spans", []) if s["name"] == config.REQUEST_TRACE_SPAN), None)
-    if span is None:
+    attributes = span_attributes(trace, config.REQUEST_TRACE_SPAN)
+    if attributes is None:
         return None
-    attributes = {
-        attribute["key"]: any_value(attribute["value"]) for attribute in span.get("attributes", [])
-    }
     info = trace["trace_info"]
     return {
         "trace_id": info["trace_id"],
@@ -54,8 +51,22 @@ def request_row(trace: dict, experiment_id: str) -> dict | None:
     }
 
 
-# An OTel AnyValue as MLflow writes it to JSON; int64 values may come as strings.
-def any_value(value: dict) -> int | float | str | None:
+def span_attributes(trace: dict, name: str) -> dict | None:
+    """The attributes of the trace's span with the name, or None if it has none such."""
+    span = next((s for s in trace.get("spans", []) if s["name"] == name), None)
+    if span is None:
+        return None
+    return {attribute["key"]: any_value(attribute["value"]) for attribute in span["attributes"]}
+
+
+# An OTel AnyValue as MLflow writes it to JSON; int64 values may come as strings, and the Endpoint
+# Proxy's request and answer as key-value lists.
+def any_value(value: dict):
+    if "kvlist_value" in value:
+        pairs = value["kvlist_value"].get("values", [])
+        return {pair["key"]: any_value(pair.get("value", {})) for pair in pairs}
+    if "array_value" in value:
+        return [any_value(found) for found in value["array_value"].get("values", [])]
     if "int_value" in value:
         return int(value["int_value"])
     if "double_value" in value:

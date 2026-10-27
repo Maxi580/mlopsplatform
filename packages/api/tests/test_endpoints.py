@@ -206,6 +206,36 @@ def test_a_model_type_without_a_parser_serves_without_tool_calling(
     start(logged_in_api)
 
     assert "--enable-auto-tool-choice" not in vllm_args(cluster)
+    assert "--reasoning-parser" not in vllm_args(cluster)
+
+
+def test_a_reasoning_base_model_serves_its_reasoning_apart(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+
+    assert contains(vllm_args(cluster), ["--reasoning-parser", "qwen3"])
+
+
+def test_full_weights_and_their_adapter_take_the_reasoning_parser_of_their_model_type(
+    logged_in_api, cluster, model_registry, object_store
+):
+    register(model_registry, object_store, "my-model", {"weights": "full", "model_type": "qwen3"})
+    register_adapter(model_registry, object_store, "my-sft", "model:my-model@1")
+
+    start(logged_in_api, "model:my-model")
+    start(logged_in_api, "model:my-sft", name="sft")
+
+    assert contains(vllm_args(cluster), ["--reasoning-parser", "qwen3"])
+    assert contains(vllm_args(cluster, "sft"), ["--reasoning-parser", "qwen3"])
+
+
+def test_full_weights_registered_without_their_model_type_serve_without_a_reasoning_parser(
+    logged_in_api, cluster, model_registry, object_store
+):
+    register(model_registry, object_store, "my-model", {"weights": "full"})
+
+    start(logged_in_api, "model:my-model")
+
+    assert "--reasoning-parser" not in vllm_args(cluster)
 
 
 def test_the_gpu_count_comes_from_platform_settings(logged_in_api, qwen_on_the_hub, cluster):

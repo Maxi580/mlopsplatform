@@ -34,4 +34,6 @@ def phase_tags(
         "backend": finetune.backend,
         "tool_parser": tool_parser_of(finetune.starting_model, model_type),
         "tools_rendered": str(renders_tools(tokenizer)).lower(),
+        # Endpoints derive their reasoning parser from it.
+        "model_type": model_type,
     }

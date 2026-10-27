@@ -131,15 +131,17 @@ def create_endpoint_objects(
 
 
 def traces_experiment_id(state, name: str) -> str | None:
-    """The ID of the experiment the Endpoint name's Request Traces go to; None if MLflow is down."""
-    try:
-        return state.model_registry.experiment_id(
-            config.ENDPOINT_HISTORY_EXPERIMENT.format(name=name)
-        )
-    except Exception:
-        # Serving matters more than its traces.
-        logger.warning("MLflow is unreachable, so Endpoint %s starts without Request Traces", name)
-        return None
+    """The ID of the experiment the Endpoint name's Request Traces go to, cached until its history
+    is deleted, as the Endpoint Key check asks for each request; None if MLflow is down."""
+    if name not in state.endpoint_experiments:
+        try:
+            experiment = config.ENDPOINT_HISTORY_EXPERIMENT.format(name=name)
+            state.endpoint_experiments[name] = state.model_registry.experiment_id(experiment)
+        except Exception:
+            # Serving matters more than its traces.
+            logger.warning("MLflow is unreachable, so Endpoint %s has no Request Traces", name)
+            return None
+    return state.endpoint_experiments[name]
 
 
 def stop_endpoint(engine: Engine, cluster: Cluster, name: str) -> None:

@@ -43,9 +43,11 @@ async def lifespan(app: FastAPI):
     app.state.jwt_secret = os.environ["JWT_SECRET"]
     # In memory per client IP, which works because the API runs as one replica.
     app.state.failed_logins = defaultdict(list)
-    # Endpoint name -> its previous `/metrics` reading, and its day Run of the Stats History.
+    # Endpoint name -> its previous `/metrics` reading, its day Run of the Stats History, and the
+    # experiment its Request Traces go to.
     app.state.server_readings = {}
     app.state.endpoint_day_runs = {}
+    app.state.endpoint_experiments = {}
     app.state.endpoint_history_trimmed_at = None
     app.state.cluster = Cluster()
     # Where steps put Base Models (HF_HOME) and benchmarks, mounted at the same path.

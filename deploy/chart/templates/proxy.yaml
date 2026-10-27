@@ -1,0 +1,48 @@
+# The Endpoint Proxy: every Endpoint route goes through it to the Endpoint's vLLM, and it records
+# each request's Request Trace; stateless, so two replicas roll over one at a time.
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxy
+spec:
+  selector:
+    app: proxy
+  ports:
+    # Endpoint routes name the port, so its number stays here.
+    - name: http
+      port: {{ .Values.ports.proxy }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: proxy
+  template:
+    metadata:
+      labels:
+        app: proxy
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: proxy
+          image: {{ .Values.images.proxy }}:{{ required "images.tag is set by install.sh" .Values.images.tag }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: UVICORN_PORT
+              value: {{ .Values.ports.proxy | quote }}
+            # Where Request Traces go over OTLP, as vLLM sends its own span.
+            - name: MLFLOW_URL
+              value: http://mlflow.{{ .Values.namespaces.mlflow }}.svc.cluster.local:{{ .Values.ports.mlflow }}
+          ports:
+            - containerPort: {{ .Values.ports.proxy }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.ports.proxy }}

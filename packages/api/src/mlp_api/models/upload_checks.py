@@ -31,13 +31,19 @@ def uploaded_model_tags(
     if problems:
         raise ValueError("; ".join(problems))
 
-    # 3. The tags: an Adapter names its base, full weights the parser vLLM calls tools with.
+    # 3. The tags: an Adapter names its base, full weights the parser vLLM calls tools with and
+    # the model_type Endpoints derive their reasoning parser from.
     tags = {"source": "uploaded", "owner": config.OWNER}
     if base:
         return {"weights": "adapter", "base_model": base, **tags}
     model_type = contents["config.json"].get("model_type")
     parser = tool_parser or config.TOOL_PARSERS.get(model_type, "none")
-    return {"weights": "full", **tags, "tool_parser": parser}
+    return {
+        "weights": "full",
+        **tags,
+        "tool_parser": parser,
+        **({"model_type": model_type} if model_type else {}),
+    }
 
 
 def file_list_problems(paths: set[str], base: str | None) -> list[str]:

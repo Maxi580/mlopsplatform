@@ -30,7 +30,7 @@ extend-exclude = [".claude"]
 select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["mlp_core", "mlp_api", "mlp_cli", "mlp_stages", "mlp_sandbox"]
+known-first-party = ["mlp_core", "mlp_api", "mlp_cli", "mlp_stages", "mlp_sandbox", "mlp_proxy"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]

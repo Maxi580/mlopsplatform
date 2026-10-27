@@ -164,6 +164,7 @@ def test_an_adapter_is_merged_into_its_base_then_quantized_and_registered_as_ful
         "pipeline": "7",
         "tool_parser": "hermes",
         "tools_rendered": "true",
+        "model_type": "qwen2",
     }
     assert step.mlflow.logged == ["config.json", "pipeline_request.json", "tokenizer.json"]
 
