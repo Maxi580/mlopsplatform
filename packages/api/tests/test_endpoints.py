@@ -302,16 +302,18 @@ def test_the_route_serves_the_endpoint_url_under_its_uuid(logged_in_api, qwen_on
 
     pattern = r"https://platform\.test/serving/([0-9a-f]{32})/v1"
     [uuid] = re.fullmatch(pattern, started["url"]).groups()
-    [route] = cluster.endpoints["chat"]["route"]["spec"]["routes"]
+    _, route = cluster.endpoints["chat"]["route"]["spec"]["routes"]
     assert route["match"] == f"Host(`platform.test`) && PathPrefix(`/serving/{uuid}/`)"
     assert route["services"] == [{"name": "proxy", "port": "http"}]
 
 
-# A route under an Endpoint's prefix would reach its vLLM instead of the API while it runs.
+# A route under an Endpoint's prefix would reach its vLLM instead of the API while it runs; only
+# Feedback, which the Endpoint's route sends to the API, is there.
 def test_no_api_path_falls_under_the_endpoint_route(api):
     prefix = config.ENDPOINT_PATH_PREFIX.split("{")[0]
 
-    assert [path for path in api.app.openapi()["paths"] if path.startswith(prefix)] == []
+    under = [path for path in api.app.openapi()["paths"] if path.startswith(prefix)]
+    assert under == [api_paths.ENDPOINT_FEEDBACK]
 
 
 def test_endpoints_are_listed_newest_first_and_follow_their_pod(
@@ -472,7 +474,7 @@ def test_a_restart_brings_back_the_same_endpoint(logged_in_api, qwen_on_the_hub,
     assert cluster.deleted_endpoints == ["chat"]
     assert contains(vllm_args(cluster), ["--max-model-len", "4096"])
     uuid = started["url"].split("/")[-2]
-    [route] = cluster.endpoints["chat"]["route"]["spec"]["routes"]
+    _, route = cluster.endpoints["chat"]["route"]["spec"]["routes"]
     assert f"PathPrefix(`/serving/{uuid}/`)" in route["match"]
     assert [e["status"] for e in endpoints(logged_in_api)] == ["pending"]
 

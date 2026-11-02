@@ -103,7 +103,7 @@ def test_the_route_lets_only_the_endpoint_key_through_to_the_proxy(
 ):
     start(logged_in_api)
 
-    [route] = cluster.endpoints["chat"]["route"]["spec"]["routes"]
+    _, route = cluster.endpoints["chat"]["route"]["spec"]["routes"]
     assert [m["name"] for m in route["middlewares"]] == ["endpoint-key", "endpoint-strip-prefix"]
     assert route["services"] == [{"name": "proxy", "port": "http"}]
 

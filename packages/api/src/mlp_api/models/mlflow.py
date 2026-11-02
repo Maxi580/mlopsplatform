@@ -174,6 +174,39 @@ class MLflow:
         response.raise_for_status()
         return response.json().get("traces", [])
 
+    def trace_info(self, trace_id: str) -> dict | None:
+        """The trace's info, with its tags and assessments; None if there is no such trace."""
+        response = self.client.get(f"{self.traces_url}/{trace_id}")
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()["trace"]["trace_info"]
+
+    def set_trace_tag(self, trace_id: str, key: str, value: str) -> None:
+        response = self.client.patch(f"/traces/{trace_id}/tags", json={"key": key, "value": value})
+        response.raise_for_status()
+
+    def set_feedback(
+        self, info: dict, name: str, value, source_type: str, rationale: str | None = None
+    ) -> None:
+        """Sets the trace's feedback assessment of the name, replacing the one it had."""
+        assessment = {
+            "trace_id": info["trace_id"],
+            "assessment_name": name,
+            "source": {"source_type": source_type, "source_id": source_type.lower()},
+            "feedback": {"value": value},
+            **({"rationale": rationale} if rationale else {}),
+        }
+        url = f"{self.traces_url}/{info['trace_id']}/assessments"
+        found = [a for a in info.get("assessments", []) if a["assessment_name"] == name]
+        if found:
+            assessment["assessment_id"] = found[0]["assessment_id"]
+            body = {"assessment": assessment, "update_mask": "feedback,rationale"}
+            response = self.client.patch(f"{url}/{found[0]['assessment_id']}", json=body)
+        else:
+            response = self.client.post(url, json={"assessment": assessment})
+        response.raise_for_status()
+
     # Unlike Runs and experiments, traces are deleted for good, with their spans.
     def delete_traces(self, experiment_id: str, max_timestamp_ms: int) -> None:
         body = {"experiment_id": experiment_id, "max_timestamp_millis": max_timestamp_ms}

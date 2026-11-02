@@ -1,8 +1,11 @@
 from datetime import UTC, datetime
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel
 
+from mlp_api.endpoints.feedback import record_feedback
 from mlp_api.endpoints.keys import endpoint_opened_by, refresh_endpoint_key
 from mlp_api.endpoints.lifecycle import (
     EndpointConflict,
@@ -169,6 +172,25 @@ def verify_endpoint_key(request: Request, response: Response) -> dict:
     response.headers[config.PROXY_UPSTREAM_HEADER] = endpoint_service_url(name, namespace)
     response.headers[config.PROXY_EXPERIMENT_HEADER] = experiment_id
     return {}
+
+
+class Feedback(BaseModel):
+    trace_id: str
+    rating: Literal[config.FEEDBACK_RATINGS]
+
+
+# Under the Endpoint's URL, so its users rate answers with what they call it with.
+@router.post(api_paths.ENDPOINT_FEEDBACK)
+def feedback(uuid: str, feedback: Feedback, request: Request) -> dict:
+    state = request.app.state
+    name = endpoint_opened_by(state.engine, uuid, bearer_token(request))
+    if name is None:
+        raise HTTPException(401, "This Endpoint needs its Endpoint Key as the bearer token")
+    try:
+        record_feedback(state, name, feedback.trace_id, feedback.rating, datetime.now(UTC))
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    return feedback.model_dump()
 
 
 def bearer_token(request: Request) -> str:

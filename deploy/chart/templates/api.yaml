@@ -6,7 +6,9 @@ spec:
   selector:
     app: api
   ports:
-    - port: {{ .Values.ports.api }}
+    # Endpoint routes name the port, for Feedback, so its number stays here.
+    - name: http
+      port: {{ .Values.ports.api }}
 ---
 apiVersion: apps/v1
 kind: Deployment

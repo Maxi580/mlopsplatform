@@ -713,6 +713,15 @@ ENDPOINT_HISTORY_SPANS = {
 }
 # Points per chart, shared out over the span's day Runs, which MLflow each downsamples evenly.
 ENDPOINT_HISTORY_POINTS = 300
+# Events such as Feedback are logged to the day Run as they happen and charted summed or averaged
+# per bucket of the span; MLflow answers at most this many points per Run, all of a day's.
+ENDPOINT_HISTORY_BUCKETS = 60
+ENDPOINT_EVENTS_PER_RUN = 2500
+# Feedback: a user's up or down vote on one answer; the latest vote on a trace counts.
+FEEDBACK_RATINGS = ("up", "down")
+FEEDBACK_METRIC = "feedback_{rating}"
+# The Endpoint's route for Feedback goes to the API's Service, by its port's name.
+ENDPOINT_FEEDBACK_SERVICE = {"name": "api", "port": "http"}
 # Request Traces: the Endpoint Proxy's root span per request, with vLLM's span inside it, both
 # sent to MLflow's OTLP endpoint over HTTP, as vLLM defaults to gRPC, which MLflow doesn't take.
 REQUEST_TRACES_PATH = "/v1/traces"

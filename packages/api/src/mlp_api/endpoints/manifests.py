@@ -1,6 +1,6 @@
 from mlp_api.endpoints.endpoint_model import EndpointModel
 from mlp_api.endpoints.environment import EndpointEnvironment
-from mlp_core import config
+from mlp_core import api_paths, config
 from mlp_core.endpoint_spec import EndpointSpec, vllm_args
 
 
@@ -116,6 +116,7 @@ def endpoint_manifests(
         "spec": {"selector": labels, "ports": [{"port": config.VLLM_PORT}]},
     }
     path = config.ENDPOINT_PATH_PREFIX.format(uuid=endpoint_uuid)
+    feedback_path = api_paths.ENDPOINT_FEEDBACK.format(uuid=endpoint_uuid)
     route = {
         "apiVersion": "traefik.io/v1alpha1",
         "kind": "IngressRoute",
@@ -124,12 +125,19 @@ def endpoint_manifests(
             "entryPoints": ["websecure"],
             "tls": {},
             "routes": [
+                # Feedback goes to the API, behind the same key; the longer rule wins.
+                {
+                    "kind": "Rule",
+                    "match": f"Host(`{environment.domain}`) && Path(`{feedback_path}`)",
+                    "middlewares": [{"name": config.ENDPOINT_ROUTE_MIDDLEWARES[0]}],
+                    "services": [config.ENDPOINT_FEEDBACK_SERVICE],
+                },
                 {
                     "kind": "Rule",
                     "match": f"Host(`{environment.domain}`) && PathPrefix(`{path}`)",
                     "middlewares": [{"name": m} for m in config.ENDPOINT_ROUTE_MIDDLEWARES],
                     "services": [config.ENDPOINT_PROXY_SERVICE],
-                }
+                },
             ],
         },
     }

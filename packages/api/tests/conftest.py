@@ -272,6 +272,23 @@ class FakeModelRegistry:
         every = [trace for traces in self.traces.values() for trace in traces]
         return [trace for trace in every if trace["trace_info"]["trace_id"] in trace_ids]
 
+    def trace_info(self, trace_id):
+        every = [trace["trace_info"] for traces in self.traces.values() for trace in traces]
+        return next((info for info in every if info["trace_id"] == trace_id), None)
+
+    def set_trace_tag(self, trace_id, key, value):
+        self.trace_info(trace_id)["tags"][key] = value
+
+    # One assessment per name, as MLflow's update replaces it.
+    def set_feedback(self, info, name, value, source_type, rationale=None):
+        assessments = self.trace_info(info["trace_id"])["assessments"]
+        assessments[:] = [a for a in assessments if a["assessment_name"] != name]
+        assessment = {"assessment_name": name, "feedback": {"value": value}}
+        source = {"source": {"source_type": source_type}}
+        assessments.append(
+            {**assessment, **source, **({"rationale": rationale} if rationale else {})}
+        )
+
     def experiment_ids(self, prefix):
         return [name for name in self.experiments if name.startswith(prefix)]
 

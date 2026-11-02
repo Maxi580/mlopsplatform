@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import UTC, datetime
 
@@ -68,8 +69,19 @@ def token_claims(request: Request) -> dict | None:
         return None
 
 
+# Feedback is opened by the Endpoint Key, which its route checks.
+def is_endpoint_feedback(request: Request) -> bool:
+    pattern = api_paths.ENDPOINT_FEEDBACK.replace("{uuid}", "[^/]+")
+    return re.fullmatch(pattern, request.url.path) is not None
+
+
 async def require_login(request: Request, call_next) -> Response:
-    allowed = request.url.path in PUBLIC_PATHS or is_logged_in(request) or is_pipeline_step(request)
+    allowed = (
+        request.url.path in PUBLIC_PATHS
+        or is_logged_in(request)
+        or is_pipeline_step(request)
+        or is_endpoint_feedback(request)
+    )
     if allowed:
         return await call_next(request)
     # Browsers go to the Web UI's login, also via Traefik's forwardAuth for the KFP and MLflow UIs.

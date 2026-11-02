@@ -54,6 +54,10 @@ The values the API reads from an Endpoint's vLLM `/metrics` every 10 seconds whi
 The one platform-managed vLLM server that scores Endpoints' answers. It runs while judging is enabled in the Serving tab, started, replaced and removed by the API; it's not an Endpoint users start or stop, has no URL of its own, and its answers aren't traced.
 _Avoid_: Evaluator, grader
 
+**Feedback**:
+A user's 👍 or 👎 on one answer, sent through the Endpoint's URL with its Endpoint Key and stored on its Request Trace; the latest vote counts. Counted per day in the Endpoint Stats History.
+_Avoid_: Rating (when meaning the whole concept), review
+
 **Endpoint Proxy**:
 The one stateless service every Endpoint route goes through to the Endpoint's vLLM, after the Endpoint Key check; it records each chat and completion request in its Request Trace.
 _Avoid_: Gateway, router

@@ -199,7 +199,8 @@ def round_ms(at: datetime) -> int:
 
 
 def endpoint_history(model_registry: MLflow, name: str, span: str, now: datetime) -> dict:
-    """The span's start, end, and [unix seconds, value] points per key, latencies by chart."""
+    """The span's start, end, and [unix seconds, value] points per key, latencies by chart, and
+    Feedback per rating."""
     # 1. The span's steps, and the day Runs it touches.
     start = now - config.ENDPOINT_HISTORY_SPANS[span]
     steps = (int(start.timestamp()), int(now.timestamp()))
@@ -231,7 +232,34 @@ def endpoint_history(model_registry: MLflow, name: str, span: str, now: datetime
         key: {statistic: values.pop(found) for statistic, found in keys.items()}
         for key, keys in latency_keys().items()
     }
-    return {"start": steps[0], "end": steps[1], "values": values, "latencies": latencies}
+
+    # 4. Feedback, summed per bucket of the span from every vote.
+    def sums(key: str) -> list[list[float]]:
+        if not run_ids:
+            return []
+        every = model_registry.metric_history(run_ids, key, steps, config.ENDPOINT_EVENTS_PER_RUN)
+        return bucketed(every, steps, sum)
+
+    feedback = {
+        rating: sums(config.FEEDBACK_METRIC.format(rating=rating))
+        for rating in config.FEEDBACK_RATINGS
+    }
+    return {
+        "start": steps[0],
+        "end": steps[1],
+        "values": values,
+        "latencies": latencies,
+        "feedback": feedback,
+    }
+
+
+def bucketed(points, steps: tuple[int, int], combine) -> list[list[float]]:
+    """The points combined per bucket of the steps, at each bucket's start; empty ones left out."""
+    width = max((steps[1] - steps[0]) / config.ENDPOINT_HISTORY_BUCKETS, 1)
+    buckets: dict[int, list[float]] = {}
+    for step, value in points:
+        buckets.setdefault(int((step - steps[0]) // width), []).append(value)
+    return [[steps[0] + index * width, combine(found)] for index, found in sorted(buckets.items())]
 
 
 def sample_keys() -> list[str]:

@@ -1,8 +1,10 @@
 import logging
 import time
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from mlp_api.endpoints.feedback import record_feedback
 from mlp_api.endpoints.lifecycle import (
     list_endpoints,
     start_endpoint,
@@ -92,8 +94,17 @@ def counts_a_chat_request(state, name: str) -> bool:
     if finished < 1 or not values.get("generation_tokens", {}).get("value"):
         return False
 
-    # 3. Its trace, once both spans arrived.
-    return is_traced_in_full(state.model_registry, trace_id, request)
+    # 3. Its trace, once both spans arrived, which then takes a 👍.
+    if not is_traced_in_full(state.model_registry, trace_id, request):
+        return False
+    try:
+        record_feedback(state, name, trace_id, "up", datetime.now(UTC))
+    except Exception:
+        logger.exception("Smoke Test Endpoint %s's trace took no Feedback", name)
+        return False
+    info = state.model_registry.trace_info(trace_id)
+    rated = [a for a in info.get("assessments", []) if a["assessment_name"] == "rating"]
+    return info["tags"].get("rating") == "up" and bool(rated)
 
 
 def is_traced_in_full(model_registry, trace_id: str, request: dict) -> bool:
