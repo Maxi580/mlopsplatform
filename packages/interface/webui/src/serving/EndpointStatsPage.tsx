@@ -1,13 +1,12 @@
-import { ArrowLeft, CircleAlert, ExternalLink, LoaderCircle } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { ArrowLeft, CircleAlert, LoaderCircle } from "lucide-react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useApi } from "../api";
-import { ENDPOINTS, endpointHistory, endpointRequests, endpointStats } from "../apiPaths";
+import { ENDPOINTS, endpointHistory, endpointStats } from "../apiPaths";
 import {
   ENDPOINT_HISTORY_REFRESH_MS,
   ENDPOINT_HISTORY_RETENTION_DAYS,
   ENDPOINT_HISTORY_SPANS,
-  ENDPOINT_REQUEST_LIST_SIZE,
   ENDPOINT_STATS_REFRESH_MS,
   KV_CACHE_DANGER_PERCENT,
   KV_CACHE_WARNING_PERCENT,
@@ -17,29 +16,25 @@ import CopyValue from "./CopyValue";
 import {
   type Endpoint,
   type EndpointHistory,
-  type EndpointRequests,
   type EndpointStats,
   formatSeconds,
   type Histogram,
   type Point,
-  type RequestTrace,
   type StatsValue,
   statsValues,
 } from "./endpoint";
 import LineChart, { type ChartSeries } from "./LineChart";
+import RequestsList from "./RequestsList";
 
 type Span = keyof typeof ENDPOINT_HISTORY_SPANS;
-const REQUEST_LISTS: Record<keyof EndpointRequests, string> = {
-  slowest: `Slowest ${ENDPOINT_REQUEST_LIST_SIZE}`,
-  recent: `Most recent ${ENDPOINT_REQUEST_LIST_SIZE}`,
-};
-const SAMPLING_SETTINGS = ["temperature", "top_p", "max_tokens"] as const;
 type Chart = {
   title: string;
   series: (ChartSeries & { points: (history: EndpointHistory) => Point[] })[];
   format: (value: number | null) => string;
   // Shown only once it has points, as speculative decoding may be off.
   optional?: boolean;
+  // Its points are per bucket of the span, not per Server Sample.
+  bucketed?: boolean;
 };
 
 // Dot decimals, as everywhere else in the Web UI.
@@ -89,6 +84,15 @@ const REQUEST_CHARTS: Chart[] = [
     title: "Finished requests/s",
     series: [{ label: "Finished", color: "--success", points: value("finished_per_second") }],
     format: perSecond,
+  },
+  {
+    title: "👍/👎",
+    series: [
+      { label: "👍", color: "--success", points: (history) => history.feedback?.up ?? [] },
+      { label: "👎", color: "--danger", points: (history) => history.feedback?.down ?? [] },
+    ],
+    format: count,
+    bucketed: true,
   },
 ];
 // The state of the vLLM server.
@@ -185,12 +189,12 @@ export default function EndpointStatsPage() {
       {!history.data && !history.error && <LoaderCircle className="spin" size={16} />}
       {history.data && (
         <>
-          <ChartArea title="Requests" charts={REQUEST_CHARTS} history={history.data}>
-            <RequestTraces name={name} span={span} refreshMs={refreshMs} />
-          </ChartArea>
+          <ChartArea title="Requests" charts={REQUEST_CHARTS} history={history.data} />
           <ChartArea title="Server" charts={SERVER_CHARTS} history={history.data} />
         </>
       )}
+
+      <RequestsList name={name} />
 
       <section className="storage-section">
         <h2>Live values</h2>
@@ -214,12 +218,10 @@ function ChartArea({
   title,
   charts,
   history,
-  children,
 }: {
   title: string;
   charts: Chart[];
   history: EndpointHistory;
-  children?: ReactNode;
 }) {
   return (
     <section className="storage-section">
@@ -229,130 +231,16 @@ function ChartArea({
           <ChartOfHistory key={chart.title} chart={chart} history={history} />
         ))}
       </div>
-      {children}
     </section>
   );
 }
 
-// Closed at first, so it doesn't push the charts away; it fetches only while open.
-function RequestTraces({ name, span, refreshMs }: { name: string; span: Span; refreshMs: number }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <details className="request-traces" onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Requests</summary>
-      <p className="muted">
-        One row per request vLLM finished; prompts and responses are never stored. Kept{" "}
-        {ENDPOINT_HISTORY_RETENTION_DAYS} days.
-      </p>
-      {open && <RequestTraceLists name={name} span={span} refreshMs={refreshMs} />}
-    </details>
-  );
-}
-
-function RequestTraceLists({
-  name,
-  span,
-  refreshMs,
-}: {
-  name: string;
-  span: Span;
-  refreshMs: number;
-}) {
-  const [list, setList] = useState<keyof EndpointRequests>("slowest");
-  const requests = useApi<EndpointRequests>(endpointRequests(name, span), refreshMs);
-  const rows = requests.data?.[list];
-  return (
-    <>
-      <div role="tablist" className="span-picker">
-        {Object.entries(REQUEST_LISTS).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            className={`button small ${key === list ? "primary" : "ghost"}`}
-            aria-selected={key === list}
-            onClick={() => setList(key as keyof EndpointRequests)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {requests.error && (
-        <p className="banner danger">
-          <CircleAlert size={16} /> {requests.error.message}
-        </p>
-      )}
-      {!requests.data && !requests.error && <LoaderCircle className="spin" size={16} />}
-      {rows?.length === 0 && <p className="muted">No requests in this timespan.</p>}
-      {!!rows?.length && (
-        <div className="card table-card">
-          <table>
-            <thead>
-              <tr>
-                <th>Arrived</th>
-                <th>End-to-end</th>
-                <th>TTFT</th>
-                <th>Queue</th>
-                <th>Prefill</th>
-                <th>Decode</th>
-                <th>Prompt tokens</th>
-                <th>Completion tokens</th>
-                <th>Sampling</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.trace_id}>
-                  <td title={row.arrived_at}>{arrivedText(row.arrived_at)}</td>
-                  <td>{formatSeconds(row.end_to_end)}</td>
-                  <td>{formatSeconds(row.time_to_first_token)}</td>
-                  <td>{formatSeconds(row.queue_time)}</td>
-                  <td>{formatSeconds(row.prefill_time)}</td>
-                  <td>{formatSeconds(row.decode_time)}</td>
-                  <td>{count(row.prompt_tokens)}</td>
-                  <td>{count(row.completion_tokens)}</td>
-                  <td className="muted">{samplingText(row)}</td>
-                  <td>
-                    <a
-                      href={row.mlflow_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label="Open in MLflow"
-                      title="Open in MLflow"
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  );
-}
-
-function arrivedText(arrivedAt: string): string {
-  return new Date(arrivedAt).toLocaleString("en", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function samplingText(row: RequestTrace): string {
-  const set = SAMPLING_SETTINGS.filter((key) => row[key] != null);
-  return set.length ? set.map((key) => `${key} ${row[key]}`).join(" · ") : "—";
-}
-
 function ChartOfHistory({ chart, history }: { chart: Chart; history: EndpointHistory }) {
   // One time per Server Sample, which all log `running`; a series without a point there has a gap.
+  // A bucketed chart has its buckets' times only.
   const points = chart.series.map((line) => new Map(line.points(history)));
-  const logged = [history.values.running ?? [], ...points.map((found) => [...found])];
+  const samples = chart.bucketed ? [] : (history.values.running ?? []);
+  const logged = [samples, ...points.map((found) => [...found])];
   const times = [...new Set(logged.flat().map(([time]) => time))].sort((a, b) => a - b);
   if (chart.optional && !points.some((found) => found.size)) return null;
   return (

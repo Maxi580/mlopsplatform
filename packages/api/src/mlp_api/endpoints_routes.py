@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
 from mlp_api.endpoints.feedback import record_feedback
@@ -18,7 +18,7 @@ from mlp_api.endpoints.lifecycle import (
     stop_endpoint,
     traces_experiment_id,
 )
-from mlp_api.endpoints.request_traces import endpoint_request_traces
+from mlp_api.endpoints.request_traces import RequestFilters, endpoint_request, endpoint_requests
 from mlp_api.endpoints.stats import endpoint_stats_summary, fetch_endpoint_stats
 from mlp_api.endpoints.stats_history import endpoint_history
 from mlp_api.pipelines.compiler import endpoint_service_url
@@ -70,12 +70,18 @@ def history(name: str, request: Request, span: str = "live") -> dict:
 
 # Stopped Endpoints have their Request Traces too.
 @router.get(api_paths.ENDPOINT_REQUESTS)
-def requests(name: str, request: Request, span: str = "live") -> dict:
-    if span not in config.ENDPOINT_HISTORY_SPANS:
-        raise HTTPException(422, f"span is one of {', '.join(config.ENDPOINT_HISTORY_SPANS)}")
+def requests(name: str, request: Request, filters: Annotated[RequestFilters, Query()]) -> dict:
     if find_endpoint(request.app.state.engine, name) is None:
         raise HTTPException(404, f"No Endpoint {name}")
-    return endpoint_request_traces(request.app.state.model_registry, name, span, datetime.now(UTC))
+    return endpoint_requests(request.app.state.model_registry, name, filters)
+
+
+@router.get(api_paths.ENDPOINT_REQUEST)
+def request_trace(name: str, trace_id: str, request: Request) -> dict:
+    try:
+        return endpoint_request(request.app.state.model_registry, name, trace_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
 
 
 def refuse_the_judge(name: str) -> None:

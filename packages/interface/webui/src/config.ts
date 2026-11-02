@@ -48,8 +48,10 @@ export const ENDPOINT_HISTORY_SPANS = {
   all: "ALL",
 };
 export const ENDPOINT_HISTORY_RETENTION_DAYS = 30;
-// The stats page lists this many of a span's slowest and most recent requests; the API's too.
-export const ENDPOINT_REQUEST_LIST_SIZE = 15;
+// What the requests list's filters offer.
+export const REQUEST_SOURCES = ["api", "chat"];
+export const REQUEST_STATUSES = ["ok", "error"];
+export const JUDGE_SCORES = [1, 5];
 // KV cache usage, in percent, from which its bar turns amber and then red.
 export const KV_CACHE_WARNING_PERCENT = 70;
 export const KV_CACHE_DANGER_PERCENT = 90;

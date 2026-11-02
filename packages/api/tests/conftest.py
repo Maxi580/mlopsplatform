@@ -256,16 +256,16 @@ class FakeModelRegistry:
             if found == key and steps[0] <= step <= steps[1]
         )
 
-    def search_traces(self, experiment_id, since_ms, order_by, max_results):
-        self.trace_searches.append((experiment_id, since_ms, order_by, max_results))
-        orders = {
-            "timestamp_ms DESC": lambda info: datetime.fromisoformat(info["request_time"]),
-            "execution_time_ms DESC": lambda info: float(info["execution_duration"][:-1]),
-        }
-        since = datetime.fromtimestamp(since_ms / 1000, UTC)
+    # Pages by offset, as MLflow's page tokens are opaque.
+    def search_traces(self, experiment_id, clauses, order_by, max_results, page_token=None):
+        self.trace_searches.append((experiment_id, clauses, order_by, max_results, page_token))
         infos = [trace["trace_info"] for trace in self.traces.get(experiment_id, [])]
-        found = [info for info in infos if datetime.fromisoformat(info["request_time"]) >= since]
-        return sorted(found, key=orders[order_by], reverse=True)[:max_results]
+        found = [info for info in infos if all(matches(info, *clause) for clause in clauses)]
+        key, direction = order_by.split()
+        found.sort(key=lambda info: search_value(info, f"trace.{key}"), reverse=direction == "DESC")
+        start = int(page_token or 0)
+        more = start + max_results < len(found)
+        return found[start : start + max_results], str(start + max_results) if more else None
 
     def batch_get_traces(self, trace_ids):
         self.trace_reads.append(trace_ids)
@@ -332,6 +332,28 @@ def model_registry(api):
     return api.app.state.model_registry
 
 
+def search_value(info: dict, key: str):
+    """What MLflow's trace search compares for the key: times in ms, tags, assessments."""
+    if key == "trace.timestamp_ms":
+        return datetime.fromisoformat(info["request_time"]).timestamp() * 1000
+    if key == "trace.execution_time_ms":
+        return float(info["execution_duration"].removesuffix("s")) * 1000
+    if key.startswith("tag."):
+        return info.get("tags", {}).get(key.removeprefix("tag."))
+    name = key.removeprefix("feedback.")
+    found = [a for a in info.get("assessments", []) if a["assessment_name"] == name]
+    return found[0]["feedback"]["value"] if found else None
+
+
+def matches(info: dict, key: str, comparator: str, value) -> bool:
+    found = search_value(info, key)
+    if comparator in ("IS NULL", "IS NOT NULL"):
+        return (found is None) == (comparator == "IS NULL")
+    if found is None:
+        return False
+    return {"=": found == value, ">=": found >= value, "<=": found <= value}[comparator]
+
+
 def otel_value(value) -> dict:
     """The value as MLflow 3.16's `traces/batchGet` writes an OTel AnyValue to JSON."""
     if isinstance(value, dict):
@@ -341,7 +363,8 @@ def otel_value(value) -> dict:
         return {"array_value": {"values": [otel_value(found) for found in value]}}
     if isinstance(value, bool):
         return {"bool_value": value}
-    if isinstance(value, int):
+    # An int64 MLflow writes as a JSON string, which tests give as a string of digits.
+    if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
         return {"int_value": value}
     if isinstance(value, float):
         return {"double_value": value}

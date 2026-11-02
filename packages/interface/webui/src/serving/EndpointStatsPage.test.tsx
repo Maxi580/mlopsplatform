@@ -7,6 +7,7 @@ import type {
   EndpointRequests,
   EndpointStats,
   Histogram,
+  RequestDetail,
   RequestTrace,
 } from "./endpoint";
 
@@ -79,11 +80,13 @@ const history: EndpointHistory = {
   latencies: {
     time_to_first_token: { p50: [[1800, 0.3]], p95: [[1800, 0.48]], mean: [[1800, 0.3]] },
   },
+  feedback: { up: [[1500, 3]], down: [[1500, 1]] },
 };
 
 const routes: Record<string, [number, unknown]> = {
   "GET /endpoints/chat/stats": [200, stats],
   "GET /endpoints/chat/history?span=live": [200, history],
+  "GET /endpoints/chat/requests?order=time": [200, { requests: [], next_page_token: null }],
 };
 
 const chart = (title: string) => screen.getByRole("heading", { name: title }).closest("figure")!;
@@ -183,82 +186,117 @@ test("the stats page shows the running Endpoint's URL and key to copy", async ()
   expect(await navigator.clipboard.readText()).toBe("key-of-chat");
 });
 
-const trace = (
-  id: string,
-  endToEnd: number,
-  sampling: Partial<RequestTrace> = {},
-): RequestTrace => ({
+const row = (id: string, overrides: Partial<RequestTrace> = {}): RequestTrace => ({
   trace_id: id,
   arrived_at: "2026-10-02T09:00:00Z",
-  end_to_end: endToEnd,
+  latency: 1.5,
+  end_to_end: 1.4,
   time_to_first_token: 0.25,
   queue_time: 0.125,
   prefill_time: 0.0625,
-  decode_time: endToEnd - 0.25,
+  decode_time: 1,
   prompt_tokens: 12,
   completion_tokens: 40,
   temperature: null,
   top_p: null,
   max_tokens: null,
+  source: "api",
+  status: "ok",
+  rating: null,
+  judge_score: null,
+  prompt_preview: "What's the weather in Rome?",
   mlflow_url: `/mlflow/#/experiments/7/traces/${id}`,
-  ...sampling,
+  ...overrides,
 });
-const requests: EndpointRequests = {
-  slowest: [trace("tr-slow", 9.5), trace("tr-fast", 0.5, { temperature: 0.7, max_tokens: 256 })],
-  recent: [trace("tr-fast", 0.5, { temperature: 0.7, max_tokens: 256 })],
-};
-const requestsSection = () => screen.getByText("Requests", { selector: "summary" }).parentElement!;
-
-test("the Requests subsection is closed and fetches nothing until opened", async () => {
-  const calls = fakeApi({ ...routes, "GET /endpoints/chat/requests?span=live": [200, requests] });
-  renderApp("/serving/chat");
-  await screen.findByRole("heading", { name: "Running/waiting" });
-
-  expect(requestsSection()).not.toHaveAttribute("open");
-  expect(calls.map((call) => call.route)).not.toContain("GET /endpoints/chat/requests?span=live");
-
-  await userEvent.click(screen.getByText("Requests", { selector: "summary" }));
-
-  expect(requestsSection()).toHaveAttribute("open");
-  const slow = (await within(requestsSection()).findByText("9.50 s")).closest("tr")!;
-  expect(slow).toHaveTextContent("250 ms");
-  expect(within(slow).getByRole("link", { name: "Open in MLflow" })).toHaveAttribute(
-    "href",
-    "/mlflow/#/experiments/7/traces/tr-slow",
-  );
-  expect(
-    within(requestsSection()).getByText("temperature 0.7 · max_tokens 256"),
-  ).toBeInTheDocument();
+const page = (rows: RequestTrace[], next: string | null = null): EndpointRequests => ({
+  requests: rows,
+  next_page_token: next,
 });
+const table = () => screen.getByRole("heading", { name: "All requests" }).closest("section")!;
 
-test("the Requests tabs switch between the slowest and the most recent", async () => {
-  fakeApi({ ...routes, "GET /endpoints/chat/requests?span=live": [200, requests] });
-  renderApp("/serving/chat");
-  await userEvent.click(await screen.findByText("Requests", { selector: "summary" }));
-  expect(await within(requestsSection()).findAllByRole("row")).toHaveLength(3);
-  expect(screen.getByRole("tab", { name: "Slowest 15" })).toHaveAttribute("aria-selected", "true");
-
-  await userEvent.click(screen.getByRole("tab", { name: "Most recent 15" }));
-
-  expect(screen.getByRole("tab", { name: "Most recent 15" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  expect(within(requestsSection()).getAllByRole("row")).toHaveLength(2);
-  expect(within(requestsSection()).queryByText("9.50 s")).not.toBeInTheDocument();
-});
-
-test("the Requests subsection asks for the picked timespan and says when it is empty", async () => {
-  const empty = { slowest: [], recent: [] };
-  const calls = fakeApi({
+test("the requests list shows every request with its source, status, timings and feedback", async () => {
+  fakeApi({
     ...routes,
-    "GET /endpoints/chat/history?span=7d": [200, history],
-    "GET /endpoints/chat/requests?span=7d": [200, empty],
+    "GET /endpoints/chat/requests?order=time": [
+      200,
+      page([row("tr-1", { source: "chat", rating: "up", judge_score: 4 }), row("tr-2")]),
+    ],
   });
   renderApp("/serving/chat");
-  await userEvent.click(await screen.findByRole("button", { name: "7d" }));
-  await userEvent.click(screen.getByText("Requests", { selector: "summary" }));
 
-  expect(await screen.findByText("No requests in this timespan.")).toBeInTheDocument();
-  expect(calls.map((call) => call.route)).toContain("GET /endpoints/chat/requests?span=7d");
+  const found = (await screen.findAllByText("What's the weather in Rome?"))[0].closest("tr")!;
+  for (const text of ["chat", "ok", "1.50 s", "250 ms", "12 → 40", "4"]) {
+    expect(within(found).getByText(text)).toBeInTheDocument();
+  }
+  expect(within(found).getByLabelText("up")).toBeInTheDocument();
+});
+
+test("filters and the sort toggle ask the API again, and load more appends the next page", async () => {
+  const user = userEvent.setup();
+  const calls = fakeApi({
+    ...routes,
+    "GET /endpoints/chat/requests?order=time": [200, page([row("tr-1")], "50")],
+    "GET /endpoints/chat/requests?order=time&page_token=50": [200, page([row("tr-2")])],
+    "GET /endpoints/chat/requests?source=chat&order=time": [200, page([])],
+    "GET /endpoints/chat/requests?source=chat&rating=none&order=time": [200, page([])],
+    "GET /endpoints/chat/requests?source=chat&rating=none&order=latency": [200, page([])],
+  });
+  renderApp("/serving/chat");
+
+  await user.click(await within(table()).findByRole("button", { name: "Load more" }));
+  expect(await within(table()).findAllByRole("row")).toHaveLength(3);
+
+  await user.selectOptions(screen.getByLabelText("Source"), "chat");
+  await user.selectOptions(screen.getByLabelText("Feedback"), "none");
+  await user.click(screen.getByRole("button", { name: "Newest first" }));
+
+  expect(await screen.findByText("No requests match.")).toBeInTheDocument();
+  expect(calls.map((call) => call.route)).toContain(
+    "GET /endpoints/chat/requests?source=chat&rating=none&order=latency",
+  );
+});
+
+test("a clicked request opens a drawer with its chat, reasoning, answer and judge score", async () => {
+  const user = userEvent.setup();
+  const detail: RequestDetail = {
+    ...row("tr-1", { rating: "down", judge_score: 2 }),
+    messages: [
+      { role: "system", content: "Be brief." },
+      { role: "user", content: "What's the weather in Rome?" },
+    ],
+    tools: null,
+    reasoning: "Look it up.",
+    answer: "Sunny.",
+    tool_calls: null,
+    error: null,
+    judge_reason: "Made up.",
+  };
+  fakeApi({
+    ...routes,
+    "GET /endpoints/chat/requests?order=time": [200, page([row("tr-1")])],
+    "GET /endpoints/chat/requests/tr-1": [200, detail],
+  });
+  renderApp("/serving/chat");
+
+  await user.click(await within(table()).findByText("What's the weather in Rome?"));
+
+  const drawer = await screen.findByRole("complementary", { name: "Request" });
+  expect(await within(drawer).findByText("Be brief.")).toBeInTheDocument();
+  expect(within(drawer).getByText("Reasoning")).toBeInTheDocument();
+  expect(within(drawer).getByText("Sunny.")).toBeInTheDocument();
+  expect(within(drawer).getByText(/Made up\./)).toBeInTheDocument();
+  expect(within(drawer).getByRole("link", { name: /Open in MLflow/ })).toHaveAttribute(
+    "href",
+    "/mlflow/#/experiments/7/traces/tr-1",
+  );
+  await user.click(within(drawer).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("complementary", { name: "Request" })).not.toBeInTheDocument();
+});
+
+test("the feedback chart shows the votes per bucket", async () => {
+  fakeApi({ ...routes });
+  renderApp("/serving/chat");
+
+  const votes = await screen.findByRole("heading", { name: "👍/👎" });
+  expect(within(votes.closest("figure")!).getByText("👍").closest("div")).toHaveTextContent("3");
 });

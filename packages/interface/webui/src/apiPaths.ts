@@ -38,6 +38,8 @@ export const modelCacheEntry = (reference: string) =>
 export const endpointStats = (name: string) => `/endpoints/${name}/stats`;
 export const endpointHistory = (name: string, span: string) =>
   `/endpoints/${name}/history?span=${span}`;
-export const endpointRequests = (name: string, span: string) =>
-  `/endpoints/${name}/requests?span=${span}`;
+export const endpointRequests = (name: string, query: string) =>
+  `/endpoints/${name}/requests${query ? `?${query}` : ""}`;
+export const endpointRequest = (name: string, traceId: string) =>
+  `/endpoints/${name}/requests/${traceId}`;
 export const JUDGE = "/judge";

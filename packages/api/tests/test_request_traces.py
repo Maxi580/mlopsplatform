@@ -3,10 +3,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from mlp_api.endpoints.environment import EndpointEnvironment
-from mlp_core import api_paths, config
+from mlp_core import api_paths
 from mlp_core.endpoint_spec import ServingOptions, VllmModel
 from mlp_core.endpoint_spec import vllm_args as shared_vllm_args
 
+from .conftest import record_request_trace
 from .test_endpoint_stats import qwen_on_the_hub  # noqa: F401
 from .test_endpoints import pod, reconcile, restart, start, stop, vllm_args
 
@@ -83,49 +84,41 @@ def now():
     return datetime.now(UTC)
 
 
-def log_trace(model_registry, trace_id, arrived, e2e, **sampling):
-    """A Request Trace in chat's experiment, shaped as MLflow 3.16 answers `traces/batchGet`."""
-    attributes = {
-        "gen_ai.latency.e2e": e2e,
-        "gen_ai.latency.time_to_first_token": 0.25,
-        "gen_ai.latency.time_in_queue": 0.125,
-        "gen_ai.latency.time_in_model_prefill": 0.0625,
-        "gen_ai.latency.time_in_model_decode": e2e - 0.25,
-        "gen_ai.latency.time_in_model_inference": e2e - 0.125,
-        # int64 values come as JSON strings.
-        "gen_ai.usage.prompt_tokens": "12",
-        "gen_ai.usage.completion_tokens": 40,
-        "gen_ai.request.id": f"chatcmpl-{trace_id}",
-        **sampling,
-    }
+QUESTION = "What's the weather in Rome? " + "x" * 100
+CHAT = {
+    "messages": [
+        {"role": "system", "content": "Be brief."},
+        {"role": "user", "content": QUESTION},
+    ],
+    "tools": [{"type": "function", "function": {"name": "weather"}}],
+    "temperature": 0.7,
+}
+CALL = {"id": "call-1", "type": "function", "function": {"name": "weather", "arguments": "{}"}}
+MESSAGE = {"role": "assistant", "content": "Sunny.", "reasoning_content": "Look it up."}
+ANSWER = {
+    "object": "chat.completion",
+    "choices": [{"index": 0, "message": {**MESSAGE, "tool_calls": [CALL]}}],
+}
 
-    def any_value(value):
-        if isinstance(value, str) and not value.isdigit():
-            return {"string_value": value}
-        return {"int_value": value} if isinstance(value, int | str) else {"double_value": value}
 
-    model_registry.traces.setdefault(EXPERIMENT, []).append(
-        {
-            "trace_info": {
-                "trace_id": trace_id,
-                "request_time": arrived.isoformat().replace("+00:00", "Z"),
-                "execution_duration": f"{e2e}s",
-                "state": "OK",
-            },
-            "spans": [
-                {
-                    "name": "llm_request",
-                    "attributes": [
-                        {"key": key, "value": any_value(value)} for key, value in attributes.items()
-                    ],
-                }
-            ],
-        }
+def log_trace(model_registry, trace_id, arrived, e2e, tags=None, **sampling):
+    record_request_trace(
+        model_registry, EXPERIMENT, trace_id, arrived, e2e, CHAT, ANSWER, tags, **sampling
     )
 
 
-def requests(api, span="24h", name="chat"):
-    return api.get(api_paths.ENDPOINT_REQUESTS.format(name=name), params={"span": span})
+def requests(api, name="chat", **filters):
+    response = api.get(api_paths.ENDPOINT_REQUESTS.format(name=name), params=filters)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def trace_ids(api, **filters) -> list[str]:
+    return [row["trace_id"] for row in requests(api, **filters)["requests"]]
+
+
+def request_trace(api, trace_id="tr-1", name="chat"):
+    return api.get(api_paths.ENDPOINT_REQUEST.format(name=name, trace_id=trace_id))
 
 
 @pytest.fixture
@@ -133,28 +126,19 @@ def chat(logged_in_api, qwen_on_the_hub, cluster):  # noqa: F811
     start(logged_in_api)
 
 
-def test_requests_lists_the_slowest_and_the_most_recent_with_their_breakdown(
+def test_a_request_row_holds_its_breakdown_tags_and_prompt_start(
     logged_in_api, chat, model_registry, now
 ):
-    log_trace(model_registry, "tr-old-slow", now - timedelta(hours=2), 9.5)
-    log_trace(
-        model_registry,
-        "tr-new-fast",
-        now - timedelta(minutes=1),
-        0.5,
-        **{"gen_ai.request.temperature": 0.7, "gen_ai.request.max_tokens": 256},
-    )
-    log_trace(model_registry, "tr-too-old", now - timedelta(days=2), 20.0)
+    arrived = now - timedelta(minutes=1)
+    tags = {"source": "chat", "rating": "up", "judge_score": "4"}
+    log_trace(model_registry, "tr-1", arrived, 0.5, tags, **{"gen_ai.request.max_tokens": 256})
 
-    response = requests(logged_in_api)
+    [row] = requests(logged_in_api)["requests"]
 
-    assert response.status_code == 200, response.text
-    answer = response.json()
-    assert [row["trace_id"] for row in answer["slowest"]] == ["tr-old-slow", "tr-new-fast"]
-    assert [row["trace_id"] for row in answer["recent"]] == ["tr-new-fast", "tr-old-slow"]
-    assert answer["recent"][0] == {
-        "trace_id": "tr-new-fast",
-        "arrived_at": (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+    assert row == {
+        "trace_id": "tr-1",
+        "arrived_at": arrived.isoformat().replace("+00:00", "Z"),
+        "latency": 0.5,
         "end_to_end": 0.5,
         "time_to_first_token": 0.25,
         "queue_time": 0.125,
@@ -162,33 +146,87 @@ def test_requests_lists_the_slowest_and_the_most_recent_with_their_breakdown(
         "decode_time": 0.25,
         "prompt_tokens": 12,
         "completion_tokens": 40,
-        "temperature": 0.7,
+        "temperature": None,
         "top_p": None,
         "max_tokens": 256,
-        "mlflow_url": f"/mlflow/#/experiments/{EXPERIMENT}/traces/tr-new-fast",
+        "source": "chat",
+        "status": "ok",
+        "rating": "up",
+        "judge_score": 4.0,
+        "prompt_preview": QUESTION[:80],
+        "mlflow_url": f"/mlflow/#/experiments/{EXPERIMENT}/traces/tr-1",
     }
 
 
-def test_requests_searches_twice_and_reads_the_spans_once(logged_in_api, chat, model_registry, now):
-    log_trace(model_registry, "tr-1", now - timedelta(minutes=1), 1.0)
+def test_requests_are_newest_or_slowest_first_in_pages_of_50(
+    logged_in_api, chat, model_registry, now
+):
+    for index in range(51):
+        log_trace(model_registry, f"tr-{index}", now - timedelta(seconds=index), 1 + index % 3)
 
-    requests(logged_in_api, span="1h")
+    first = requests(logged_in_api)
+    second = requests(logged_in_api, page_token=first["next_page_token"])
 
-    [(_, slowest_since, slowest_order, size), (_, recent_since, recent_order, _)] = (
-        model_registry.trace_searches
-    )
-    assert (slowest_order, recent_order) == ("execution_time_ms DESC", "timestamp_ms DESC")
-    assert slowest_since == recent_since
-    hour_ago = (now - timedelta(hours=1)).timestamp() * 1000
-    assert hour_ago <= slowest_since <= hour_ago + 60_000
-    assert size == config.ENDPOINT_REQUEST_LIST_SIZE
-    assert model_registry.trace_reads == [["tr-1"]]
+    assert len(first["requests"]) == 50
+    assert [row["trace_id"] for row in first["requests"][:2]] == ["tr-0", "tr-1"]
+    assert [row["trace_id"] for row in second["requests"]] == ["tr-50"]
+    assert second["next_page_token"] is None
+    assert trace_ids(logged_in_api, order="latency")[0] == "tr-2"
+    assert len(model_registry.trace_reads[0]) == 50
+
+
+@pytest.mark.parametrize(
+    ("filters", "clause"),
+    [
+        ({"source": "chat"}, ("tag.source", "=", "chat")),
+        ({"status": "error"}, ("tag.status", "=", "error")),
+        ({"rating": "down"}, ("tag.rating", "=", "down")),
+        ({"rating": "none"}, ("tag.rating", "IS NULL", None)),
+        ({"score_min": 3}, ("feedback.judge", ">=", 3)),
+        ({"score_max": 2}, ("feedback.judge", "<=", 2)),
+        ({"min_latency_ms": 1500}, ("trace.execution_time_ms", ">=", 1500)),
+        ({"from": "2026-10-27T10:00:00Z"}, ("trace.timestamp_ms", ">=", 1793095200000)),
+        ({"to": "2026-10-27T10:00:00Z"}, ("trace.timestamp_ms", "<=", 1793095200000)),
+    ],
+)
+def test_each_filter_becomes_an_mlflow_search_clause(
+    logged_in_api, chat, model_registry, filters, clause
+):
+    log_trace(model_registry, "tr-1", datetime.now(UTC), 1.0)
+
+    requests(logged_in_api, **filters)
+
+    [(_, clauses, order_by, size, _)] = model_registry.trace_searches
+    assert clauses == [clause]
+    assert (order_by, size) == ("timestamp_ms DESC", 50)
+
+
+def test_the_filters_find_the_matching_requests(logged_in_api, chat, model_registry, now):
+    log_trace(model_registry, "tr-api", now - timedelta(hours=2), 0.5)
+    log_trace(model_registry, "tr-chat", now - timedelta(minutes=5), 2.0, {"source": "chat"})
+    log_trace(model_registry, "tr-down", now - timedelta(minutes=1), 0.5, {"rating": "down"})
+    judged = {"assessment_name": "judge", "feedback": {"value": 4}}
+    model_registry.trace_info("tr-chat")["assessments"].append(judged)
+
+    assert trace_ids(logged_in_api, source="chat") == ["tr-chat"]
+    assert trace_ids(logged_in_api, rating="none") == ["tr-chat", "tr-api"]
+    assert trace_ids(logged_in_api, score_min=4, score_max=5) == ["tr-chat"]
+    assert trace_ids(logged_in_api, min_latency_ms=1000) == ["tr-chat"]
+    since = (now - timedelta(hours=1)).isoformat()
+    assert trace_ids(logged_in_api, **{"from": since}) == ["tr-down", "tr-chat"]
+
+
+@pytest.mark.parametrize(
+    "filters", [{"source": "cli"}, {"rating": "meh"}, {"score_min": 6}, {"order": "name"}]
+)
+def test_filters_take_only_known_values(logged_in_api, chat, filters):
+    url = api_paths.ENDPOINT_REQUESTS.format(name="chat")
+
+    assert logged_in_api.get(url, params=filters).status_code == 422
 
 
 def test_requests_without_any_trace_are_empty(logged_in_api, chat, model_registry):
-    response = requests(logged_in_api)
-
-    assert response.json() == {"slowest": [], "recent": []}
+    assert requests(logged_in_api) == {"requests": [], "next_page_token": None}
     assert model_registry.trace_reads == []
 
 
@@ -199,14 +237,49 @@ def test_a_stopped_endpoint_still_lists_its_requests(
     stop(logged_in_api)
     reconcile(logged_in_api)
 
-    response = requests(logged_in_api)
-
-    assert [row["trace_id"] for row in response.json()["recent"]] == ["tr-1"]
+    assert trace_ids(logged_in_api) == ["tr-1"]
 
 
 def test_requests_of_an_unknown_endpoint_are_not_found(logged_in_api, model_registry):
-    assert requests(logged_in_api, name="nope").status_code == 404
+    assert logged_in_api.get(api_paths.ENDPOINT_REQUESTS.format(name="nope")).status_code == 404
 
 
-def test_requests_take_only_known_spans(logged_in_api, chat, model_registry):
-    assert requests(logged_in_api, span="2y").status_code == 422
+def test_a_request_shows_its_full_content_feedback_and_judge_score(
+    logged_in_api, chat, model_registry, now
+):
+    log_trace(model_registry, "tr-1", now, 0.5, {"rating": "down", "judge_score": "2"})
+    judged = {"assessment_name": "judge", "feedback": {"value": 2}, "rationale": "Made up."}
+    model_registry.trace_info("tr-1")["assessments"].append(judged)
+
+    response = request_trace(logged_in_api)
+
+    assert response.status_code == 200, response.text
+    found = response.json()
+    assert found["messages"] == CHAT["messages"]
+    assert found["tools"] == CHAT["tools"]
+    assert (found["reasoning"], found["answer"]) == ("Look it up.", "Sunny.")
+    assert found["tool_calls"] == [CALL]
+    assert found["error"] is None
+    assert (found["rating"], found["judge_score"]) == ("down", 2.0)
+    assert found["judge_reason"] == "Made up."
+    assert found["mlflow_url"] == f"/mlflow/#/experiments/{EXPERIMENT}/traces/tr-1"
+
+
+def test_a_completion_shows_its_prompt_as_the_users_message(logged_in_api, chat, model_registry):
+    answer = {"choices": [{"index": 0, "text": " upon a time"}]}
+    record_request_trace(
+        model_registry, EXPERIMENT, "tr-1", datetime.now(UTC), 0.5, {"prompt": "Once"}, answer
+    )
+
+    found = request_trace(logged_in_api).json()
+
+    assert found["messages"] == [{"role": "user", "content": "Once"}]
+    assert (found["answer"], found["prompt_preview"]) == (" upon a time", "Once")
+
+
+def test_another_endpoints_request_is_not_found(logged_in_api, chat, model_registry):
+    start(logged_in_api, name="other")
+    log_trace(model_registry, "tr-1", datetime.now(UTC), 0.5)
+
+    assert request_trace(logged_in_api, name="other").status_code == 404
+    assert request_trace(logged_in_api, trace_id="tr-nope").status_code == 404

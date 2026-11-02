@@ -154,19 +154,28 @@ class MLflow:
         return sorted((m["step"], m["value"]) for m in response.json().get("metrics", []))
 
     def search_traces(
-        self, experiment_id: str, since_ms: int, order_by: str, max_results: int
-    ) -> list[dict]:
-        """The infos of the experiment's traces since then, in the order; without their spans."""
+        self,
+        experiment_id: str,
+        clauses: list[tuple[str, str, int | float | str | None]],
+        order_by: str,
+        max_results: int,
+        page_token: str | None = None,
+    ) -> tuple[list[dict], str | None]:
+        """One page of the infos of the experiment's traces matching every (key, comparator,
+        value) clause, e.g. ("tag.rating", "IS NULL", None), in the order, without their spans;
+        and the next page's token, or None after the last."""
         location = {"experiment_id": experiment_id}
         body = {
             "locations": [{"type": "MLFLOW_EXPERIMENT", "mlflow_experiment": location}],
-            "filter": f"trace.timestamp_ms >= {since_ms}",
+            "filter": " AND ".join(filter_clause(*clause) for clause in clauses),
             "order_by": [order_by],
             "max_results": max_results,
+            **({"page_token": page_token} if page_token else {}),
         }
         response = self.client.post(f"{self.traces_url}/search", json=body)
         response.raise_for_status()
-        return response.json().get("traces", [])
+        page = response.json()
+        return page.get("traces", []), page.get("next_page_token") or None
 
     def batch_get_traces(self, trace_ids: list[str]) -> list[dict]:
         """The traces, each its info and spans."""
@@ -212,6 +221,14 @@ class MLflow:
         body = {"experiment_id": experiment_id, "max_timestamp_millis": max_timestamp_ms}
         response = self.client.post(f"{self.traces_url}/delete-traces", json=body)
         response.raise_for_status()
+
+
+# MLflow's trace search syntax: strings quoted, numbers bare; callers pass only checked values.
+def filter_clause(key: str, comparator: str, value) -> str:
+    if value is None:
+        return f"{key} {comparator}"
+    shown = f"'{value}'" if isinstance(value, str) else value
+    return f"{key} {comparator} {shown}"
 
 
 def model_version(found: dict) -> ModelVersion:

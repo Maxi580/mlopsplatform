@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from mlp_api.endpoints.lifecycle import traces_experiment_id
+from mlp_api.endpoints.request_traces import trace_experiment_id
 from mlp_api.endpoints.stats_history import day_run_id, round_ms
 from mlp_core import config
 
@@ -27,7 +28,3 @@ def record_feedback(state, name: str, trace_id: str, rating: str, now: datetime)
         counts[config.FEEDBACK_METRIC.format(rating=previous)] = -1
     run_id = day_run_id(state, name, now)
     registry.log_metrics(run_id, counts, int(now.timestamp()), round_ms(now))
-
-
-def trace_experiment_id(info: dict) -> str | None:
-    return info.get("trace_location", {}).get("mlflow_experiment", {}).get("experiment_id")

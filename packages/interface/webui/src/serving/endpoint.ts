@@ -49,20 +49,24 @@ export type Histogram = {
 };
 
 // What `GET /endpoints/<name>/history` answers: per Server Sample key its [unix seconds, value]
-// points, and the latencies' p50, p95 and mean by their chart.
+// points, the latencies' p50, p95 and mean by their chart, and the Feedback votes summed per
+// bucket of the span.
 export type Point = [number, number];
 export type EndpointHistory = {
   start: number;
   end: number;
   values: Record<string, Point[]>;
   latencies: Record<string, Record<string, Point[]>>;
+  feedback: { up: Point[]; down: Point[] };
 };
 
-// What `GET /endpoints/<name>/requests` answers: the span's slowest and most recent Request
-// Traces, times in seconds, and the sampling settings null where the request left them unset.
+// A row of `GET /endpoints/<name>/requests`: one Request Trace, times in seconds, the sampling
+// settings null where the request left them unset, and its tags.
 export type RequestTrace = {
   trace_id: string;
   arrived_at: string;
+  // From its arrival at the Endpoint Proxy to the end of its answer.
+  latency: number;
   end_to_end: number | null;
   time_to_first_token: number | null;
   queue_time: number | null;
@@ -73,9 +77,26 @@ export type RequestTrace = {
   temperature: number | null;
   top_p: number | null;
   max_tokens: number | null;
+  source: string | null;
+  status: string | null;
+  rating: "up" | "down" | null;
+  judge_score: number | null;
+  prompt_preview: string | null;
   mlflow_url: string;
 };
-export type EndpointRequests = { slowest: RequestTrace[]; recent: RequestTrace[] };
+export type EndpointRequests = { requests: RequestTrace[]; next_page_token: string | null };
+
+// What `GET /endpoints/<name>/requests/<trace_id>` answers: the row with the full content.
+export type Message = { role: string; content: unknown; tool_calls?: unknown[] };
+export type RequestDetail = RequestTrace & {
+  messages: Message[];
+  tools: unknown[] | null;
+  reasoning: string | null;
+  answer: string | null;
+  tool_calls: unknown[] | null;
+  error: string | null;
+  judge_reason: string | null;
+};
 
 export type Metric = {
   name: string;

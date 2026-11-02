@@ -1406,3 +1406,86 @@ legend .switch-button {
   cursor: pointer;
   color: var(--text-muted);
 }
+
+/* Requests list */
+
+.request-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.request-filter {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.request-filter input,
+.request-filter select {
+  width: auto;
+  min-width: 90px;
+}
+
+.requests-table tr.clickable {
+  cursor: pointer;
+}
+
+.requests-table tr.clickable:hover {
+  background: var(--surface-muted);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  width: min(560px, 100vw);
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 16px rgb(0 0 0 / 12%);
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+}
+
+.chat-message {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.chat-message.assistant {
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.chat-message pre,
+.reasoning pre,
+.drawer pre {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+}
+
+.reasoning summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}

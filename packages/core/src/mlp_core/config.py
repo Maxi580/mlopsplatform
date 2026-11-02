@@ -774,9 +774,13 @@ REQUEST_TRACE_ATTRIBUTES = {
     "top_p": "gen_ai.request.top_p",
     "max_tokens": "gen_ai.request.max_tokens",
 }
-# The stats page lists this many of the slowest and of the most recent requests, in MLflow's order.
-ENDPOINT_REQUEST_LIST_SIZE = 15
-ENDPOINT_REQUEST_LISTS = {"slowest": "execution_time_ms DESC", "recent": "timestamp_ms DESC"}
+# The Endpoint page lists its requests in pages of this many, newest or slowest first.
+ENDPOINT_REQUESTS_PAGE_SIZE = 50
+ENDPOINT_REQUEST_ORDERS = {"time": "timestamp_ms DESC", "latency": "execution_time_ms DESC"}
+# A request's row shows the start of its last user message.
+PROMPT_PREVIEW_LENGTH = 80
+# Judge Scores run from 1 to 5.
+JUDGE_SCORES = (1, 5)
 # A Request Trace in the MLflow UI, behind the platform's /mlflow/ route.
 MLFLOW_TRACE_URL = "/mlflow/#/experiments/{experiment_id}/traces/{trace_id}"
 
