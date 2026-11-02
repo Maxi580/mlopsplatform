@@ -195,3 +195,15 @@ def test_a_request_without_its_routing_headers_is_refused(proxy, vllm, spans, mi
 
     assert response.status_code == 502
     assert vllm[0] == []
+
+
+def test_a_chat_request_while_mlflow_is_unreachable_is_served_untraced(proxy, vllm, spans):
+    _, answers = vllm
+    answers["/v1/chat/completions"] = (200, json.dumps(ANSWER).encode(), "application/json")
+    headers = {**ROUTED, "X-Mlp-Experiment": "none"}
+
+    response = proxy.post("/v1/chat/completions", json=CHAT, headers=headers)
+
+    assert response.json() == ANSWER
+    assert spans[0].get_finished_spans() == ()
+    assert "x-mlp-trace-id" not in response.headers

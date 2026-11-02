@@ -257,6 +257,9 @@ class FakeModelRegistry:
             if found == key and steps[0] <= step <= steps[1]
         )
 
+    def every_metric_point(self, run_id, key):
+        return sorted((step, value) for found, value, step in self.metrics[run_id] if found == key)
+
     # Pages by offset, as MLflow's page tokens are opaque.
     def search_traces(self, experiment_id, clauses, order_by, max_results, page_token=None):
         self.trace_searches.append((experiment_id, clauses, order_by, max_results, page_token))

@@ -41,8 +41,10 @@ async def proxy(path: str, request: Request) -> Response:
         content=await request.body(),
     )
 
-    # 2. Anything but a chat or completion request passes through untraced.
-    if request.method != "POST" or f"/{path}" not in config.PROXY_TRACED_PATHS:
+    # 2. Anything but a chat or completion request passes through untraced, as does every request
+    # while MLflow is unreachable.
+    traced = request.method == "POST" and f"/{path}" in config.PROXY_TRACED_PATHS
+    if not traced or experiment_id == config.PROXY_UNTRACED:
         return streamed(await client.send(upstream_request, stream=True))
 
     # 3. The rest under the trace's root span, which vLLM's own span joins through `traceparent`.

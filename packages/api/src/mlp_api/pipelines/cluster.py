@@ -214,8 +214,8 @@ class Cluster:
         return response.json()
 
     def send_chat_request(self, name: str, request: dict, experiment_id: str) -> str:
-        """The trace ID of one chat completion request the Endpoint answered through the Endpoint
-        Proxy, routed as the Endpoint Key check would; raises unless answered."""
+        """The trace ID of a chat request the Endpoint answered through the Endpoint Proxy."""
+        # Routed as the Endpoint Key check would route it.
         environment = self.endpoint_environment
         headers = {
             config.PROXY_UPSTREAM_HEADER: endpoint_service_url(name, environment.namespace),

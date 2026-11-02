@@ -153,6 +153,18 @@ class MLflow:
         response.raise_for_status()
         return sorted((m["step"], m["value"]) for m in response.json().get("metrics", []))
 
+    def every_metric_point(self, run_id: str, key: str) -> list[tuple[int, float]]:
+        """Every (step, value) point of the Run's metric, by step; read in pages, never sampled."""
+        points, params = [], {"run_id": run_id, "metric_key": key, "max_results": 25000}
+        while True:
+            response = self.client.get("/metrics/get-history", params=params)
+            response.raise_for_status()
+            page = response.json()
+            points += [(m["step"], m["value"]) for m in page.get("metrics", [])]
+            if not page.get("next_page_token"):
+                return sorted(points)
+            params["page_token"] = page["next_page_token"]
+
     def search_traces(
         self,
         experiment_id: str,
@@ -161,9 +173,8 @@ class MLflow:
         max_results: int,
         page_token: str | None = None,
     ) -> tuple[list[dict], str | None]:
-        """One page of the infos of the experiment's traces matching every (key, comparator,
-        value) clause, e.g. ("tag.rating", "IS NULL", None), in the order, without their spans;
-        and the next page's token, or None after the last."""
+        """One page of the experiment's matching trace infos, and the next page's token."""
+        # A clause is (key, comparator, value), e.g. ("tag.rating", "IS NULL", None).
         location = {"experiment_id": experiment_id}
         body = {
             "locations": [{"type": "MLFLOW_EXPERIMENT", "mlflow_experiment": location}],

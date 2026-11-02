@@ -8,6 +8,7 @@ import {
   ENDPOINT_HISTORY_RETENTION_DAYS,
   ENDPOINT_HISTORY_SPANS,
   ENDPOINT_STATS_REFRESH_MS,
+  JUDGE_SCORES,
   KV_CACHE_DANGER_PERCENT,
   KV_CACHE_WARNING_PERCENT,
   PERCENT_STATS,
@@ -97,8 +98,8 @@ const REQUEST_CHARTS: Chart[] = [
   {
     title: "Average judge score",
     series: [{ label: "Score", color: "--accent", points: (history) => history.judge_score ?? [] }],
-    // Judge Scores run from 1 to 5.
-    format: (score: number | null) => (score == null ? "—" : `${score.toFixed(1)} / 5`),
+    format: (score: number | null) =>
+      score == null ? "—" : `${score.toFixed(1)} / ${JUDGE_SCORES[1]}`,
     bucketed: true,
   },
 ];

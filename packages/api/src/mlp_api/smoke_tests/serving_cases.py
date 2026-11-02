@@ -10,6 +10,7 @@ from mlp_api.endpoints.lifecycle import (
     stop_endpoint,
     traces_experiment_id,
 )
+from mlp_api.endpoints.request_traces import assessment
 from mlp_api.endpoints.stats import curated_values, fetch_endpoint_stats
 from mlp_api.pipelines.lifecycle import pipeline, set_pipeline, unfinished
 from mlp_api.smoke_tests.judge_case import judge_case_result
@@ -73,8 +74,7 @@ def serving_case_result(state, name: str, serving: dict, cases: dict, endpoints:
 
 
 def counts_a_chat_request(state, name: str) -> bool:
-    """Whether the Endpoint answers a chat request through the Endpoint Proxy, after which its
-    stats show it finished and its Request Trace holds it in full."""
+    """Whether a chat through the Endpoint Proxy shows in the stats and trace, and takes a 👍."""
     # 1. The request, through the proxy.
     try:
         experiment_id = traces_experiment_id(state, name)
@@ -102,5 +102,5 @@ def counts_a_chat_request(state, name: str) -> bool:
         logger.exception("Smoke Test Endpoint %s's trace took no Feedback", name)
         return False
     info = state.model_registry.trace_info(trace_id)
-    rated = [a for a in info.get("assessments", []) if a["assessment_name"] == "rating"]
-    return info["tags"].get("rating") == "up" and bool(rated)
+    rated = assessment(info, config.RATING)
+    return info["tags"].get(config.RATING) == "up" and rated is not None

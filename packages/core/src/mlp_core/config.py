@@ -586,6 +586,15 @@ JUDGE_RESPONSE_FORMAT = {
     },
 }
 JUDGE_SCORE_METRIC = "judge_score"
+# Names on a Request Trace: Feedback's tag and assessment, the Judge's assessment, its score's
+# tag, and the tag marking a trace judging passed over (unselected, skipped or failed).
+RATING = "rating"
+JUDGE_ASSESSMENT = "judge"
+JUDGE_SCORE_TAG = "judge_score"
+JUDGE_STATUS_TAG = "judge_status"
+# The judging loop goes through traces oldest first, and the Judge answers deterministically.
+JUDGING_ORDER = "timestamp_ms ASC"
+JUDGE_SAMPLING = {"temperature": 0}
 JUDGE_RUBRIC = (
     "Rate how well the assistant's answer serves the user's last message: 5 is correct, complete"
     " and helpful; 3 is partly right or partly helpful; 1 is wrong, harmful or off-topic. Judge"
@@ -751,9 +760,8 @@ ENDPOINT_HISTORY_SPANS = {
 # Points per chart, shared out over the span's day Runs, which MLflow each downsamples evenly.
 ENDPOINT_HISTORY_POINTS = 300
 # Events such as Feedback are logged to the day Run as they happen and charted summed or averaged
-# per bucket of the span; MLflow answers at most this many points per Run, all of a day's.
+# per bucket of the span.
 ENDPOINT_HISTORY_BUCKETS = 60
-ENDPOINT_EVENTS_PER_RUN = 2500
 # Feedback: a user's up or down vote on one answer; the latest vote on a trace counts.
 FEEDBACK_RATINGS = ("up", "down")
 FEEDBACK_METRIC = "feedback_{rating}"
@@ -770,6 +778,9 @@ REQUEST_TRACE_ROOT_SPAN = "endpoint_request"
 # it; Traefik overwrites whatever the client sent in them.
 PROXY_UPSTREAM_HEADER = "X-Mlp-Upstream"
 PROXY_EXPERIMENT_HEADER = "X-Mlp-Experiment"
+# Sent in it while MLflow is unreachable: the proxy then serves the request untraced, as serving
+# matters more than its traces; never left out, or the client's own header would pass.
+PROXY_UNTRACED = "none"
 # A client sends `chat` in it to tag its traces `source=chat` instead of `api`.
 PROXY_SOURCE_HEADER = "X-Mlp-Source"
 REQUEST_SOURCES = ("api", "chat")

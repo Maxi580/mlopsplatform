@@ -3,6 +3,7 @@ import logging
 import threading
 from datetime import UTC, datetime
 
+from pydantic import BaseModel, Field
 from sqlalchemy import Engine, select, update
 
 from mlp_api.endpoints.lifecycle import find_endpoint, traces_experiment_id
@@ -15,16 +16,26 @@ from mlp_core import config
 logger = logging.getLogger(__name__)
 
 
-def set_endpoint_judging(
-    engine: Engine, name: str, judged: bool, every: int, max_per_hour: int, now: datetime
-) -> None:
-    """Opts the Endpoint in or out of judging; switched on, it counts traces from now on.
-    LookupError if there is no Endpoint with the name."""
+class Judging(BaseModel):
+    """An Endpoint's opt-in: whether the Judge scores every Nth answer, at most so many an hour."""
+
+    judged: bool
+    every: int = Field(config.JUDGE_EVERY, ge=1)
+    max_per_hour: int = Field(config.JUDGE_MAX_PER_HOUR, ge=1)
+
+
+# Switched on, it counts traces from now on.
+def set_endpoint_judging(engine: Engine, name: str, judging: Judging, now: datetime) -> None:
+    """Opts the Endpoint in or out of judging; LookupError if there is none with the name."""
     found = find_endpoint(engine, name)
     if found is None:
         raise LookupError(f"No Endpoint {name}")
-    values = {"judged": judged, "judge_every": every, "judge_max_per_hour": max_per_hour}
-    if judged and not found.judged:
+    values = {
+        "judged": judging.judged,
+        "judge_every": judging.every,
+        "judge_max_per_hour": judging.max_per_hour,
+    }
+    if judging.judged and not found.judged:
         values |= {"judging_since": now, "judge_count": 0}
     with engine.begin() as connection:
         connection.execute(update(endpoint).where(endpoint.c.id == found.id).values(**values))
@@ -55,8 +66,8 @@ def judge_once(state, now: datetime) -> None:
 
 
 def judge_endpoint(state, row, rubric: str, now: datetime) -> None:
-    """Goes through the Endpoint's traces since it opted in, oldest first: scores every Nth, and
-    tags the rest, so none is looked at twice, until the hour's cap."""
+    """Scores every Nth of the Endpoint's new traces, oldest first, up to the hour's cap."""
+    # The rest are tagged, so none is looked at twice.
     # 1. The traces not looked at yet, whose answer the Endpoint Proxy recorded.
     registry = state.model_registry
     # SQLite, which tests use, keeps no time zone.
@@ -64,12 +75,12 @@ def judge_endpoint(state, row, rubric: str, now: datetime) -> None:
     clauses = [
         ("trace.timestamp_ms", ">=", round_ms(since)),
         ("tag.status", "IS NOT NULL", None),
-        ("tag.judge_score", "IS NULL", None),
-        ("tag.judge_status", "IS NULL", None),
+        (f"tag.{config.JUDGE_SCORE_TAG}", "IS NULL", None),
+        (f"tag.{config.JUDGE_STATUS_TAG}", "IS NULL", None),
     ]
     experiment_id = traces_experiment_id(state, row.name)
     infos, _ = registry.search_traces(
-        experiment_id, clauses, "timestamp_ms ASC", config.JUDGING_BATCH
+        experiment_id, clauses, config.JUDGING_ORDER, config.JUDGING_BATCH
     )
 
     # 2. Every Nth by arrival scored, a failed answer skipped, the rest passed over.
@@ -80,9 +91,9 @@ def judge_endpoint(state, row, rubric: str, now: datetime) -> None:
             break
         count += 1
         if not selected:
-            registry.set_trace_tag(info["trace_id"], "judge_status", "unselected")
+            registry.set_trace_tag(info["trace_id"], config.JUDGE_STATUS_TAG, "unselected")
         elif info.get("tags", {}).get("status") == "error":
-            registry.set_trace_tag(info["trace_id"], "judge_status", "skipped")
+            registry.set_trace_tag(info["trace_id"], config.JUDGE_STATUS_TAG, "skipped")
         else:
             judge_trace(state, row.name, info, rubric)
             hour, judged = state.judgments[row.name]
@@ -105,15 +116,14 @@ def judged_this_hour(state, name: str, now: datetime) -> int:
 
 
 def judge_trace(state, name: str, info: dict, rubric: str) -> None:
-    """Asks the Judge to score the trace's answer and stores its Judge Score; an answer that
-    fails or doesn't parse marks the trace judge-failed, never to be retried."""
+    """Stores the Judge's score of the trace's answer; a failed one marks it, never retried."""
     # 1. The Judge's answer to the rubric and the trace's content.
     registry = state.model_registry
     [trace] = registry.batch_get_traces([info["trace_id"]])
     request = {
         "messages": [{"role": "user", "content": judge_prompt(rubric, request_content(trace))}],
         "response_format": config.JUDGE_RESPONSE_FORMAT,
-        "temperature": 0,
+        **config.JUDGE_SAMPLING,
     }
     try:
         answer = state.cluster.ask_endpoint(
@@ -125,12 +135,12 @@ def judge_trace(state, name: str, info: dict, rubric: str) -> None:
             raise ValueError(f"score {score} is out of range")
     except Exception:
         logger.warning("The Judge's score of trace %s failed", info["trace_id"], exc_info=True)
-        registry.set_trace_tag(info["trace_id"], "judge_status", "failed")
+        registry.set_trace_tag(info["trace_id"], config.JUDGE_STATUS_TAG, "failed")
         return
 
     # 2. The Judge Score on the trace, and in the Stats History at the trace's time.
-    registry.set_feedback(info, "judge", score, "LLM_JUDGE", reason)
-    registry.set_trace_tag(info["trace_id"], "judge_score", str(score))
+    registry.set_feedback(info, config.JUDGE_ASSESSMENT, score, "LLM_JUDGE", reason)
+    registry.set_trace_tag(info["trace_id"], config.JUDGE_SCORE_TAG, str(score))
     arrived = datetime.fromisoformat(info["request_time"])
     run_id = day_run_id(state, name, arrived)
     metric = {config.JUDGE_SCORE_METRIC: score}

@@ -2,7 +2,13 @@ import { CircleAlert, LoaderCircle, Plus, Send, ThumbsDown, ThumbsUp } from "luc
 import { useState } from "react";
 import { errorMessage, useApi } from "../api";
 import { ENDPOINTS } from "../apiPaths";
-import { CHAT_DEFAULTS, CHAT_SOURCE, ENDPOINT_LIST_REFRESH_MS } from "../config";
+import {
+  CHAT_DEFAULTS,
+  CHAT_SOURCE,
+  ENDPOINT_LIST_REFRESH_MS,
+  SOURCE_HEADER,
+  TRACE_ID_HEADER,
+} from "../config";
 import type { Endpoint } from "../serving/endpoint";
 
 type Rating = "up" | "down";
@@ -194,7 +200,7 @@ async function streamAnswer(
     headers: {
       authorization: `Bearer ${endpoint.key}`,
       "content-type": "application/json",
-      "x-mlp-source": CHAT_SOURCE,
+      [SOURCE_HEADER]: CHAT_SOURCE,
     },
     body: JSON.stringify({
       model: endpoint.name,
@@ -210,7 +216,7 @@ async function streamAnswer(
 
   // 2. Its server-sent events, each adding to the answer and its reasoning.
   const answer: Turn = { role: "assistant", content: "", reasoning: "" };
-  answer.traceId = response.headers.get("x-mlp-trace-id") ?? undefined;
+  answer.traceId = response.headers.get(TRACE_ID_HEADER) ?? undefined;
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let pending = "";
   for (;;) {

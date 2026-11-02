@@ -7,8 +7,7 @@ from mlp_core import config
 
 
 def record_feedback(state, name: str, trace_id: str, rating: str, now: datetime) -> None:
-    """Stores the rating on the Endpoint's Request Trace, replacing an earlier one, and counts it
-    in its Stats History; LookupError unless the trace is one of the Endpoint's."""
+    """Stores the rating on the trace and in the history; LookupError unless it's the Endpoint's."""
     # 1. The trace, among the Endpoint's own only.
     registry = state.model_registry
     info = registry.trace_info(trace_id)
@@ -16,9 +15,9 @@ def record_feedback(state, name: str, trace_id: str, rating: str, now: datetime)
         raise LookupError(f"Endpoint {name} has no Request Trace {trace_id}")
 
     # 2. The vote as the trace's assessment, and as its tag the requests list filters on.
-    previous = info.get("tags", {}).get("rating")
-    registry.set_feedback(info, "rating", rating, "HUMAN")
-    registry.set_trace_tag(trace_id, "rating", rating)
+    previous = info.get("tags", {}).get(config.RATING)
+    registry.set_feedback(info, config.RATING, rating, "HUMAN")
+    registry.set_trace_tag(trace_id, config.RATING, rating)
 
     # 3. Counted in the day Run; a changed vote takes the old one back, so the sums stay right.
     if previous == rating:

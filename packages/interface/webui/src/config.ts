@@ -52,6 +52,7 @@ export const ENDPOINT_HISTORY_RETENTION_DAYS = 30;
 export const REQUEST_SOURCES = ["api", "chat"];
 export const REQUEST_STATUSES = ["ok", "error"];
 export const JUDGE_SCORES = [1, 5];
+export const FEEDBACK_FILTERS = ["up", "down", "none"];
 // KV cache usage, in percent, from which its bar turns amber and then red.
 export const KV_CACHE_WARNING_PERCENT = 70;
 export const KV_CACHE_DANGER_PERCENT = 90;
@@ -77,3 +78,6 @@ export const MODEL_REFERENCES = ["hf:", "model:", "endpoint:"];
 // What the Chat tab starts with, and the source its requests are traced with.
 export const CHAT_DEFAULTS = { system: "", temperature: "0.7", max_tokens: "1024" };
 export const CHAT_SOURCE = "chat";
+// The Endpoint Proxy's headers: the source a client tags its traces with, and the answer's trace.
+export const SOURCE_HEADER = "x-mlp-source";
+export const TRACE_ID_HEADER = "x-mlp-trace-id";

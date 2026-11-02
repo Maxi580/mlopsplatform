@@ -4,6 +4,7 @@ import { callApi, errorMessage, useApi } from "../api";
 import { endpointRequest, endpointRequests } from "../apiPaths";
 import {
   ENDPOINT_HISTORY_RETENTION_DAYS,
+  FEEDBACK_FILTERS,
   JUDGE_SCORES,
   REQUEST_SOURCES,
   REQUEST_STATUSES,
@@ -19,8 +20,8 @@ import {
 type Filters = Record<string, string>;
 type Order = "time" | "latency";
 
-/** Every request to the Endpoint, filtered, newest or slowest first, 50 at a time; a click on
- * one opens its full content in a drawer. */
+/** Every request to the Endpoint, filtered, newest or slowest first, a page at a time; a click
+ * on one opens its full content in a drawer. */
 export default function RequestsList({ name }: { name: string }) {
   const [filters, setFilters] = useState<Filters>({});
   const [order, setOrder] = useState<Order>("time");
@@ -60,11 +61,7 @@ export default function RequestsList({ name }: { name: string }) {
         <FilterInput label="To" type="datetime-local" onChange={filter("to")} />
         <FilterSelect label="Source" choices={REQUEST_SOURCES} onChange={filter("source")} />
         <FilterSelect label="Status" choices={REQUEST_STATUSES} onChange={filter("status")} />
-        <FilterSelect
-          label="Feedback"
-          choices={["up", "down", "none"]}
-          onChange={filter("rating")}
-        />
+        <FilterSelect label="Feedback" choices={FEEDBACK_FILTERS} onChange={filter("rating")} />
         <FilterInput label="Score from" type="number" onChange={filter("score_min")} />
         <FilterInput label="Score to" type="number" onChange={filter("score_max")} />
         <FilterInput label="Min latency (ms)" type="number" onChange={filter("min_latency_ms")} />

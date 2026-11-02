@@ -234,11 +234,15 @@ def endpoint_history(model_registry: MLflow, name: str, span: str, now: datetime
         for key, keys in latency_keys().items()
     }
 
-    # 4. Feedback summed, and Judge Scores averaged, per bucket of the span from every event.
+    # 4. Feedback summed, and Judge Scores averaged, per bucket of the span from every event;
+    # MLflow would sample a busy day's, which would skew the sums.
     def events(key: str, combine) -> list[list[float]]:
-        if not run_ids:
-            return []
-        every = model_registry.metric_history(run_ids, key, steps, config.ENDPOINT_EVENTS_PER_RUN)
+        every = [
+            (step, value)
+            for run_id in run_ids
+            for step, value in model_registry.every_metric_point(run_id, key)
+            if steps[0] <= step <= steps[1]
+        ]
         return bucketed(every, steps, combine)
 
     feedback = {

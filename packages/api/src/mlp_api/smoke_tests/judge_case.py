@@ -7,7 +7,7 @@ from mlp_api.endpoints.lifecycle import (
     stop_endpoint,
     traces_experiment_id,
 )
-from mlp_api.judge.judging import judge_once, set_endpoint_judging
+from mlp_api.judge.judging import Judging, judge_once, set_endpoint_judging
 from mlp_api.judge.lifecycle import save_judge_settings
 from mlp_api.judge.settings import JudgeSettings, judge_settings
 from mlp_api.smoke_tests.traces import is_traced_in_full
@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def judge_case_result(state, smoke_test: str, case: dict) -> str:
-    """Runs the Judge on the case's model until it answers on its Service and, given GPUs for an
-    Endpoint beside it, scores that Endpoint's answer; then switches judging back as it was.
-    Returns the case's result so far."""
+    """The judge case's result so far, as it runs the Judge, then switches judging back."""
     # 1. Judging on, with the case's model.
     settings = judge_settings(state.engine)
     spec = EndpointSpec(model=case["model"])
@@ -66,14 +64,14 @@ def judge_answers(state) -> bool:
 
 
 def judged_answer_result(state, name: str, case: dict) -> str:
-    """Starts the Endpoint, judged on every answer, then has it answer a chat request that the
-    Judge scores; returns the step's result so far, after which the Endpoint is stopped."""
+    """The result so far of an Endpoint, judged on every answer, getting its answer scored."""
     # 1. The Endpoint, started once.
     found = find_endpoint(state.engine, name)
     if found is None:
         try:
             start_endpoint(state, name, EndpointSpec(model=case["model"]))
-            set_endpoint_judging(state.engine, name, True, 1, 1, datetime.now(UTC))
+            judging = Judging(judged=True, every=1, max_per_hour=1)
+            set_endpoint_judging(state.engine, name, judging, datetime.now(UTC))
         except Exception:
             logger.exception("The Smoke Test's judged Endpoint %s did not start", name)
             return "failed"
@@ -98,7 +96,7 @@ def gets_a_judge_score(state, name: str) -> bool:
     except Exception:
         logger.exception("The Smoke Test's judged Endpoint %s got no Judge Score", name)
         return False
-    return "judge_score" in state.model_registry.trace_info(trace_id).get("tags", {})
+    return config.JUDGE_SCORE_TAG in state.model_registry.trace_info(trace_id).get("tags", {})
 
 
 def restore_judging(state, case: dict) -> None:

@@ -15,8 +15,7 @@ def endpoint_manifests(
     traces_experiment_id: str | None,
     routed: bool = True,
 ) -> dict[str, dict]:
-    """The Endpoint's Deployment, Service and, if routed, Traefik route, by kind; traced to the
-    experiment."""
+    """The Endpoint's Deployment, Service and, if routed, Traefik route, by kind."""
     object_name = config.ENDPOINT_OBJECT_NAME.format(name=name)
     labels = {config.ENDPOINT_LABEL: name}
     metadata = {"name": object_name, "namespace": environment.namespace, "labels": labels}

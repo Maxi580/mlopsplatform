@@ -11,7 +11,7 @@ class RequestTrace:
     def __init__(self, span: Span, body: bytes, source: str | None):
         self.span = span
         self.body = body
-        self.source = source if source in config.REQUEST_SOURCES else "api"
+        self.source = source if source in config.REQUEST_SOURCES else config.REQUEST_SOURCES[0]
         # The answer as it arrived: one JSON body, or a stream of server-sent events.
         self.answer = bytearray()
         self.trace_id = config.MLFLOW_TRACE_ID.format(

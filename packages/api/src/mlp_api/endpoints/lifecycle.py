@@ -134,8 +134,8 @@ def create_endpoint_objects(
 
 
 def traces_experiment_id(state, name: str) -> str | None:
-    """The ID of the experiment the Endpoint name's Request Traces go to, cached until its history
-    is deleted, as the Endpoint Key check asks for each request; None if MLflow is down."""
+    """The ID of the experiment the Endpoint's Request Traces go to; None if MLflow is down."""
+    # Cached until its history is deleted, as the Endpoint Key check asks for each request.
     if name not in state.endpoint_experiments:
         try:
             experiment = config.ENDPOINT_HISTORY_EXPERIMENT.format(name=name)

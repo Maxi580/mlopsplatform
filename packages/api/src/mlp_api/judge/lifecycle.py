@@ -14,8 +14,8 @@ judge_lock = threading.Lock()
 
 
 def save_judge_settings(state, settings: JudgeSettings) -> None:
-    """Stores the settings and starts, replaces or removes the Judge to match; ValueError if its
-    model can't be served, after which judging stays off."""
+    """Stores the settings and starts, replaces or removes the Judge to match."""
+    # A model that can't be served raises ValueError, after which judging stays off.
     with judge_lock:
         # 1. A new spec, or judging off, ends the Judge that runs; a new rubric alone doesn't.
         if not settings.enabled or settings.spec != judge_settings(state.engine).spec:

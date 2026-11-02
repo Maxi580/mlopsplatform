@@ -121,7 +121,7 @@ def test_the_key_check_tells_the_proxy_the_endpoints_vllm_and_experiment(
     assert response.headers["x-mlp-experiment"] == "endpoint/chat"
 
 
-def test_the_key_check_fails_while_the_experiment_is_unknown_and_mlflow_unreachable(
+def test_the_key_check_lets_requests_through_untraced_while_mlflow_is_unreachable(
     logged_in_api, qwen_on_the_hub, model_registry, monkeypatch
 ):
     def unreachable(name, create=True):
@@ -134,5 +134,6 @@ def test_the_key_check_fails_while_the_experiment_is_unknown_and_mlflow_unreacha
 
     response = logged_in_api.get(api_paths.VERIFY_ENDPOINT_KEY, headers=headers)
 
-    # Without both headers, Traefik would pass the client's own on to the proxy.
-    assert response.status_code == 503
+    # Always sent, or Traefik would pass the client's own on to the proxy.
+    assert response.status_code == 200
+    assert response.headers["x-mlp-experiment"] == "none"
