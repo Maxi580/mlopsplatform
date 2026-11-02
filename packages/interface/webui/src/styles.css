@@ -1520,3 +1520,41 @@ legend .switch-button {
   gap: 2px;
   font-size: 13px;
 }
+
+/* Chat */
+
+.chat-controls,
+.chat-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+.chat-turns {
+  display: grid;
+  margin: 12px 0;
+}
+
+.chat-code {
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-family: ui-monospace, monospace;
+}
+
+.chat-rating {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.chat-rating .chosen {
+  color: var(--accent);
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { LOGGED_OUT_EVENT } from "./api";
+import ChatPage from "./chat/ChatPage";
 import LoginPage from "./login/LoginPage";
 import NewPipelinePage from "./pipelines/NewPipelinePage";
 import PipelinesPage from "./pipelines/PipelinesPage";
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/storage" element={<StoragePage />} />
         <Route path="/serving" element={<ServingPage />} />
         <Route path="/serving/:name" element={<EndpointStatsPage />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

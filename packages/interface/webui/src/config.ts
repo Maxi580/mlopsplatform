@@ -74,3 +74,6 @@ export const REWARD_TEMPLATE = `def reward(sample, item):
 export const MODEL_SEARCH_DELAY_MS = 300;
 // The References that make a field a model picker; any other field taking `dataset:` is a Dataset's.
 export const MODEL_REFERENCES = ["hf:", "model:", "endpoint:"];
+// What the Chat tab starts with, and the source its requests are traced with.
+export const CHAT_DEFAULTS = { system: "", temperature: "0.7", max_tokens: "1024" };
+export const CHAT_SOURCE = "chat";

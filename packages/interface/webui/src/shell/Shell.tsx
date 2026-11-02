@@ -4,6 +4,7 @@ import {
   ExternalLink,
   HardDrive,
   LogOut,
+  MessageSquare,
   Plus,
   Server,
   UserRound,
@@ -41,6 +42,9 @@ export default function Shell() {
           </NavLink>
           <NavLink to="/serving">
             <Server size={18} /> Serving
+          </NavLink>
+          <NavLink to="/chat">
+            <MessageSquare size={18} /> Chat
           </NavLink>
           <p className="nav-heading">Tools</p>
           <a href={KUBEFLOW_UI_URL} target="_blank" rel="noreferrer">
