@@ -86,25 +86,31 @@ def endpoint_request(model_registry: MLflow, name: str, trace_id: str) -> dict:
     if not traces or trace_experiment_id(traces[0]["trace_info"]) != experiment_id:
         raise LookupError(f"Endpoint {name} has no Request Trace {trace_id}")
 
-    # 2. What the Endpoint Proxy recorded: the request, and the answer as vLLM gave it.
-    root = span_attributes(traces[0], config.REQUEST_TRACE_ROOT_SPAN) or {}
-    request = root.get(config.MLFLOW_SPAN_INPUTS) or {}
-    response = root.get(config.MLFLOW_SPAN_OUTPUTS) or {}
-    choice = (response.get("choices") or [{}])[0] if isinstance(response, dict) else {}
-    message = choice.get("message", {})
-
-    # 3. The Judge's reason beside its score.
+    # 2. Its content, and the Judge's reason beside its score.
     assessments = traces[0]["trace_info"].get("assessments", [])
     judged = [a for a in assessments if a["assessment_name"] == "judge"]
     return {
         **request_row(traces[0], experiment_id),
+        **request_content(traces[0]),
+        "judge_reason": judged[0].get("rationale") if judged else None,
+    }
+
+
+def request_content(trace: dict) -> dict:
+    """What the Endpoint Proxy recorded: the request's messages and tools, and the reasoning,
+    answer, tool calls and error of the answer as vLLM gave it."""
+    root = span_attributes(trace, config.REQUEST_TRACE_ROOT_SPAN) or {}
+    request = root.get(config.MLFLOW_SPAN_INPUTS) or {}
+    response = root.get(config.MLFLOW_SPAN_OUTPUTS) or {}
+    choice = (response.get("choices") or [{}])[0] if isinstance(response, dict) else {}
+    message = choice.get("message", {})
+    return {
         "messages": request_messages(request),
-        "tools": request.get("tools"),
+        "tools": request.get("tools") if isinstance(request, dict) else None,
         "reasoning": message.get("reasoning_content"),
         "answer": message.get("content", choice.get("text")),
         "tool_calls": message.get("tool_calls"),
         "error": root.get("error"),
-        "judge_reason": judged[0].get("rationale") if judged else None,
     }
 
 

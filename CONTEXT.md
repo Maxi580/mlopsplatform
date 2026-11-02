@@ -58,6 +58,10 @@ _Avoid_: Evaluator, grader
 A user's 👍 or 👎 on one answer, sent through the Endpoint's URL with its Endpoint Key and stored on its Request Trace; the latest vote counts. Counted per day in the Endpoint Stats History.
 _Avoid_: Rating (when meaning the whole concept), review
 
+**Judge Score**:
+The Judge's 1–5 rating of one answer, with its reason, stored on its Request Trace. An Endpoint opts in to have every Nth answer scored, up to a cap per hour; the average per bucket is part of its Endpoint Stats History.
+_Avoid_: Grade, eval score
+
 **Endpoint Proxy**:
 The one stateless service every Endpoint route goes through to the Endpoint's vLLM, after the Endpoint Key check; it records each chat and completion request in its Request Trace.
 _Avoid_: Gateway, router

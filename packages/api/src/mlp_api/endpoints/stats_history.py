@@ -1,4 +1,5 @@
 import logging
+import statistics
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
@@ -199,8 +200,8 @@ def round_ms(at: datetime) -> int:
 
 
 def endpoint_history(model_registry: MLflow, name: str, span: str, now: datetime) -> dict:
-    """The span's start, end, and [unix seconds, value] points per key, latencies by chart, and
-    Feedback per rating."""
+    """The span's start, end, and [unix seconds, value] points per key, latencies by chart,
+    Feedback per rating, and the average Judge Score."""
     # 1. The span's steps, and the day Runs it touches.
     start = now - config.ENDPOINT_HISTORY_SPANS[span]
     steps = (int(start.timestamp()), int(now.timestamp()))
@@ -233,15 +234,15 @@ def endpoint_history(model_registry: MLflow, name: str, span: str, now: datetime
         for key, keys in latency_keys().items()
     }
 
-    # 4. Feedback, summed per bucket of the span from every vote.
-    def sums(key: str) -> list[list[float]]:
+    # 4. Feedback summed, and Judge Scores averaged, per bucket of the span from every event.
+    def events(key: str, combine) -> list[list[float]]:
         if not run_ids:
             return []
         every = model_registry.metric_history(run_ids, key, steps, config.ENDPOINT_EVENTS_PER_RUN)
-        return bucketed(every, steps, sum)
+        return bucketed(every, steps, combine)
 
     feedback = {
-        rating: sums(config.FEEDBACK_METRIC.format(rating=rating))
+        rating: events(config.FEEDBACK_METRIC.format(rating=rating), sum)
         for rating in config.FEEDBACK_RATINGS
     }
     return {
@@ -250,6 +251,7 @@ def endpoint_history(model_registry: MLflow, name: str, span: str, now: datetime
         "values": values,
         "latencies": latencies,
         "feedback": feedback,
+        "judge_score": events(config.JUDGE_SCORE_METRIC, statistics.mean),
     }
 
 

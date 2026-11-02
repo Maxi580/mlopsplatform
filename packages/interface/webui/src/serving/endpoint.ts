@@ -13,9 +13,13 @@ export type Endpoint = {
   created_at: string;
   // The Judge, which the API runs while judging is enabled; users don't start or stop it.
   judge: boolean;
+  // Whether the Judge scores every `every`th answer, at most `max_per_hour`.
+  judging: Judging;
   // Null while it is pending, loading or unreachable.
   stats: EndpointStatsSummary | null;
 };
+
+export type Judging = { judged: boolean; every: number; max_per_hour: number };
 
 export type EndpointStatsSummary = {
   running: number;
@@ -50,7 +54,7 @@ export type Histogram = {
 
 // What `GET /endpoints/<name>/history` answers: per Server Sample key its [unix seconds, value]
 // points, the latencies' p50, p95 and mean by their chart, and the Feedback votes summed per
-// bucket of the span.
+// bucket of the span, and the Judge Scores averaged per bucket.
 export type Point = [number, number];
 export type EndpointHistory = {
   start: number;
@@ -58,6 +62,7 @@ export type EndpointHistory = {
   values: Record<string, Point[]>;
   latencies: Record<string, Record<string, Point[]>>;
   feedback: { up: Point[]; down: Point[] };
+  judge_score: Point[];
 };
 
 // A row of `GET /endpoints/<name>/requests`: one Request Trace, times in seconds, the sampling

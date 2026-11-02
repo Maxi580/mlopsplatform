@@ -202,6 +202,11 @@ def endpoint_summary(row, domain: str) -> dict:
         "key": row.key,
         "created_at": row.created_at.isoformat(),
         "judge": row.name == config.JUDGE_ENDPOINT_NAME,
+        "judging": {
+            "judged": row.judged,
+            "every": row.judge_every,
+            "max_per_hour": row.judge_max_per_hour,
+        },
     }
 
 

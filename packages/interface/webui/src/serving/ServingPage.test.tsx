@@ -68,6 +68,7 @@ const chat: Endpoint = {
   created_at: "2026-10-02T08:30:00+00:00",
   stats: null,
   judge: false,
+  judging: { judged: false, every: 10, max_per_hour: 60 },
 };
 const stats: EndpointStatsSummary = {
   running: 3,
@@ -535,4 +536,31 @@ test("the Judge's stored settings fill its form", async () => {
   await userEvent.click(screen.getByText("+ advanced"));
   // The Judge section comes before the start form.
   expect(screen.getAllByLabelText(/^Max Model Len/)[0]).toHaveDisplayValue("4096");
+});
+
+test("an Endpoint opts in to judging from its row, and says when the Judge is stopped", async () => {
+  const user = userEvent.setup();
+  const judged = { ...chat, judging: { judged: true, every: 10, max_per_hour: 60 } };
+  const calls = fakeApi({
+    ...routes,
+    "GET /endpoints": [200, [judged]],
+    "PUT /endpoints/chat/judging": [200, judged],
+  });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  expect(within(row).getByText("Judge stopped")).toBeInTheDocument();
+  await user.click(within(row).getByText("Judge"));
+  const every = within(row).getByLabelText("Every Nth answer");
+  await user.clear(every);
+  await user.type(every, "3");
+  await user.click(within(row).getByRole("button", { name: "Save" }));
+
+  await waitFor(() =>
+    expect(calls.find((call) => call.route === "PUT /endpoints/chat/judging")?.body).toEqual({
+      judged: true,
+      every: 3,
+      max_per_hour: 60,
+    }),
+  );
 });

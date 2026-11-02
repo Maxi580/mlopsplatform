@@ -23,6 +23,7 @@ from mlp_api import (
     storage_routes,
 )
 from mlp_api.auth.session import require_login
+from mlp_api.judge.judging import judge_forever
 from mlp_api.model_cache.janitor import evict_forever
 from mlp_api.models.mlflow import MLflow
 from mlp_api.pipelines.cluster import Cluster
@@ -49,6 +50,8 @@ async def lifespan(app: FastAPI):
     app.state.server_readings = {}
     app.state.endpoint_day_runs = {}
     app.state.endpoint_experiments = {}
+    # Endpoint name -> the hour and how many of its answers the Judge scored in it.
+    app.state.judgments = {}
     app.state.endpoint_history_trimmed_at = None
     app.state.cluster = Cluster()
     # Where steps put Base Models (HF_HOME) and benchmarks, mounted at the same path.
@@ -57,7 +60,7 @@ async def lifespan(app: FastAPI):
     create_tables(app.state.engine)
     fail_unsubmitted_pipelines(app.state.engine)
     stop = threading.Event()
-    for loop in (reconcile_forever, evict_forever):
+    for loop in (reconcile_forever, evict_forever, judge_forever):
         threading.Thread(target=loop, args=(app.state, stop), daemon=True).start()
     yield
     stop.set()

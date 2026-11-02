@@ -41,6 +41,7 @@ import {
   servingOptionsForm,
 } from "./endpoint";
 import JudgeSettings from "./JudgeSettings";
+import JudgingMenu from "./JudgingMenu";
 import SpeculatorPicker, { type Speculative } from "./SpeculatorPicker";
 
 type Notice = { text: string; failed: boolean };
@@ -48,6 +49,7 @@ type Notice = { text: string; failed: boolean };
 export default function ServingPage() {
   const endpoints = useApi<Endpoint[]>(ENDPOINTS, ENDPOINT_LIST_REFRESH_MS);
   const tokensPerSecond = useTokensPerSecond(endpoints.data);
+  const judgeRunning = !!endpoints.data?.some((found) => found.judge && found.status === "running");
   const [notice, setNotice] = useState<Notice>();
 
   async function stop(name: string) {
@@ -145,6 +147,11 @@ export default function ServingPage() {
                   key={`${endpoint.name}-${endpoint.created_at}`}
                   endpoint={endpoint}
                   tokensPerSecond={tokensPerSecond[endpoint.name]}
+                  judgeRunning={judgeRunning}
+                  onJudging={(text, failed) => {
+                    setNotice({ text, failed });
+                    endpoints.reload();
+                  }}
                   onStop={stop}
                   onRestart={restart}
                   onRefreshKey={refreshKey}
@@ -217,6 +224,8 @@ function useTokensPerSecond(endpoints?: Endpoint[]): Record<string, number | nul
 function EndpointRow({
   endpoint,
   tokensPerSecond,
+  judgeRunning,
+  onJudging,
   onStop,
   onRestart,
   onRefreshKey,
@@ -224,6 +233,8 @@ function EndpointRow({
 }: {
   endpoint: Endpoint;
   tokensPerSecond?: number | null;
+  judgeRunning: boolean;
+  onJudging: (text: string, failed: boolean) => void;
   onStop: (name: string) => void;
   onRestart: (name: string) => void;
   onRefreshKey: (name: string) => void;
@@ -250,6 +261,11 @@ function EndpointRow({
       </td>
       <td>
         <StatusBadge status={endpoint.status} />
+        {endpoint.judging.judged && !judgeRunning && (
+          <span className="badge status-stopped" title="Its answers wait until the Judge runs">
+            Judge stopped
+          </span>
+        )}
       </td>
       <td title={stats ? `${stats.running} running · ${stats.waiting} waiting` : undefined}>
         {stats ? `${stats.running} · ${stats.waiting}` : "—"}
@@ -276,18 +292,24 @@ function EndpointRow({
         )}
       </td>
       <td title={started}>{started.slice("YYYY-".length)}</td>
-      {managed ? <td /> : <EndpointActions {...{ endpoint, onRestart, onStop, onDelete }} />}
+      {managed ? (
+        <td />
+      ) : (
+        <EndpointActions {...{ endpoint, onJudging, onRestart, onStop, onDelete }} />
+      )}
     </tr>
   );
 }
 
 function EndpointActions({
   endpoint,
+  onJudging,
   onStop,
   onRestart,
   onDelete,
 }: {
   endpoint: Endpoint;
+  onJudging: (text: string, failed: boolean) => void;
   onStop: (name: string) => void;
   onRestart: (name: string) => void;
   onDelete: (name: string) => void;
@@ -295,6 +317,7 @@ function EndpointActions({
   const stopped = endpoint.status === "stopped";
   return (
     <td className="actions">
+      <JudgingMenu endpoint={endpoint} onSaved={onJudging} />
       {(stopped || endpoint.status === "failed") && (
         <button
           type="button"

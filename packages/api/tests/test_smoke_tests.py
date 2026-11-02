@@ -983,3 +983,28 @@ def test_a_finished_smoke_test_switches_judging_back_if_its_judge_case_never_did
 
     assert logged_in_api.get(api_paths.JUDGE).json()["enabled"] is False
     assert "judge" not in cluster.endpoints
+
+
+def test_on_two_gpus_the_judge_case_also_gets_an_endpoints_answer_scored(
+    logged_in_api, qwen_on_the_hub, cluster, model_registry
+):
+    logged_in_api.app.state.settings.gpu_count = 2
+    name = start(logged_in_api, {"serving": True}).json()["name"]
+    reconcile(logged_in_api)
+    cluster.endpoint_states["judge"] = "running"
+    cluster.metrics["judge"] = SERVED
+    content = json.dumps({"score": 5, "reason": "Friendly."})
+    cluster.answers["judge"] = {"choices": [{"message": {"content": content}}]}
+    reconcile(logged_in_api)
+    judged = f"{name}-judge"
+    waiting = smoke_test(logged_in_api)["cases"]["judge"]
+    cluster.endpoint_states[judged] = "running"
+    cluster.metrics[judged] = SERVED
+
+    reconcile(logged_in_api)
+
+    assert waiting == "pending"
+    assert smoke_test(logged_in_api)["cases"]["judge"] == "passed"
+    [trace] = model_registry.traces[f"endpoint/{judged}"]
+    assert trace["trace_info"]["tags"]["judge_score"] == "5"
+    assert judged not in cluster.endpoints

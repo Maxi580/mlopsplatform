@@ -94,6 +94,13 @@ const REQUEST_CHARTS: Chart[] = [
     format: count,
     bucketed: true,
   },
+  {
+    title: "Average judge score",
+    series: [{ label: "Score", color: "--accent", points: (history) => history.judge_score ?? [] }],
+    // Judge Scores run from 1 to 5.
+    format: (score: number | null) => (score == null ? "—" : `${score.toFixed(1)} / 5`),
+    bucketed: true,
+  },
 ];
 // The state of the vLLM server.
 const SERVER_CHARTS: Chart[] = [

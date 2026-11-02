@@ -549,6 +549,43 @@ ENDPOINT_KEY_BYTES = 32
 # The Judge: the one Endpoint the API runs itself while judging is enabled, under a name users
 # can't take; it has no route, and its answers aren't traced.
 JUDGE_ENDPOINT_NAME = "judge"
+# What a newly judged Endpoint starts with: every Nth Request Trace, at most this many an hour.
+JUDGE_EVERY = 10
+JUDGE_MAX_PER_HOUR = 60
+# How often the judging loop looks for traces to score, how many per Endpoint at most each time,
+# and how long it waits for one judgment.
+JUDGING_INTERVAL = timedelta(seconds=10)
+JUDGING_BATCH = 50
+JUDGING_TIMEOUT = timedelta(minutes=2)
+# What the Judge reads: the rubric, then the conversation, the reasoning labelled apart, and the
+# answer with its tool calls; it answers in JUDGE_RESPONSE_FORMAT.
+JUDGE_PROMPT = """{rubric}
+
+Score the assistant's answer from 1 to 5 and give your reason in one or two sentences.
+
+## Conversation
+{conversation}
+
+## The assistant's reasoning (its thinking, not shown to the user)
+{reasoning}
+
+## The assistant's answer
+{answer}"""
+JUDGE_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "judgment",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "score": {"type": "integer", "minimum": 1, "maximum": 5},
+                "reason": {"type": "string"},
+            },
+            "required": ["score", "reason"],
+        },
+    },
+}
+JUDGE_SCORE_METRIC = "judge_score"
 JUDGE_RUBRIC = (
     "Rate how well the assistant's answer serves the user's last message: 5 is correct, complete"
     " and helpful; 3 is partly right or partly helpful; 1 is wrong, harmful or off-topic. Judge"
@@ -945,8 +982,9 @@ SMOKE_TEST_SPECULATE_SETTINGS = {
 # Serves the Base Model drafting with n-gram, which needs no Speculator.
 SMOKE_TEST_NGRAM_CASE = "serve-ngram"
 SMOKE_TEST_NGRAM = {"method": "ngram", "prompt_lookup_min": 2, "prompt_lookup_max": 4}
-# Runs the Judge on the Base Model, checks it answers on its Service, then switches judging back
-# as it was.
+# Runs the Judge on the Base Model and checks it answers on its Service; on two GPUs or more it
+# also serves the Base Model judged on every answer and checks one gets a Judge Score. Then it
+# switches judging back as it was.
 SMOKE_TEST_JUDGE_CASE = "judge"
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
 # uploaded tiny full-weight model, the Adapter of the first finetune case that keeps one, the

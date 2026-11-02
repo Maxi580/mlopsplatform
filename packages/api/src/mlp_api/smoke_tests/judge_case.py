@@ -1,17 +1,26 @@
 import logging
+from datetime import UTC, datetime
 
-from mlp_api.endpoints.lifecycle import find_endpoint
+from mlp_api.endpoints.lifecycle import (
+    find_endpoint,
+    start_endpoint,
+    stop_endpoint,
+    traces_experiment_id,
+)
+from mlp_api.judge.judging import judge_once, set_endpoint_judging
 from mlp_api.judge.lifecycle import save_judge_settings
 from mlp_api.judge.settings import JudgeSettings, judge_settings
+from mlp_api.smoke_tests.traces import is_traced_in_full
 from mlp_core import config
 from mlp_core.endpoint_spec import EndpointSpec
 
 logger = logging.getLogger(__name__)
 
 
-def judge_case_result(state, case: dict) -> str:
-    """Runs the Judge on the case's model until it answers on its Service, then switches judging
-    back as it was; returns the case's result so far."""
+def judge_case_result(state, smoke_test: str, case: dict) -> str:
+    """Runs the Judge on the case's model until it answers on its Service and, given GPUs for an
+    Endpoint beside it, scores that Endpoint's answer; then switches judging back as it was.
+    Returns the case's result so far."""
     # 1. Judging on, with the case's model.
     settings = judge_settings(state.engine)
     spec = EndpointSpec(model=case["model"])
@@ -29,7 +38,14 @@ def judge_case_result(state, case: dict) -> str:
         return "pending"
     passed = found.status == "running" and judge_answers(state)
 
-    # 3. Judging as it was; switched off, the Judge is gone.
+    # 3. An Endpoint judged every answer, once one runs beside the Judge.
+    if passed and state.settings.gpu_count >= 2:
+        judged = judged_answer_result(state, f"{smoke_test}-{config.SMOKE_TEST_JUDGE_CASE}", case)
+        if judged == "pending":
+            return "pending"
+        passed = judged == "passed"
+
+    # 4. Judging as it was; switched off, the Judge is gone.
     restore_judging(state, case)
     restored = JudgeSettings.model_validate(case["restore"])
     gone = find_endpoint(state.engine, config.JUDGE_ENDPOINT_NAME) is None
@@ -47,6 +63,42 @@ def judge_answers(state) -> bool:
     except Exception:
         logger.exception("The Smoke Test's Judge did not answer a chat request")
         return False
+
+
+def judged_answer_result(state, name: str, case: dict) -> str:
+    """Starts the Endpoint, judged on every answer, then has it answer a chat request that the
+    Judge scores; returns the step's result so far, after which the Endpoint is stopped."""
+    # 1. The Endpoint, started once.
+    found = find_endpoint(state.engine, name)
+    if found is None:
+        try:
+            start_endpoint(state, name, EndpointSpec(model=case["model"]))
+            set_endpoint_judging(state.engine, name, True, 1, 1, datetime.now(UTC))
+        except Exception:
+            logger.exception("The Smoke Test's judged Endpoint %s did not start", name)
+            return "failed"
+        return "pending"
+    if found.status == "pending":
+        return "pending"
+
+    # 2. Its answer, traced in full, then scored by a judging round.
+    passed = found.status == "running" and gets_a_judge_score(state, name)
+    if found.status != "stopped":
+        stop_endpoint(state.engine, state.cluster, name)
+    return "passed" if passed else "failed"
+
+
+def gets_a_judge_score(state, name: str) -> bool:
+    try:
+        request = config.SMOKE_TEST_CHAT_REQUEST
+        trace_id = state.cluster.send_chat_request(name, request, traces_experiment_id(state, name))
+        if not is_traced_in_full(state.model_registry, trace_id, request):
+            return False
+        judge_once(state, datetime.now(UTC))
+    except Exception:
+        logger.exception("The Smoke Test's judged Endpoint %s got no Judge Score", name)
+        return False
+    return "judge_score" in state.model_registry.trace_info(trace_id).get("tags", {})
 
 
 def restore_judging(state, case: dict) -> None:

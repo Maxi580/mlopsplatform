@@ -33,6 +33,7 @@ export const endpointByName = (name: string) => `/endpoints/${name}`;
 export const stopEndpoint = (name: string) => `${endpointByName(name)}/stop`;
 export const restartEndpoint = (name: string) => `${endpointByName(name)}/restart`;
 export const refreshEndpointKey = (name: string) => `${endpointByName(name)}/refresh-key`;
+export const endpointJudging = (name: string) => `${endpointByName(name)}/judging`;
 export const modelCacheEntry = (reference: string) =>
   `${MODEL_CACHE}?reference=${encodeURIComponent(reference)}`;
 export const endpointStats = (name: string) => `/endpoints/${name}/stats`;

@@ -42,6 +42,7 @@ ENDPOINT_HISTORY = "/endpoints/{name}/history"
 ENDPOINT_REQUESTS = "/endpoints/{name}/requests"
 ENDPOINT_REQUEST = "/endpoints/{name}/requests/{trace_id}"
 REFRESH_ENDPOINT_KEY = "/endpoints/{name}/refresh-key"
+ENDPOINT_JUDGING = "/endpoints/{name}/judging"
 JUDGE = "/judge"
 # Under an Endpoint's own URL and opened by its Endpoint Key; its route goes to the API.
 ENDPOINT_FEEDBACK = "/serving/{uuid}/v1/feedback"

@@ -50,6 +50,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
     monkeypatch.setattr(config, "EVICTION_INTERVAL", timedelta(days=1))
+    monkeypatch.setattr(config, "JUDGING_INTERVAL", timedelta(days=1))
     return database
 
 

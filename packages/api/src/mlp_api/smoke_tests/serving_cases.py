@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -11,11 +10,11 @@ from mlp_api.endpoints.lifecycle import (
     stop_endpoint,
     traces_experiment_id,
 )
-from mlp_api.endpoints.request_traces import span_attributes
 from mlp_api.endpoints.stats import curated_values, fetch_endpoint_stats
 from mlp_api.pipelines.lifecycle import pipeline, set_pipeline, unfinished
 from mlp_api.smoke_tests.judge_case import judge_case_result
 from mlp_api.smoke_tests.lifecycle import is_smoke_test
+from mlp_api.smoke_tests.traces import is_traced_in_full
 from mlp_core import config
 from mlp_core.endpoint_spec import EndpointSpec
 
@@ -38,7 +37,7 @@ def run_serving_cases(state) -> None:
             if cases.get(case) != "pending":
                 continue
             if case == config.SMOKE_TEST_JUDGE_CASE:
-                cases[case] = judge_case_result(state, row.request[case])
+                cases[case] = judge_case_result(state, row.name, row.request[case])
             else:
                 name = f"{row.name}-{case}"
                 cases[case] = serving_case_result(state, name, row.request[case], cases, endpoints)
@@ -105,23 +104,3 @@ def counts_a_chat_request(state, name: str) -> bool:
     info = state.model_registry.trace_info(trace_id)
     rated = [a for a in info.get("assessments", []) if a["assessment_name"] == "rating"]
     return info["tags"].get("rating") == "up" and bool(rated)
-
-
-def is_traced_in_full(model_registry, trace_id: str, request: dict) -> bool:
-    """Whether the trace holds the request's prompt, an answer, and vLLM's span inside it, within
-    SMOKE_TEST_TRACE_TIMEOUT, as the proxy and vLLM export in the background."""
-    deadline = time.monotonic() + config.SMOKE_TEST_TRACE_TIMEOUT.total_seconds()
-    while True:
-        for trace in model_registry.batch_get_traces([trace_id]):
-            root = span_attributes(trace, config.REQUEST_TRACE_ROOT_SPAN) or {}
-            answer = (root.get(config.MLFLOW_SPAN_OUTPUTS) or {}).get("choices") or [{}]
-            if (
-                (root.get(config.MLFLOW_SPAN_INPUTS) or {}).get("messages") == request["messages"]
-                and answer[0].get("message", {}).get("content")
-                and span_attributes(trace, config.REQUEST_TRACE_SPAN) is not None
-            ):
-                return True
-        if time.monotonic() > deadline:
-            logger.error("Smoke Test trace %s did not arrive in full", trace_id)
-            return False
-        time.sleep(config.SMOKE_TEST_TRACE_POLL_INTERVAL.total_seconds())

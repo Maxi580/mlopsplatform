@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mlp_api.endpoints.feedback import record_feedback
 from mlp_api.endpoints.keys import endpoint_opened_by, refresh_endpoint_key
@@ -21,6 +21,7 @@ from mlp_api.endpoints.lifecycle import (
 from mlp_api.endpoints.request_traces import RequestFilters, endpoint_request, endpoint_requests
 from mlp_api.endpoints.stats import endpoint_stats_summary, fetch_endpoint_stats
 from mlp_api.endpoints.stats_history import endpoint_history
+from mlp_api.judge.judging import set_endpoint_judging
 from mlp_api.pipelines.compiler import endpoint_service_url
 from mlp_core import api_paths, config
 from mlp_core.endpoint_spec import EndpointName, EndpointSpec
@@ -178,6 +179,24 @@ def verify_endpoint_key(request: Request, response: Response) -> dict:
     response.headers[config.PROXY_UPSTREAM_HEADER] = endpoint_service_url(name, namespace)
     response.headers[config.PROXY_EXPERIMENT_HEADER] = experiment_id
     return {}
+
+
+class Judging(BaseModel):
+    judged: bool
+    every: int = Field(config.JUDGE_EVERY, ge=1)
+    max_per_hour: int = Field(config.JUDGE_MAX_PER_HOUR, ge=1)
+
+
+@router.put(api_paths.ENDPOINT_JUDGING)
+def judging(name: str, judging: Judging, request: Request) -> dict:
+    refuse_the_judge(name)
+    engine = request.app.state.engine
+    try:
+        set_endpoint_judging(engine, name, **judging.model_dump(), now=datetime.now(UTC))
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    domain = request.app.state.cluster.endpoint_environment.domain
+    return endpoint_summary(find_endpoint(engine, name), domain)
 
 
 class Feedback(BaseModel):

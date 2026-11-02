@@ -1,6 +1,7 @@
-from sqlalchemy import JSON, Column, DateTime, Integer, String, Table
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Table
 
 from mlp_api.storage.database import metadata
+from mlp_core import config
 
 endpoint = Table(
     "endpoint",
@@ -19,5 +20,12 @@ endpoint = Table(
     Column("gpus", Integer, nullable=False),
     Column("status", String, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    # Whether the Judge scores every `judge_every`th of its Request Traces since `judging_since`,
+    # at most `judge_max_per_hour`; `judge_count` counts the traces seen, so a restart goes on.
+    Column("judged", Boolean, nullable=False, default=False),
+    Column("judge_every", Integer, nullable=False, default=config.JUDGE_EVERY),
+    Column("judge_max_per_hour", Integer, nullable=False, default=config.JUDGE_MAX_PER_HOUR),
+    Column("judging_since", DateTime(timezone=True)),
+    Column("judge_count", Integer, nullable=False, default=0),
 )
 not_stopped = endpoint.c.status != "stopped"

@@ -81,6 +81,7 @@ const history: EndpointHistory = {
     time_to_first_token: { p50: [[1800, 0.3]], p95: [[1800, 0.48]], mean: [[1800, 0.3]] },
   },
   feedback: { up: [[1500, 3]], down: [[1500, 1]] },
+  judge_score: [[1500, 3.5]],
 };
 
 const routes: Record<string, [number, unknown]> = {
@@ -299,4 +300,14 @@ test("the feedback chart shows the votes per bucket", async () => {
 
   const votes = await screen.findByRole("heading", { name: "👍/👎" });
   expect(within(votes.closest("figure")!).getByText("👍").closest("div")).toHaveTextContent("3");
+});
+
+test("the average judge score chart shows the scores per bucket", async () => {
+  fakeApi({ ...routes });
+  renderApp("/serving/chat");
+
+  const scores = await screen.findByRole("heading", { name: "Average judge score" });
+  expect(within(scores.closest("figure")!).getByText("Score").closest("div")).toHaveTextContent(
+    "3.5 / 5",
+  );
 });
