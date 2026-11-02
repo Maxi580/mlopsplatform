@@ -22,7 +22,8 @@ class SmokeTestSelection(Strict):
     sandbox: bool = False
     # Uploads a tiny model and trains an sft/lora/hf Phase from it.
     uploaded_model: bool = False
-    # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints.
+    # Serves the Base Model, the tiny model and, with a finetune case, its Adapter on Endpoints,
+    # and runs the Judge.
     serving: bool = False
     # Evaluates the Base Model on a benchmark and on a coding benchmark of each harness, and, with
     # a finetune case, its Adapter.
@@ -245,6 +246,7 @@ def serving_cases(
         base: {"model": base_model},
         full_weights: {"model": uploaded_model},
         config.SMOKE_TEST_NGRAM_CASE: {"model": base_model, "speculative": config.SMOKE_TEST_NGRAM},
+        config.SMOKE_TEST_JUDGE_CASE: {"model": base_model},
     }
     for case in speculations:
         speculator = config.SMOKE_TEST_SPECULATE_CASES[case]

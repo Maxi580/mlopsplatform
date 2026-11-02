@@ -144,9 +144,11 @@ class Cluster:
             namespace, manifests["deployment"]
         )
         self.kubernetes.create_namespaced_service(namespace, manifests["service"])
-        client.CustomObjectsApi(self.kubernetes_client).create_namespaced_custom_object(
-            **config.INGRESS_ROUTE_RESOURCE, namespace=namespace, body=manifests["route"]
-        )
+        # The Judge has none.
+        if "route" in manifests:
+            client.CustomObjectsApi(self.kubernetes_client).create_namespaced_custom_object(
+                **config.INGRESS_ROUTE_RESOURCE, namespace=namespace, body=manifests["route"]
+            )
 
     def delete_endpoint(self, name: str) -> None:
         """Deletes whichever of the Endpoint's Deployment, Service and route exist."""
@@ -201,6 +203,15 @@ class Cluster:
         response = httpx.get(url, timeout=timeout)
         response.raise_for_status()
         return response.text
+
+    def ask_endpoint(self, name: str, request: dict, timeout: float) -> dict:
+        """The Endpoint's answer to a chat completion request, sent to its Service directly."""
+        url = endpoint_service_url(name, self.endpoint_environment.namespace)
+        response = httpx.post(
+            f"{url}/v1/chat/completions", json={"model": name, **request}, timeout=timeout
+        )
+        response.raise_for_status()
+        return response.json()
 
     def send_chat_request(self, name: str, request: dict, experiment_id: str) -> str:
         """The trace ID of one chat completion request the Endpoint answered through the Endpoint

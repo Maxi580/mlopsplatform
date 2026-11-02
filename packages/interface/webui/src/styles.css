@@ -1387,3 +1387,22 @@ legend .switch-button {
   padding: 0;
   border: 0;
 }
+
+/* Judge settings */
+
+.judge-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.judge-advanced {
+  margin: 12px 0;
+}
+
+.judge-advanced summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}

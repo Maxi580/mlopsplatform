@@ -304,7 +304,7 @@ def test_the_route_serves_the_endpoint_url_under_its_uuid(logged_in_api, qwen_on
     [uuid] = re.fullmatch(pattern, started["url"]).groups()
     [route] = cluster.endpoints["chat"]["route"]["spec"]["routes"]
     assert route["match"] == f"Host(`platform.test`) && PathPrefix(`/serving/{uuid}/`)"
-    assert route["services"] == [{"name": "endpoint-chat", "port": 8000}]
+    assert route["services"] == [{"name": "proxy", "port": "http"}]
 
 
 # A route under an Endpoint's prefix would reach its vLLM instead of the API while it runs.

@@ -34,9 +34,12 @@ def sample_endpoint_stats(state, now: datetime) -> None:
         list(pool.map(lambda name: sample_endpoint(state, name, now), names))
 
 
+# The Judge has no Stats History.
 def running_endpoint_names(engine: Engine) -> list[str]:
     with engine.connect() as connection:
-        query = select(endpoint.c.name).where(endpoint.c.status == "running")
+        query = select(endpoint.c.name).where(
+            endpoint.c.status == "running", endpoint.c.name != config.JUDGE_ENDPOINT_NAME
+        )
         return list(connection.scalars(query))
 
 

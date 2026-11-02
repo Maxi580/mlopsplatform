@@ -40,3 +40,4 @@ export const endpointHistory = (name: string, span: string) =>
   `/endpoints/${name}/history?span=${span}`;
 export const endpointRequests = (name: string, span: string) =>
   `/endpoints/${name}/requests?span=${span}`;
+export const JUDGE = "/judge";

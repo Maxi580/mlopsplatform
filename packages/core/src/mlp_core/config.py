@@ -546,6 +546,14 @@ ENDPOINT_ROUTE_MIDDLEWARES = ("endpoint-key", "endpoint-strip-prefix")
 ENDPOINT_PROXY_SERVICE = {"name": "proxy", "port": "http"}
 # Random bytes in an Endpoint Key.
 ENDPOINT_KEY_BYTES = 32
+# The Judge: the one Endpoint the API runs itself while judging is enabled, under a name users
+# can't take; it has no route, and its answers aren't traced.
+JUDGE_ENDPOINT_NAME = "judge"
+JUDGE_RUBRIC = (
+    "Rate how well the assistant's answer serves the user's last message: 5 is correct, complete"
+    " and helpful; 3 is partly right or partly helpful; 1 is wrong, harmful or off-topic. Judge"
+    " the answer and its tool calls, not the reasoning's style."
+)
 # Traefik's IngressRoute resource: its API group, version and plural.
 INGRESS_ROUTE_RESOURCE = {"group": "traefik.io", "version": "v1alpha1", "plural": "ingressroutes"}
 VLLM_PORT = 8000
@@ -924,6 +932,9 @@ SMOKE_TEST_SPECULATE_SETTINGS = {
 # Serves the Base Model drafting with n-gram, which needs no Speculator.
 SMOKE_TEST_NGRAM_CASE = "serve-ngram"
 SMOKE_TEST_NGRAM = {"method": "ngram", "prompt_lookup_min": 2, "prompt_lookup_max": 4}
+# Runs the Judge on the Base Model, checks it answers on its Service, then switches judging back
+# as it was.
+SMOKE_TEST_JUDGE_CASE = "judge"
 # Each starts an Endpoint, passes once vLLM is ready, and stops it: serving the Base Model, the
 # uploaded tiny full-weight model, the Adapter of the first finetune case that keeps one, the
 # merged QLoRA model, the Base Model quantized with each scheme, and the Base Model with n-gram
@@ -936,6 +947,7 @@ SMOKE_TEST_SERVING_CASES = (
     *(f"serve-quantize-{scheme}" for scheme in QUANTIZATION_SCHEMES),
     SMOKE_TEST_NGRAM_CASE,
     *(f"serve-{case}" for case in SMOKE_TEST_SPECULATE_CASES),
+    SMOKE_TEST_JUDGE_CASE,
 )
 # Each serving case's Endpoint answers one real chat request, which its stats must then count.
 SMOKE_TEST_CHAT_REQUEST = {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 8}

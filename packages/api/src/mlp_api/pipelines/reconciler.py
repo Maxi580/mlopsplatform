@@ -7,6 +7,7 @@ from sqlalchemy import Engine, select
 from mlp_api.endpoints.history_retention import trim_endpoint_history
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
 from mlp_api.endpoints.stats_history import sample_endpoint_stats
+from mlp_api.judge.lifecycle import reconcile_judge
 from mlp_api.pipelines.lifecycle import pipeline, pipeline_secret_name, set_pipeline, unfinished
 from mlp_api.pipelines.mlflow_run import log_pipeline_request
 from mlp_api.smoke_tests.cases import case_results, has_pending_serving_cases
@@ -31,6 +32,11 @@ def reconcile_once(state) -> None:
     now = datetime.now(UTC)
     reconcile_pipelines(state)
     reconcile_endpoints(state.engine, state.cluster)
+    try:
+        reconcile_judge(state)
+    except Exception:
+        # The rest of the round goes on; the next one tries again.
+        logger.exception("Keeping the Judge running failed")
     sample_endpoint_stats(state, now)
     trim_endpoint_history(state, now)
     run_serving_cases(state)

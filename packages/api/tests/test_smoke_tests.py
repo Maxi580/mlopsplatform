@@ -43,6 +43,7 @@ SERVING_CASES = [
     *(f"serve-{case}" for case in QUANTIZE_CASES),
     "serve-ngram",
     *(f"serve-{case}" for case in SPECULATE_CASES),
+    "judge",
 ]
 # Every Phase algorithm with every method of the `hf` backend, and those `unsloth` trains.
 UNSLOTH = {"sft", "dpo", "kto", "grpo-lora", "grpo-qlora", "rloo-lora", "rloo-qlora"}
@@ -695,9 +696,9 @@ def test_cancelling_a_smoke_test_fails_its_unfinished_cases(
 
 
 def running_endpoints(api) -> dict[str, str]:
-    """Each Endpoint that isn't stopped, by name, with the model it serves."""
+    """Each Endpoint that isn't stopped, but the Judge, by name, with the model it serves."""
     listed = api.get(api_paths.ENDPOINTS).json()
-    return {e["name"]: e["model"] for e in listed if e["status"] != "stopped"}
+    return {e["name"]: e["model"] for e in listed if e["status"] != "stopped" and not e["judge"]}
 
 
 def test_the_complete_smoke_test_serves_the_base_model_and_the_uploaded_full_weights(
@@ -737,7 +738,12 @@ def test_a_custom_smoke_test_can_serve_without_finetuning(logged_in_api, qwen_on
 
     reconcile(logged_in_api)
 
-    assert list(smoke_test(logged_in_api)["cases"]) == ["fetch", *SERVING_CASES[:2], "serve-ngram"]
+    assert list(smoke_test(logged_in_api)["cases"]) == [
+        "fetch",
+        *SERVING_CASES[:2],
+        "serve-ngram",
+        "judge",
+    ]
     assert list(running_endpoints(logged_in_api)) == [
         f"{name}-serve-ngram",
         f"{name}-serve-full-weights",
@@ -786,7 +792,8 @@ def test_a_serving_case_passes_once_its_endpoint_answered_a_chat_request_and_the
     served = f"{name}-serve-base-model"
     # Through the Endpoint Proxy, traced to the Endpoint's experiment.
     assert cluster.chat_requests == [(served, config.SMOKE_TEST_CHAT_REQUEST, f"endpoint/{served}")]
-    assert cluster.endpoints == {}
+    # Only the judge case's Judge still runs.
+    assert list(cluster.endpoints) == ["judge"]
 
 
 @pytest.mark.parametrize("lost", ["endpoint_request", "llm_request"])
@@ -853,9 +860,11 @@ def test_a_smoke_test_finishes_once_its_serving_cases_did(
 
     reconcile(logged_in_api)
     waiting = smoke_test(logged_in_api)["status"]
-    for case in SERVING_CASES:
+    for case in SERVING_CASES[:-1]:
         cluster.endpoint_states[f"{name}-{case}"] = "running"
         cluster.metrics[f"{name}-{case}"] = SERVED
+    cluster.endpoint_states["judge"] = "running"
+    cluster.metrics["judge"] = SERVED
     reconcile(logged_in_api)
     reconcile(logged_in_api)
 
@@ -926,3 +935,51 @@ def test_a_smoke_test_without_distill_or_sweep_has_no_secret(
     start(logged_in_api, WITHOUT_SERVING)
 
     assert cluster.secrets == {}
+
+
+def test_the_judge_case_runs_the_judge_on_the_base_model_then_switches_judging_back_off(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, {"serving": True})
+    reconcile(logged_in_api)
+    started = logged_in_api.get(api_paths.JUDGE).json()
+    cluster.endpoint_states["judge"] = "running"
+    cluster.metrics["judge"] = SERVED
+
+    reconcile(logged_in_api)
+
+    assert (started["enabled"], started["model"]) == (True, f"hf:{QWEN}@{COMMIT}")
+    assert smoke_test(logged_in_api)["cases"]["judge"] == "passed"
+    assert cluster.asked == [("judge", config.SMOKE_TEST_CHAT_REQUEST)]
+    judge = logged_in_api.get(api_paths.JUDGE).json()
+    assert (judge["enabled"], judge["status"]) == (False, None)
+    assert "judge" not in cluster.endpoints
+
+
+def test_the_judge_case_fails_unless_the_judge_answers_and_keeps_the_users_judging(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    users = {"enabled": False, "spec": {"model": f"hf:{QWEN}"}, "rubric": "Mine."}
+    logged_in_api.put(api_paths.JUDGE, json=users)
+    start(logged_in_api, {"serving": True})
+    reconcile(logged_in_api)
+    cluster.endpoint_states["judge"] = "running"
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["judge"] == "failed"
+    judge = logged_in_api.get(api_paths.JUDGE).json()
+    assert {key: judge[key] for key in users} == users
+
+
+def test_a_finished_smoke_test_switches_judging_back_if_its_judge_case_never_did(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, {"serving": True})
+    reconcile(logged_in_api)
+    logged_in_api.post(api_paths.CANCEL_PIPELINE.format(id=smoke_test(logged_in_api)["id"]))
+
+    reconcile(logged_in_api)
+
+    assert logged_in_api.get(api_paths.JUDGE).json()["enabled"] is False
+    assert "judge" not in cluster.endpoints

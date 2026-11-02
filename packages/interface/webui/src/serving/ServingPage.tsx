@@ -20,7 +20,6 @@ import {
   stopEndpoint,
 } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
-import type { AccelerationBenchmark } from "../fields/AccelerationBenchmark";
 import { NO_CATALOG } from "../fields/catalog";
 import ModelPicker from "../fields/ModelPicker";
 import FormSectionView from "../pipelines/FormSectionView";
@@ -28,21 +27,23 @@ import {
   type FieldError,
   type FormSection,
   type FormValues,
-  pipelineForm,
   pipelineRequestFromForm,
   placeErrors,
 } from "../pipelines/pipelineForm";
 import StatusBadge from "../pipelines/StatusBadge";
 import type { RegisteredModel } from "../storage/storage";
 import CopyValue from "./CopyValue";
-import { type Endpoint, formatSeconds, ratePerSecond } from "./endpoint";
+import {
+  type Endpoint,
+  formatSeconds,
+  type PublishedSchema,
+  ratePerSecond,
+  servingOptionsForm,
+} from "./endpoint";
+import JudgeSettings from "./JudgeSettings";
 import SpeculatorPicker, { type Speculative } from "./SpeculatorPicker";
 
 type Notice = { text: string; failed: boolean };
-type PublishedSchema = {
-  $defs: Record<string, Record<string, unknown>>;
-  acceleration_benchmark?: AccelerationBenchmark;
-};
 
 export default function ServingPage() {
   const endpoints = useApi<Endpoint[]>(ENDPOINTS, ENDPOINT_LIST_REFRESH_MS);
@@ -156,6 +157,20 @@ export default function ServingPage() {
       )}
 
       <section className="storage-section">
+        <h2>Judge</h2>
+        <p className="muted">
+          One vLLM server that scores the answers of the Endpoints that opt in; it runs while
+          judging is enabled, on the platform's GPUs per Endpoint.
+        </p>
+        <JudgeSettings
+          onSaved={(text, failed) => {
+            setNotice({ text, failed });
+            endpoints.reload();
+          }}
+        />
+      </section>
+
+      <section className="storage-section">
         <h2>Start an Endpoint</h2>
         <p className="muted">
           Any Model Version or Base Model, optionally drafting with n-gram or a Speculator; GPUs
@@ -215,13 +230,19 @@ function EndpointRow({
   onDelete: (name: string) => void;
 }) {
   const stopped = endpoint.status === "stopped";
+  // The API starts and stops the Judge as judging is switched, and only it calls the Judge.
+  const managed = endpoint.judge;
   const { stats } = endpoint;
   const started = endpoint.created_at.slice(0, 16).replace("T", " ");
   return (
     <tr>
       <td className="pipeline-name" title={endpoint.name}>
         <span className="cut-off-name">
-          <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>
+          {managed ? (
+            <strong>Judge</strong>
+          ) : (
+            <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>
+          )}
         </span>
       </td>
       <td className="cut-off">
@@ -235,9 +256,11 @@ function EndpointRow({
       </td>
       <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
       <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
-      <td className="cut-off">{!stopped && <CopyValue label="URL" value={endpoint.url} />}</td>
+      <td className="cut-off">
+        {!stopped && !managed && <CopyValue label="URL" value={endpoint.url} />}
+      </td>
       <td>
-        {!stopped && (
+        {!stopped && !managed && (
           <span className="copy-value">
             <CopyValue label="Endpoint Key" value={endpoint.key} hidden />
             <button
@@ -253,38 +276,51 @@ function EndpointRow({
         )}
       </td>
       <td title={started}>{started.slice("YYYY-".length)}</td>
-      <td className="actions">
-        {(stopped || endpoint.status === "failed") && (
-          <button
-            type="button"
-            className="button ghost small"
-            onClick={() => onRestart(endpoint.name)}
-          >
-            <RotateCcw size={14} /> Restart
-          </button>
-        )}
-        {stopped ? (
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`Delete ${endpoint.name}`}
-            title={`Delete ${endpoint.name}`}
-            onClick={() => onDelete(endpoint.name)}
-          >
-            <Trash2 size={16} />
-          </button>
-        ) : (
-          // A failed Endpoint's Stop clears its Kubernetes objects; only a stopped one is deleted.
-          <button
-            type="button"
-            className="button ghost small"
-            onClick={() => onStop(endpoint.name)}
-          >
-            <Square size={14} /> Stop
-          </button>
-        )}
-      </td>
+      {managed ? <td /> : <EndpointActions {...{ endpoint, onRestart, onStop, onDelete }} />}
     </tr>
+  );
+}
+
+function EndpointActions({
+  endpoint,
+  onStop,
+  onRestart,
+  onDelete,
+}: {
+  endpoint: Endpoint;
+  onStop: (name: string) => void;
+  onRestart: (name: string) => void;
+  onDelete: (name: string) => void;
+}) {
+  const stopped = endpoint.status === "stopped";
+  return (
+    <td className="actions">
+      {(stopped || endpoint.status === "failed") && (
+        <button
+          type="button"
+          className="button ghost small"
+          onClick={() => onRestart(endpoint.name)}
+        >
+          <RotateCcw size={14} /> Restart
+        </button>
+      )}
+      {stopped ? (
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={`Delete ${endpoint.name}`}
+          title={`Delete ${endpoint.name}`}
+          onClick={() => onDelete(endpoint.name)}
+        >
+          <Trash2 size={16} />
+        </button>
+      ) : (
+        // A failed Endpoint's Stop clears its Kubernetes objects; only a stopped one is deleted.
+        <button type="button" className="button ghost small" onClick={() => onStop(endpoint.name)}>
+          <Square size={14} /> Stop
+        </button>
+      )}
+    </td>
   );
 }
 
@@ -404,10 +440,4 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
       </div>
     </form>
   );
-}
-
-// The serving options of `evaluate` and Teachers are an Endpoint's, so the schema publishes them.
-function servingOptionsForm(schema: PublishedSchema): FormSection {
-  const { $defs, acceleration_benchmark } = schema;
-  return pipelineForm({ ...$defs.ServingOptions, $defs, acceleration_benchmark });
 }

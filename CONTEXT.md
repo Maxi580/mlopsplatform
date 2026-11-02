@@ -50,6 +50,10 @@ _Avoid_: Monitoring, metrics (when meaning the stored history)
 **Server Sample**:
 The values the API reads from an Endpoint's vLLM `/metrics` every 10 seconds while it is busy and logs to MLflow: gauges such as KV-cache usage, rates, and latency percentiles over the interval.
 
+**Judge**:
+The one platform-managed vLLM server that scores Endpoints' answers. It runs while judging is enabled in the Serving tab, started, replaced and removed by the API; it's not an Endpoint users start or stop, has no URL of its own, and its answers aren't traced.
+_Avoid_: Evaluator, grader
+
 **Endpoint Proxy**:
 The one stateless service every Endpoint route goes through to the Endpoint's vLLM, after the Endpoint Key check; it records each chat and completion request in its Request Trace.
 _Avoid_: Gateway, router

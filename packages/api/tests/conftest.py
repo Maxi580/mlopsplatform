@@ -418,6 +418,9 @@ class FakeCluster:
         # Endpoint name -> its vLLM's `/metrics` text; any other Endpoint is unreachable.
         self.metrics = {}
         self.chat_requests = []
+        # Each request sent to an Endpoint's Service directly, and what an Endpoint answers it.
+        self.asked = []
+        self.answers = {}
 
     def create_secret(self, name, values):
         self.secrets[name] = values
@@ -469,6 +472,13 @@ class FakeCluster:
         if name not in self.metrics:
             raise ConnectionError(f"endpoint-{name} timed out")
         return self.metrics[name]
+
+    # Reachable Endpoints answer from `answers`, else with CHAT_ANSWER.
+    def ask_endpoint(self, name, request, timeout):
+        if name not in self.metrics:
+            raise ConnectionError(f"endpoint-{name} timed out")
+        self.asked.append((name, request))
+        return self.answers.get(name, CHAT_ANSWER)
 
     # Through the Endpoint Proxy, which with vLLM records the request's trace in full.
     def send_chat_request(self, name, request, experiment_id):

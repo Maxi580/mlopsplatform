@@ -13,8 +13,10 @@ def endpoint_manifests(
     model_cache_size: str,
     environment: EndpointEnvironment,
     traces_experiment_id: str | None,
+    routed: bool = True,
 ) -> dict[str, dict]:
-    """The Endpoint's Deployment, Service and Traefik route, by kind; traced to the experiment."""
+    """The Endpoint's Deployment, Service and, if routed, Traefik route, by kind; traced to the
+    experiment."""
     object_name = config.ENDPOINT_OBJECT_NAME.format(name=name)
     labels = {config.ENDPOINT_LABEL: name}
     metadata = {"name": object_name, "namespace": environment.namespace, "labels": labels}
@@ -131,7 +133,7 @@ def endpoint_manifests(
             ],
         },
     }
-    return {"deployment": deployment, "service": service, "route": route}
+    return {"deployment": deployment, "service": service, **({"route": route} if routed else {})}
 
 
 def secret_env(variable: str, key: str) -> dict:

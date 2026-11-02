@@ -110,6 +110,8 @@ def create_endpoint_objects(
 ) -> dict:
     """The Endpoint once Kubernetes has its objects; after a failure none, and it is stopped."""
     cluster = state.cluster
+    # Only the API calls the Judge, so it has no route, and its answers aren't traced.
+    judge = name == config.JUDGE_ENDPOINT_NAME
     manifests = endpoint_manifests(
         name,
         endpoint_uuid,
@@ -118,7 +120,8 @@ def create_endpoint_objects(
         gpus,
         state.settings.model_cache_size,
         cluster.endpoint_environment,
-        traces_experiment_id(state, name),
+        None if judge else traces_experiment_id(state, name),
+        routed=not judge,
     )
     try:
         cluster.create_endpoint(manifests)
@@ -198,6 +201,7 @@ def endpoint_summary(row, domain: str) -> dict:
         "url": config.ENDPOINT_URL.format(domain=domain, uuid=row.uuid),
         "key": row.key,
         "created_at": row.created_at.isoformat(),
+        "judge": row.name == config.JUDGE_ENDPOINT_NAME,
     }
 
 

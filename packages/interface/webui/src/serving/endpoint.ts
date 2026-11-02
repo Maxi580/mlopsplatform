@@ -1,3 +1,6 @@
+import type { AccelerationBenchmark } from "../fields/AccelerationBenchmark";
+import { type FormSection, pipelineForm } from "../pipelines/pipelineForm";
+
 // What `GET /endpoints` answers for each Endpoint.
 export type Endpoint = {
   name: string;
@@ -8,6 +11,8 @@ export type Endpoint = {
   // The Endpoint Key: the bearer token its URL takes.
   key: string;
   created_at: string;
+  // The Judge, which the API runs while judging is enabled; users don't start or stop it.
+  judge: boolean;
   // Null while it is pending, loading or unreachable.
   stats: EndpointStatsSummary | null;
 };
@@ -95,6 +100,17 @@ export function statsValues(stats: EndpointStats): Record<string, StatsValue> {
   return Object.fromEntries(
     stats.sections.flatMap((section) => section.values.map((value) => [value.key, value])),
   );
+}
+
+export type PublishedSchema = {
+  $defs: Record<string, Record<string, unknown>>;
+  acceleration_benchmark?: AccelerationBenchmark;
+};
+
+// The serving options of `evaluate` and Teachers are an Endpoint's, so the schema publishes them.
+export function servingOptionsForm(schema: PublishedSchema): FormSection {
+  const { $defs, acceleration_benchmark } = schema;
+  return pipelineForm({ ...$defs.ServingOptions, $defs, acceleration_benchmark });
 }
 
 export function formatSeconds(seconds: number | null | undefined): string {

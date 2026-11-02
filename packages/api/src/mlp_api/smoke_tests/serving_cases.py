@@ -12,6 +12,7 @@ from mlp_api.endpoints.lifecycle import (
 from mlp_api.endpoints.request_traces import span_attributes
 from mlp_api.endpoints.stats import curated_values, fetch_endpoint_stats
 from mlp_api.pipelines.lifecycle import pipeline, set_pipeline, unfinished
+from mlp_api.smoke_tests.judge_case import judge_case_result
 from mlp_api.smoke_tests.lifecycle import is_smoke_test
 from mlp_core import config
 from mlp_core.endpoint_spec import EndpointSpec
@@ -32,7 +33,11 @@ def run_serving_cases(state) -> None:
     for row in rows:
         cases = dict(row.cases)
         for case in config.SMOKE_TEST_SERVING_CASES:
-            if cases.get(case) == "pending":
+            if cases.get(case) != "pending":
+                continue
+            if case == config.SMOKE_TEST_JUDGE_CASE:
+                cases[case] = judge_case_result(state, row.request[case])
+            else:
                 name = f"{row.name}-{case}"
                 cases[case] = serving_case_result(state, name, row.request[case], cases, endpoints)
         set_pipeline(state.engine, row.id, cases=cases)

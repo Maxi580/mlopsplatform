@@ -67,6 +67,7 @@ const chat: Endpoint = {
   key: "key-of-chat",
   created_at: "2026-10-02T08:30:00+00:00",
   stats: null,
+  judge: false,
 };
 const stats: EndpointStatsSummary = {
   running: 3,
@@ -96,6 +97,7 @@ const routes: Parameters<typeof fakeApi>[0] = {
     [{ name: "Qwen/Qwen3-8B", reference: "hf:Qwen/Qwen3-8B", parameters: 8.2e9, gated: false }],
   ],
   "GET /settings": [200, { gpu_count: 1 }],
+  "GET /judge": [200, { enabled: false, spec: null, rubric: "Rate it.", status: null }],
 };
 
 test("Endpoints are listed with model, status and URL", async () => {
@@ -482,4 +484,55 @@ test("tokens/s is the generated tokens between two readings", async () => {
   const row = screen.getByRole("link", { name: "chat" }).closest("tr")!;
   expect(within(row).getAllByRole("cell")[4]).toHaveTextContent("50.0");
   vi.useRealTimers();
+});
+
+test("the Judge is labelled in the list, without a URL, key or buttons", async () => {
+  const judge = { ...chat, name: "judge", judge: true };
+  fakeApi({ ...routes, "GET /endpoints": [200, [judge, chat]] });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("Judge", { selector: "strong" })).closest("tr")!;
+  expect(within(row).getByText("running")).toBeInTheDocument();
+  for (const name of [/stop/i, /restart/i, /delete/i, /Endpoint Key/, "Copy URL"]) {
+    expect(within(row).queryByRole("button", { name })).not.toBeInTheDocument();
+  }
+  expect(within(row).queryByRole("link")).not.toBeInTheDocument();
+  expect(within(row).getByRole("button", { name: "Copy model" })).toBeInTheDocument();
+});
+
+test("the Judge's settings are saved with its model, options and rubric", async () => {
+  const user = userEvent.setup();
+  const saved = { enabled: true, spec: { model: "hf:Qwen/Qwen3-8B" }, rubric: "Be strict." };
+  const calls = fakeApi({ ...routes, "PUT /judge": [200, { ...saved, status: "pending" }] });
+  renderApp("/serving");
+
+  await user.click(await screen.findByRole("checkbox", { name: "Judging enabled" }));
+  await user.type(screen.getByRole("combobox", { name: "Judge model" }), "hf:Qwen/Qwen3-8B");
+  await user.click(screen.getByText("+ advanced"));
+  const rubric = screen.getByRole("textbox", { name: /Rubric/ });
+  expect(rubric).toHaveValue("Rate it.");
+  await user.clear(rubric);
+  await user.type(rubric, "Be strict.");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => expect(calls.some((call) => call.route === "PUT /judge")).toBe(true));
+  const put = calls.find((call) => call.route === "PUT /judge")!;
+  expect(put.body).toEqual({
+    enabled: true,
+    spec: { model: "hf:Qwen/Qwen3-8B", ...DEFAULTS },
+    rubric: "Be strict.",
+  });
+  expect(await screen.findByText("Judging is on; the Judge starts")).toBeInTheDocument();
+});
+
+test("the Judge's stored settings fill its form", async () => {
+  const stored = { enabled: true, spec: { model: "hf:Qwen/Qwen3-8B", max_model_len: 4096 } };
+  fakeApi({ ...routes, "GET /judge": [200, { ...stored, rubric: "Rate it.", status: "running" }] });
+  renderApp("/serving");
+
+  expect(await screen.findByRole("checkbox", { name: "Judging enabled" })).toBeChecked();
+  expect(screen.getByRole("combobox", { name: "Judge model" })).toHaveValue("hf:Qwen/Qwen3-8B");
+  await userEvent.click(screen.getByText("+ advanced"));
+  // The Judge section comes before the start form.
+  expect(screen.getAllByLabelText(/^Max Model Len/)[0]).toHaveDisplayValue("4096");
 });

@@ -75,8 +75,15 @@ def requests(name: str, request: Request, span: str = "live") -> dict:
     return endpoint_request_traces(request.app.state.model_registry, name, span, datetime.now(UTC))
 
 
+def refuse_the_judge(name: str) -> None:
+    """409 for the Judge, which the API starts and stops itself as judging is switched."""
+    if name == config.JUDGE_ENDPOINT_NAME:
+        raise HTTPException(409, f"{name} is the Judge's name; switch judging in its settings")
+
+
 @router.post(api_paths.ENDPOINTS, status_code=201)
 def start(start: EndpointStart, request: Request) -> dict:
+    refuse_the_judge(start.name)
     spec = EndpointSpec.model_validate(start.model_dump(exclude={"name"}))
     try:
         return start_endpoint(request.app.state, start.name, spec)
@@ -90,6 +97,7 @@ def start(start: EndpointStart, request: Request) -> dict:
 
 @router.post(api_paths.STOP_ENDPOINT)
 def stop(name: str, request: Request) -> dict:
+    refuse_the_judge(name)
     try:
         stop_endpoint(request.app.state.engine, request.app.state.cluster, name)
     except LookupError as error:
@@ -99,6 +107,7 @@ def stop(name: str, request: Request) -> dict:
 
 @router.post(api_paths.RESTART_ENDPOINT)
 def restart(name: str, request: Request) -> dict:
+    refuse_the_judge(name)
     try:
         return restart_endpoint(request.app.state, name)
     except LookupError as error:
@@ -113,6 +122,7 @@ def restart(name: str, request: Request) -> dict:
 
 @router.delete(api_paths.ENDPOINT, status_code=204)
 def delete(name: str, request: Request) -> Response:
+    refuse_the_judge(name)
     try:
         delete_endpoint(request.app.state, name)
     except LookupError as error:

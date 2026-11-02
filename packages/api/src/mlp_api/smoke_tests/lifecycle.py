@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from mlp_api.auth.session import issue_step_token
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
 from mlp_api.endpoints.lifecycle import delete_endpoint, list_endpoints, stop_endpoint
+from mlp_api.judge.settings import judge_settings
 from mlp_api.model_cache.downloads import preview_downloads
 from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.models.registry import delete_model_version
@@ -35,6 +36,7 @@ from mlp_api.smoke_tests.cases import (
     speculate_case_request,
     speculate_cases,
 )
+from mlp_api.smoke_tests.judge_case import restore_judging
 from mlp_core import config
 from mlp_core.pipeline_request.references import model_reference, split_base_model_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
@@ -147,6 +149,10 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         serving = serving_cases(
             selection, trainings, quantizations, speculations, name, base_model, uploaded
         )
+        # The judge case switches judging back to these settings once it's done.
+        if config.SMOKE_TEST_JUDGE_CASE in serving:
+            restore = judge_settings(engine).model_dump(mode="json")
+            serving[config.SMOKE_TEST_JUDGE_CASE]["restore"] = restore
         set_pipeline(
             engine,
             pipeline_id,
@@ -211,13 +217,17 @@ def clean_up_smoke_tests(state) -> None:
                 stop_endpoint(engine, state.cluster, found["name"])
             delete_endpoint(state, found["name"])
 
-        # 2. Its Datasets.
+        # 2. Judging as it was, if its judge case never got to switch it back.
+        if config.SMOKE_TEST_JUDGE_CASE in row.request:
+            restore_judging(state, row.request[config.SMOKE_TEST_JUDGE_CASE])
+
+        # 3. Its Datasets.
         for dataset in list_datasets(engine):
             if dataset["name"].startswith(prefix):
                 for found in dataset["versions"]:
                     delete_dataset_version(engine, object_store, dataset["name"], found["version"])
 
-        # 3. Its Model Versions with their files, then their Registered Models.
+        # 4. Its Model Versions with their files, then their Registered Models.
         names = set()
         for found in model_registry.model_versions():
             if found.name.startswith(prefix):
@@ -228,10 +238,10 @@ def clean_up_smoke_tests(state) -> None:
         for name in sorted(names):
             model_registry.delete_registered_model(name)
 
-        # 4. The Checkpoints its failed or interrupted Phases kept.
+        # 5. The Checkpoints its failed or interrupted Phases kept.
         object_store.delete_all(object_store.bucket, f"{config.CHECKPOINTS_PREFIX}{row.id}/")
 
-        # 5. Marked, as set_pipeline only changes unfinished Pipelines.
+        # 6. Marked, as set_pipeline only changes unfinished Pipelines.
         with engine.begin() as connection:
             connection.execute(
                 update(pipeline).where(pipeline.c.id == row.id).values(cleaned_up=True)
