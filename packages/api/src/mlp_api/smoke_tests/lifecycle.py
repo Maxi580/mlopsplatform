@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from mlp_api.auth.session import issue_step_token
 from mlp_api.datasets.registry import delete_dataset_version, list_datasets, upload_dataset_version
 from mlp_api.endpoints.lifecycle import delete_endpoint, list_endpoints, stop_endpoint
+from mlp_api.gpu_usage.machines import find_gpu
 from mlp_api.judge.settings import judge_settings
 from mlp_api.model_cache.downloads import preview_downloads
 from mlp_api.model_cache.janitor import make_room_for_downloads
@@ -92,7 +93,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             starting_models[config.SMOKE_TEST_UPLOADED_MODEL_CASE] = {"from": uploaded}
 
         # 5. Each case's Pipeline Request, resolved the way users' are and stored for in-use checks.
-        requests = {}
+        requests, gpu = {}, find_gpu(state.cluster)
         for case, training in trainings.items():
             data = finetune_case_request(case, name, starting_models[case], *training)
             requests[case], errors = validate_pipeline_request(
@@ -103,6 +104,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
                 state.model_registry,
                 state.object_store,
                 state.settings,
+                gpu,
             )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")
@@ -112,7 +114,9 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
             model = model_reference(f"{name}-{made_by}", 1) if made_by else base_model
             data = quantize_case_request(case, name, model)
             if made_by:
-                requests[case] = PipelineRequest.model_validate(data)
+                requests[case] = PipelineRequest.model_validate(
+                    {**data, "gpu_share": config.GPU_SHARE}
+                )
                 continue
             requests[case], errors = validate_pipeline_request(
                 data,
@@ -122,6 +126,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
                 state.model_registry,
                 state.object_store,
                 state.settings,
+                gpu,
             )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")
@@ -135,6 +140,7 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
                 state.model_registry,
                 state.object_store,
                 state.settings,
+                gpu,
             )
             if errors:
                 raise RuntimeError(f"case {case} is invalid: {errors}")

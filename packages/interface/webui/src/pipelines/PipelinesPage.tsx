@@ -6,7 +6,7 @@ import { callApi, errorMessage, useApi } from "../api";
 import { cancelPipeline, PIPELINES, pipelineById } from "../apiPaths";
 import { FINISHED_STATUSES, PIPELINE_LIST_REFRESH_MS } from "../config";
 import FailureRow from "./FailureRow";
-import type { Pipeline, SweepOutput } from "./pipeline";
+import { gpuSharesSummary, type Pipeline, type SweepOutput } from "./pipeline";
 import StatusBadge from "./StatusBadge";
 
 export default function PipelinesPage() {
@@ -125,6 +125,7 @@ function PipelineRow({
   // Cancelling asks once more in place, rather than in a browser dialog.
   const [confirming, setConfirming] = useState(false);
   const created = new Date(pipeline.created_at);
+  const sharesHeld = gpuSharesSummary(pipeline.gpu_shares);
 
   return (
     <>
@@ -142,6 +143,7 @@ function PipelineRow({
               {stage}
             </span>
           ))}
+          {sharesHeld && <div className="muted">{sharesHeld}</div>}
           {pipeline.sweep && <div className="muted">{bestParameters(pipeline.sweep)}</div>}
         </td>
         <td>{pipeline.owner}</td>

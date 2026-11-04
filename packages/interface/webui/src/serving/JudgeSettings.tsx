@@ -8,6 +8,7 @@ import ModelPicker from "../fields/ModelPicker";
 import FormSectionView from "../pipelines/FormSectionView";
 import { type FormValues, pipelineRequestFromForm } from "../pipelines/pipelineForm";
 import type { RegisteredModel } from "../storage/storage";
+import EndpointPreview from "./EndpointPreview";
 import { type PublishedSchema, servingOptionsForm } from "./endpoint";
 
 // What `GET /judge` answers: the settings, and the Judge's status while there is one.
@@ -113,6 +114,13 @@ export default function JudgeSettings({
           />
         )}
       </details>
+      <EndpointPreview
+        spec={
+          draft.model.trim()
+            ? { model: draft.model.trim(), ...pipelineRequestFromForm(form, draft.values) }
+            : undefined
+        }
+      />
       <div className="serve-actions">
         <button type="submit" className="button primary" disabled={busy}>
           {busy ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}

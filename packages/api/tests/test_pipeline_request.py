@@ -105,7 +105,14 @@ def validate(hugging_face, engine, chat_dataset, model_registry, object_store, p
     def run(request, secrets=None):
         settings = Settings(**platform_settings)
         return validate_pipeline_request(
-            request, secrets or {}, hugging_face, engine, model_registry, object_store, settings
+            request,
+            secrets or {},
+            hugging_face,
+            engine,
+            model_registry,
+            object_store,
+            settings,
+            None,
         )
 
     return run

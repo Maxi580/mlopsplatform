@@ -25,6 +25,7 @@ import {
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { NO_CATALOG } from "../fields/catalog";
 import ModelPicker from "../fields/ModelPicker";
+import { formatShare } from "../fields/numbers";
 import FailureRow from "../pipelines/FailureRow";
 import FormSectionView from "../pipelines/FormSectionView";
 import {
@@ -37,6 +38,7 @@ import {
 import StatusBadge from "../pipelines/StatusBadge";
 import type { RegisteredModel } from "../storage/storage";
 import CopyValue from "./CopyValue";
+import EndpointPreview from "./EndpointPreview";
 import {
   type Endpoint,
   formatSeconds,
@@ -132,6 +134,7 @@ export default function ServingPage() {
                   "Endpoint",
                   "Model",
                   "Status",
+                  "GPU Share",
                   "Load",
                   "Tokens/s",
                   "TTFT",
@@ -273,6 +276,7 @@ function EndpointRow({
             </span>
           )}
         </td>
+        <td>{formatShare(endpoint.gpu_share)}</td>
         <td title={stats ? `${stats.running} running · ${stats.waiting} waiting` : undefined}>
           {stats ? `${stats.running} · ${stats.waiting}` : "—"}
         </td>
@@ -308,11 +312,11 @@ function EndpointRow({
         )}
       </tr>
       {endpoint.failure && (
-        <FailureRow failure={endpoint.failure} columns={10} logUrl={endpointLog(endpoint.name)} />
+        <FailureRow failure={endpoint.failure} columns={11} logUrl={endpointLog(endpoint.name)} />
       )}
       {judgingOpen && (
         <tr className="judging-open">
-          <td colSpan={10}>
+          <td colSpan={11}>
             <JudgingForm
               endpoint={endpoint}
               onSaved={onJudging}
@@ -487,6 +491,17 @@ function StartForm({ onStarted }: { onStarted: (name: string) => void }) {
         results={schema.acceleration_benchmark?.results["speculative.method"]}
         value={speculative}
         onChange={setSpeculative}
+      />
+      <EndpointPreview
+        spec={
+          model.trim()
+            ? {
+                model: model.trim(),
+                ...pipelineRequestFromForm(form, values),
+                ...(speculative && { speculative }),
+              }
+            : undefined
+        }
       />
       <div className="serve-actions">
         <button type="submit" className="button primary" disabled={busy}>

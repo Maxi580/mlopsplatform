@@ -1,6 +1,7 @@
 import os
 
 from mlp_core import config
+from mlp_core.gpu_share import colocated_vllm_share
 from mlp_core.pipeline_request.schema import PhaseConfiguration
 
 
@@ -23,12 +24,3 @@ def cap_gpu_memory(phase: PhaseConfiguration | None = None) -> None:
     import torch
 
     torch.cuda.set_per_process_memory_fraction(share)
-
-
-def colocated_vllm_share(phase: PhaseConfiguration) -> float:
-    """The share of GPU memory the vLLM generating the Phase's rollouts takes, if one does."""
-    settings = {
-        **config.ALGORITHMS[phase.algorithm]["platform_settings"],
-        **phase.settings.model_dump(),
-    }
-    return settings.get("vllm_gpu_memory_utilization", 0) if settings.get("use_vllm") else 0

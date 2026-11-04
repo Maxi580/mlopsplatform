@@ -24,6 +24,7 @@ from mlp_api.smoke_tests.cases import case_results
 from mlp_api.storage.database import metadata
 from mlp_core import config
 from mlp_core.endpoint_spec import without_stored_quantization
+from mlp_core.gpu_share import pipeline_gpu_shares
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 pipeline = Table(
@@ -165,6 +166,7 @@ def pipeline_summary(row) -> dict:
         "status": row.status,
         "failure": row.failure,
         "stages": [stage for stage in config.STAGES if row.request.get(stage)],
+        "gpu_shares": pipeline_gpu_shares(row.request),
         "created_at": row.created_at.isoformat(),
         "kubeflow_run_url": row.kubeflow_run_id and kubeflow_run_url(row.kubeflow_run_id),
         "mlflow_run_url": row.mlflow_run_url,

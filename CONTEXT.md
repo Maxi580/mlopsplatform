@@ -103,7 +103,7 @@ An MLflow run: the tracked record of params, metrics and artifacts. Used for not
 _Avoid_: Execution, experiment (when meaning a single run)
 
 **GPU Share**:
-The share of a GPU's memory, not its compute, that a GPU workload holds while it runs; whatever fits runs, the rest waits, and nothing is evicted. An Endpoint's, the Judge's and the vLLM of a `distill` or `evaluate` step's is its `gpu_memory_utilization`; every other GPU step's and Phase's is its Pipeline's `gpu_share`.
+The share of a GPU's memory, not its compute, that a GPU workload holds while it runs; whatever fits runs, the rest waits, and nothing is evicted. An Endpoint's, the Judge's and the vLLM of a `distill` or `evaluate` step's is its `gpu_memory_utilization`; every other GPU step's and Phase's is its Pipeline's `gpu_share`. Unless the user enters it, it is calculated from the model and the GPU when the work is submitted, and kept from then on.
 _Avoid_: Fraction, reservation
 
 ### Models and data

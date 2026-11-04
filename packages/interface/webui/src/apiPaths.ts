@@ -30,6 +30,7 @@ export const CHECKPOINTS = "/checkpoints";
 export const checkpoint = (pipelineId: number, phaseIndex: number) =>
   `${CHECKPOINTS}/${pipelineId}/${phaseIndex}`;
 export const ENDPOINTS = "/endpoints";
+export const PREVIEW_ENDPOINT = "/endpoints/preview";
 export const endpointByName = (name: string) => `/endpoints/${name}`;
 export const stopEndpoint = (name: string) => `${endpointByName(name)}/stop`;
 export const restartEndpoint = (name: string) => `${endpointByName(name)}/restart`;

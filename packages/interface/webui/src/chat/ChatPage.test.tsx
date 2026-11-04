@@ -10,6 +10,7 @@ const endpoint = (name: string, status = "running", judge = false): Endpoint => 
   owner: "shared",
   model: "hf:Qwen/Qwen3-0.6B@abc",
   status,
+  gpu_share: 0.3,
   url: ENDPOINT_URL,
   key: `key-of-${name}`,
   created_at: "2026-10-02T08:30:00+00:00",

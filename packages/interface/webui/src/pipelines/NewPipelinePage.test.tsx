@@ -98,6 +98,7 @@ test("the form shows what the request still downloads as it changes", async () =
           downloads: [{ kind: "base_model", ref: request.finetune?.base_model, bytes, cached }],
           download_bytes: cached ? 0 : bytes,
           cached_bytes: cached ? bytes : 0,
+          gpu_shares: { finetune: 0.3, evaluate: 0.25 },
         },
       ];
     },
@@ -106,6 +107,7 @@ test("the form shows what the request still downloads as it changes", async () =
 
   await userEvent.type(await screen.findByLabelText(/^Base Model/), "hf:x/new");
   expect(await screen.findByText("9.4 GB to download, 0 B already cached")).toBeInTheDocument();
+  expect(screen.getByText("GPU Share: finetune 30%, evaluate 25%")).toBeInTheDocument();
 
   await userEvent.clear(screen.getByLabelText(/^Base Model/));
   await userEvent.type(screen.getByLabelText(/^Base Model/), "hf:x/cached");

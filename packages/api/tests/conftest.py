@@ -79,8 +79,9 @@ class FakeHuggingFace:
         self.lookups = []
         # Repo -> its files, for downloads.
         self.files = {}
-        # Repo -> the size of all its files.
+        # Repo -> the size of all its files, and path -> the size of a file too large to hold.
         self.sizes = {}
+        self.file_sizes = {}
         # Dataset repo -> its files.
         self.dataset_files = {}
         # What every search finds, and each search's word and token.
@@ -93,6 +94,9 @@ class FakeHuggingFace:
 
     def model_size(self, repo, commit, token):
         return self.sizes.get(repo)
+
+    def model_file_size(self, repo, commit, path, token):
+        return self.file_sizes.get(repo, {}).get(path)
 
     def model_file(self, repo, commit, path, token):
         return self.files.get(repo, {}).get(path)

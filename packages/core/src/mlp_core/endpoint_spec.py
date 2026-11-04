@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mlp_core.config import (
     ENDPOINT_NAME_MAX_LENGTH,
@@ -29,13 +29,14 @@ class ServingOptions(BaseModel):
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
     max_model_len: int | None = Field(None, gt=0)
-    """The longest prompt plus reply, in tokens; vLLM reads it from the model when left empty."""
+    """The longest prompt plus reply, in tokens; when left empty, the model's limit up to 32768."""
     prefix_caching: bool = True
     """Reuses the work on prompt beginnings seen before, e.g. a shared system prompt."""
     dtype: Literal["auto", "half", "float16", "bfloat16", "float32"] | None = "auto"
     """The number format of weights and activations; `auto` takes the model's."""
-    gpu_memory_utilization: float | None = Field(SERVING_GPU_MEMORY_UTILIZATION, gt=0, le=1)
-    """The share of GPU memory vLLM may take, for the weights and the KV cache: its GPU Share."""
+    gpu_memory_utilization: float | None = Field(None, gt=0, le=1)
+    """The share of GPU memory vLLM may take, for the weights and the KV cache: its GPU Share.
+    Calculated from the model and the GPU when left empty."""
     max_num_seqs: int | None = Field(SERVING_MAX_NUM_SEQS, gt=0)
     """Requests generated at once; more wait."""
     max_num_batched_tokens: int | None = Field(None, gt=0)
@@ -47,16 +48,11 @@ class ServingOptions(BaseModel):
     tool_parser: Literal[VLLM_TOOL_PARSERS] | None = None
     """How tool calls are read from replies; vLLM reads it from the model when left empty."""
 
-    # Leaving out the flag would give vLLM's 0.9, far more than the GPU Share it requests.
-    @field_validator("gpu_memory_utilization")
-    @classmethod
-    def with_default_gpu_memory_utilization(cls, value: float | None) -> float:
-        return SERVING_GPU_MEMORY_UTILIZATION if value is None else value
-
 
 def serving_share(serving: ServingOptions | None) -> float:
-    """The GPU Share of a step's own vLLM: the memory its serving options let it take."""
-    return (serving or ServingOptions()).gpu_memory_utilization
+    """The GPU Share of a vLLM: the memory its serving options let it take, else the fixed one."""
+    share = serving.gpu_memory_utilization if serving else None
+    return SERVING_GPU_MEMORY_UTILIZATION if share is None else share
 
 
 def without_stored_quantization(stored: dict) -> dict:
@@ -148,6 +144,8 @@ def vllm_args(
 
     # 2. The serving options that are set; a boolean one is switched on or off explicitly.
     options = spec.model_dump(exclude={"model", "tool_parser", "speculative"}, exclude_none=True)
+    # Leaving out the flag would give vLLM's 0.9, far more than the GPU Share it requests.
+    options["gpu_memory_utilization"] = serving_share(spec)
     for option, value in options.items():
         flag = VLLM_FLAGS.get(option, option.replace("_", "-"))
         if isinstance(value, bool):

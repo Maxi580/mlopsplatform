@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
 
+from mlp_api.gpu_usage.machines import find_gpu
 from mlp_api.model_cache.downloads import fetched_references, preview_downloads
 from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.pipelines.compiler import Resume
@@ -18,6 +19,7 @@ from mlp_api.pipelines.published_schema import published_schema
 from mlp_api.pipelines.resume import plan_resume
 from mlp_api.pipelines.sweep_output import record_sweep_output
 from mlp_core import api_paths, config
+from mlp_core.gpu_share import pipeline_gpu_shares
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 router = APIRouter()
@@ -63,7 +65,8 @@ def validate(submission: Submission, request: Request) -> dict:
     state = request.app.state
     fetched = fetched_references(state, resolved)
     downloads = preview_downloads(state, fetched, submission.secrets.get("hf_token"))
-    return {"request": resolved.model_dump(mode="json"), **downloads}
+    stored = resolved.model_dump(mode="json")
+    return {"request": stored, "gpu_shares": pipeline_gpu_shares(stored), **downloads}
 
 
 @router.post(api_paths.PIPELINES, status_code=202)
@@ -165,6 +168,7 @@ def resolve(submission: Submission, request: Request) -> PipelineRequest:
         request.app.state.model_registry,
         request.app.state.object_store,
         request.app.state.settings,
+        find_gpu(request.app.state.cluster),
     )
     if errors:
         raise HTTPException(422, errors)

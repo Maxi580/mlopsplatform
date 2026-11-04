@@ -11,6 +11,11 @@ export function formatNumber(value: number): string {
   return value !== 0 && Math.abs(value) < 0.001 ? value.toExponential() : String(value);
 }
 
+/** A GPU Share as a percentage, e.g. 0.85 as `85%`. */
+export function formatShare(share: number): string {
+  return `${Math.round(share * 100)}%`;
+}
+
 /** The text one step up or down: its smallest decimal place shown changes by 1 (0.05 → 0.06,
  * 2e-4 → 3e-4), and down from a leading 1 into the next place (0.01 → 0.009), within the bounds. */
 export function stepNumber(text: string, by: 1 | -1, bounds: Bounds = {}, integer = false): string {

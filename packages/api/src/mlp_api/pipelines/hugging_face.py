@@ -52,6 +52,14 @@ class HuggingFace:
             return None
         return sum(file.size or 0 for file in info.siblings or [])
 
+    def model_file_size(self, repo: str, commit: str, path: str, token: str | None) -> int | None:
+        """The bytes of one file at the commit, or None if it has none or Hugging Face fails."""
+        try:
+            found = HfApi(token=token or False).get_paths_info(repo, [path], revision=commit)
+        except (HfHubHTTPError, httpx.HTTPError):
+            return None
+        return found[0].size if found else None
+
     def model_file(self, repo: str, commit: str, path: str, token: str | None) -> bytes | None:
         """One file of the model at the commit, or None if it has none or Hugging Face fails."""
         try:

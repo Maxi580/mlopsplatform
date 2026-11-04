@@ -437,12 +437,31 @@ SPECULATIVE_METHODS = {
     "peagle": {"method": "eagle3", "parallel_drafting": True},
 }
 SPECULATIVE_TOKENS = 3
-# Where forms start for the serving options that don't depend on the model: vLLM's own default, but
-# for its share of GPU memory, as its 0.9 would leave a shared GPU no room.
-SERVING_GPU_MEMORY_UTILIZATION = 0.3
+# Where forms start for a serving option that doesn't depend on the model: vLLM's own default.
 SERVING_MAX_NUM_SEQS = 256
-# The GPU Share of a Pipeline's training, `sweep`, `quantize` and `speculate` steps.
+# vLLM's GPU Share if a size is unknown (#116), as its own 0.9 would leave a shared GPU no room.
+SERVING_GPU_MEMORY_UTILIZATION = 0.3
+# The same for the Stages that hold the Pipeline's `gpu_share`.
 GPU_SHARE = 0.5
+TRAINING_STAGES = ("sweep", "finetune", "quantize", "speculate")
+# Bytes per value of the KV cache by number format; `auto` takes the model's.
+VLLM_DTYPE_BYTES = {"half": 2, "float16": 2, "bfloat16": 2, "float32": 4}
+VLLM_DEFAULT_DTYPE_BYTES = 2
+# The config.json values vLLM takes the model's limit from, the lowest counting.
+VLLM_MAX_LENGTH_KEYS = (
+    "max_position_embeddings",
+    "n_positions",
+    "max_seq_len",
+    "seq_length",
+    "max_target_positions",
+    "max_sequence_length",
+    "max_seq_length",
+    "n_ctx",
+)
+# The files a Model Version or Base Model keeps its weights in.
+WEIGHTS_INDEX_FILE = "model.safetensors.index.json"
+WEIGHTS_FILE = "model.safetensors"
+ADAPTER_WEIGHTS_FILE = "adapter_model.safetensors"
 # Tells a step and a Phase's TrainJob their GPU Share; unset while GPU sharing is off.
 GPU_SHARE_ENV = "GPU_SHARE"
 # Secret slot -> the environment variable of the steps that receive it. The API adds

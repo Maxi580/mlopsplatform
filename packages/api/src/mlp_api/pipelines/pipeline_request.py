@@ -9,17 +9,19 @@ from mlp_api.datasets.registry import find_dataset_version
 from mlp_api.endpoints.endpoint_model import tool_parser_tag
 from mlp_api.endpoints.lifecycle import find_endpoint
 from mlp_api.models.mlflow import MLflow
+from mlp_api.models.model_memory import model_file_reader
 from mlp_api.models.registry import find_referenced_model_version, pin_full_weights
 from mlp_api.models.upload_checks import adapter_problems
 from mlp_api.pipelines.chat_template import assistant_mask_problem
+from mlp_api.pipelines.gpu_shares import model_behind_output, resolve_gpu_shares
 from mlp_api.pipelines.hugging_face import HuggingFace, find_base_model, pin_base_model
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core import config
-from mlp_core.endpoint_spec import ServingOptions, serving_share
+from mlp_core.endpoint_spec import ServingOptions
+from mlp_core.gpu_share import Gpu, distill_serves_its_teacher, evaluate_serves_its_model
 from mlp_core.pipeline_request.references import (
     dataset_reference,
     model_reference,
-    split_base_model_reference,
     split_dataset_reference,
     split_endpoint_reference,
 )
@@ -35,6 +37,7 @@ def validate_pipeline_request(
     model_registry: MLflow,
     object_store: ObjectStore,
     settings: Settings,
+    gpu: Gpu | None,
 ) -> tuple[PipelineRequest | None, list[dict]]:
     """The request with every Reference pinned, or None and every error with its path."""
     # 1. The schema: required values, types, no unknown fields.
@@ -43,11 +46,10 @@ def validate_pipeline_request(
     except ValidationError as validation_error:
         return None, [error(e["loc"], e["msg"]) for e in validation_error.errors()]
 
-    # 2. Phases and Sweeps the backend can train, on the GPUs a Phase gets, GPU Shares that can fit,
-    # the settings TRL/PEFT would receive, rewards that can run, parameters Trials can set and
+    # 2. Phases and Sweeps the backend can train, on the GPUs a Phase gets, the settings TRL/PEFT
+    # would receive, rewards that can run, parameters Trials can set and
     # Phases can take, and no Secret value anywhere.
     errors = backend_errors(request) + multi_process_errors(request, settings)
-    errors += gpu_budget_errors(request, settings)
     errors += trainer_config_errors(request)
     errors += sweep_parameter_errors(request.sweep) + params_from_errors(request)
     errors += reward_errors(request)
@@ -154,11 +156,7 @@ def validate_pipeline_request(
                 request, token, hugging_face, engine, model_registry
             )
             if any(benchmark.startswith("bfcl:") for benchmark in evaluate.benchmarks):
-                model = evaluate.model
-                if model == config.QUANTIZE_OUTPUT:
-                    model = request.quantize.model
-                if model == config.FINETUNE_OUTPUT:
-                    model = finetune.starting_model
+                model = model_behind_output(request, evaluate.model)
                 try:
                     evaluate.serving = pin_tool_parser(
                         model, evaluate.serving, token, hugging_face, engine, model_registry
@@ -167,6 +165,19 @@ def validate_pipeline_request(
                     errors.append(error(["evaluate", "benchmarks"], str(reason)))
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
+
+    # 11. Every GPU Share, calculated from the pinned models unless entered, and able to fit.
+    if not errors:
+        resolve_gpu_shares(
+            request,
+            gpu,
+            secrets.get("hf_token"),
+            hugging_face,
+            model_registry,
+            object_store,
+            settings,
+        )
+    errors += gpu_budget_errors(request, settings)
 
     if errors:
         return None, errors
@@ -225,21 +236,21 @@ def multi_process_errors(request: PipelineRequest, settings: Settings) -> list[d
 
 def gpu_budget_errors(request: PipelineRequest, settings: Settings) -> list[dict]:
     """An error for each GPU Share a step of this request holds that can never fit."""
-    # 1. The Pipeline's, unless only `distill` and `evaluate` run, each on its own vLLM's.
-    shares = []
-    if request.sweep or request.finetune or request.quantize or request.speculate:
-        shares.append((["gpu_share"], request.gpu_share))
+    # 1. The Pipeline's, empty if no step holds it or other errors stopped its calculation.
+    shares = [(["gpu_share"], request.gpu_share)]
 
     # 2. Those of a Teacher or evaluated model served in the step; a running Endpoint holds its own.
     distill, evaluate = request.distill, request.evaluate
     option = ["serving", "gpu_memory_utilization"]
-    if distill and not (distill.api_url or distill.teacher.startswith("endpoint:")):
-        shares.append((["distill", *option], serving_share(distill.serving)))
-    if evaluate and not (evaluate.model or "").startswith("endpoint:"):
-        shares.append((["evaluate", *option], serving_share(evaluate.serving)))
+    if distill and distill.serving and distill_serves_its_teacher(distill.teacher, distill.api_url):
+        shares.append((["distill", *option], distill.serving.gpu_memory_utilization))
+    if evaluate and evaluate.serving and evaluate_serves_its_model(evaluate.model):
+        shares.append((["evaluate", *option], evaluate.serving.gpu_memory_utilization))
 
     # 3. The ones that can't fit.
-    problems = [(loc, settings.gpu_share_problem(share)) for loc, share in shares]
+    problems = [
+        (loc, settings.gpu_share_problem(share)) for loc, share in shares if share is not None
+    ]
     return [error(loc, problem) for loc, problem in problems if problem]
 
 
@@ -634,27 +645,6 @@ def assistant_only_loss_errors(
         elif mask_problem:
             errors.append(error(loc, mask_problem))
     return errors
-
-
-def model_file_reader(
-    model: str,
-    token: str | None,
-    hugging_face: HuggingFace,
-    model_registry: MLflow,
-    object_store: ObjectStore,
-):
-    """Reads one file of the pinned Base Model or Model Version, or None if it has none."""
-    if model.startswith("hf:"):
-        repo, commit = split_base_model_reference(model)
-        return lambda path: hugging_face.model_file(repo, commit, path, token)
-    found = find_referenced_model_version(model_registry, model)
-    bucket = model_registry.artifact_bucket
-    keys = {item["Key"] for item in object_store.list_objects(bucket, found.artifact_prefix)}
-    return lambda path: (
-        object_store.read(bucket, found.artifact_prefix + path)
-        if found.artifact_prefix + path in keys
-        else None
-    )
 
 
 def pin_dataset(engine: Engine, reference: str, row_formats, reader: str) -> str:

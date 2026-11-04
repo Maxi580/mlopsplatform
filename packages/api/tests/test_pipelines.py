@@ -26,7 +26,7 @@ def test_schema_publishes_the_pipeline_request_and_its_basic_values(logged_in_ap
     assert set(schema["properties"]) >= {"name", "finetune"}
     assert schema["$defs"]["Sweep"]["properties"]["trials"]["default"] == 10
     assert schema["properties"]["gpu_share"]["title"] == "GPU Share"
-    assert schema["properties"]["gpu_share"]["default"] == 0.5
+    assert schema["properties"]["gpu_share"]["default"] is None
 
 
 def test_schema_publishes_when_each_field_applies(logged_in_api):
@@ -844,7 +844,7 @@ def test_schema_publishes_the_serving_options_and_speculative_decoding(logged_in
     defs = logged_in_api.get(api_paths.SCHEMA).json()["$defs"]
 
     serving = defs["ServingOptions"]["properties"]
-    assert serving["gpu_memory_utilization"]["default"] == 0.3
+    assert serving["gpu_memory_utilization"]["default"] is None
     assert "description" in serving["max_model_len"]
     assert "quantization" not in serving
     speculative = defs["Speculative"]["properties"]

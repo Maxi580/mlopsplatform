@@ -1,6 +1,7 @@
 import {
   CircleAlert,
   CircleCheck,
+  Cpu,
   Eye,
   EyeOff,
   HardDrive,
@@ -21,13 +22,14 @@ import {
   SCHEMA,
   VALIDATE_PIPELINE,
 } from "../apiPaths";
-import { DOWNLOAD_PREVIEW_DELAY_MS, DRAFT_KEY, SECRET_SLOTS } from "../config";
+import { DRAFT_KEY, SECRET_SLOTS } from "../config";
 import type { Catalog } from "../fields/catalog";
 import { formatBytes } from "../formatBytes";
 import type { Endpoint } from "../serving/endpoint";
 import type { Dataset, RegisteredModel } from "../storage/storage";
+import { usePreview } from "../usePreview";
 import FormSectionView, { SectionSwitch, SectionTitle } from "./FormSectionView";
-import type { Benchmark } from "./pipeline";
+import { type Benchmark, type GpuShares, gpuSharesSummary } from "./pipeline";
 import {
   type FieldError,
   type FormSection,
@@ -40,7 +42,12 @@ import {
 
 type PlacedErrors = ReturnType<typeof placeErrors>;
 type Download = { kind: string; ref: string; bytes: number | null; cached: boolean };
-type DownloadPreview = { downloads: Download[]; download_bytes: number; cached_bytes: number };
+type RequestPreview = {
+  downloads: Download[];
+  download_bytes: number;
+  cached_bytes: number;
+  gpu_shares?: GpuShares;
+};
 
 const NO_ERRORS: PlacedErrors = { byName: {}, unplaced: [] };
 
@@ -91,7 +98,12 @@ function PipelineBuilder({
   const filledSecrets = Object.fromEntries(
     slots.flatMap(([slot]) => (secrets[slot] ? [[slot, secrets[slot]]] : [])),
   );
-  const downloads = useDownloadPreview(request, filledSecrets);
+  // An invalid request has no preview yet; the Validate button explains why.
+  const preview = usePreview<RequestPreview>(VALIDATE_PIPELINE, {
+    request,
+    secrets: filledSecrets,
+  });
+  const sharesHeld = gpuSharesSummary(preview?.gpu_shares);
 
   useEffect(() => {
     try {
@@ -203,9 +215,14 @@ function PipelineBuilder({
           <div className="card sticky">
             <h2>Pipeline Request</h2>
             <pre className="preview">{JSON.stringify(request, null, 2)}</pre>
-            {downloads && (
+            {preview && (
               <p className="muted">
-                <HardDrive size={16} /> {downloadSummary(downloads)}
+                <HardDrive size={16} /> {downloadSummary(preview)}
+              </p>
+            )}
+            {sharesHeld && (
+              <p className="muted">
+                <Cpu size={16} /> <span>{sharesHeld}</span>
               </p>
             )}
             {errorCount > 0 && (
@@ -256,28 +273,7 @@ function PipelineBuilder({
   );
 }
 
-/** What the API says the request downloads, asked again shortly after each change. */
-function useDownloadPreview(request: unknown, secrets: Record<string, string>) {
-  const [preview, setPreview] = useState<DownloadPreview>();
-  const submission = JSON.stringify({ request, secrets });
-  useEffect(() => {
-    let current = true;
-    const timer = setTimeout(() => {
-      callApi<DownloadPreview>(VALIDATE_PIPELINE, JSON.parse(submission)).then(
-        (answer) => current && setPreview(answer),
-        // An invalid request has no downloads yet; the Validate button explains why.
-        () => current && setPreview(undefined),
-      );
-    }, DOWNLOAD_PREVIEW_DELAY_MS);
-    return () => {
-      current = false;
-      clearTimeout(timer);
-    };
-  }, [submission]);
-  return preview;
-}
-
-function downloadSummary(preview: DownloadPreview): string {
+function downloadSummary(preview: RequestPreview): string {
   const toDownload = formatBytes(preview.download_bytes);
   return `${toDownload} to download, ${formatBytes(preview.cached_bytes)} already cached`;
 }

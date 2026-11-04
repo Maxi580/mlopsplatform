@@ -14,6 +14,7 @@ from mlp_api.endpoints.lifecycle import (
     endpoint_summary,
     find_endpoint,
     list_endpoints,
+    preview_endpoint,
     restart_endpoint,
     start_endpoint,
     stop_endpoint,
@@ -115,6 +116,15 @@ def start(start: EndpointStart, request: Request) -> dict:
         raise HTTPException(422, f"Can't serve {start.model}: {error}") from None
     except RuntimeError as error:
         raise HTTPException(502, str(error)) from None
+
+
+# What a start would pin, shown before starting.
+@router.post(api_paths.PREVIEW_ENDPOINT)
+def preview(spec: EndpointSpec, request: Request) -> dict:
+    try:
+        return preview_endpoint(request.app.state, spec).model_dump(mode="json")
+    except ValueError as error:
+        raise HTTPException(422, f"Can't serve {spec.model}: {error}") from None
 
 
 @router.post(api_paths.STOP_ENDPOINT)

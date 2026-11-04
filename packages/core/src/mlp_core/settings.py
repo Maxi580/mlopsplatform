@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     gpu_sharing: bool
     gpu_budget: float
     gpu_slice: float
+    # What a calculated GPU Share counts in (#116); see deploy/values.yaml.
+    gpu_share_weights_factor: float
+    gpu_share_vllm_reserve_gib: float
+    gpu_share_shared_memory_reserve_gib: float
+    gpu_share_kv_cache_tokens: int
+    gpu_share_max_model_len: int
+    gpu_share_training_factor: float
+    gpu_share_full_training_factor: float
+    gpu_share_training_reserve_gib: float
+    gpu_share_maximum: float
+    gpu_share_maximum_shared_memory: float
     # GPUs per node for a Stage; a finetune Phase trains on nodes_per_stage nodes, the rest on one.
     gpus_per_stage: int
     nodes_per_stage: int
@@ -57,10 +68,16 @@ class Settings(BaseSettings):
 
     def gpu_request(self, share: float, gpus: int) -> int:
         """The `nvidia.com/gpu` a job asks for on `gpus` GPUs: the share's slices, or whole GPUs."""
-        if not self.gpu_sharing:
-            return gpus
+        return self.gpu_slices(share) * gpus if self.gpu_sharing else gpus
+
+    def gpu_slices(self, share: float) -> int:
+        """The whole slices the share takes on one GPU."""
         # Rounded first, as 0.15 / 0.05 is a hair above 3 and must not become 4 slices.
-        return math.ceil(round(share / self.gpu_slice, 6)) * gpus
+        return math.ceil(round(share / self.gpu_slice, 6))
+
+    def share_in_slices(self, share: float) -> float:
+        """The share rounded up to whole slices."""
+        return round(self.gpu_slices(share) * self.gpu_slice, 6)
 
     def gpus_of_request(self, request: int) -> float:
         """The GPUs a `nvidia.com/gpu` request adds up to: slices of one, or whole ones."""

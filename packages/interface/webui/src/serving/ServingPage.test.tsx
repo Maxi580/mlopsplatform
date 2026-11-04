@@ -65,6 +65,7 @@ const chat: Endpoint = {
   owner: "shared",
   model: "model:qwen-sft@2",
   status: "running",
+  gpu_share: 0.85,
   url: `https://platform.test${ENDPOINT_PATH}`,
   key: "key-of-chat",
   created_at: "2026-10-02T08:30:00+00:00",
@@ -477,15 +478,15 @@ test("an Endpoint's load and TTFT show in its row, and its name links to its sta
 
   const name = await screen.findByRole("link", { name: "chat" });
   const cells = within(name.closest("tr")!).getAllByRole("cell");
-  expect(cells.slice(3, 6).map((cell) => cell.textContent)).toEqual([
+  expect(cells.slice(4, 7).map((cell) => cell.textContent)).toEqual([
     "3 · 1",
     // Tokens/s takes two readings.
     "—",
     "123 ms",
   ]);
-  expect(cells[3]).toHaveAttribute("title", "3 running · 1 waiting");
-  expect(cells[8]).toHaveTextContent("10-02 08:30");
-  expect(cells[8]).toHaveAttribute("title", "2026-10-02 08:30");
+  expect(cells[4]).toHaveAttribute("title", "3 running · 1 waiting");
+  expect(cells[9]).toHaveTextContent("10-02 08:30");
+  expect(cells[9]).toHaveAttribute("title", "2026-10-02 08:30");
   expect(name).toHaveAttribute("href", "/serving/chat");
 });
 
@@ -495,7 +496,7 @@ test("an Endpoint without stats shows dashes", async () => {
 
   const row = (await screen.findByText("chat")).closest("tr")!;
   const cells = within(row).getAllByRole("cell");
-  expect(cells.slice(3, 6).map((cell) => cell.textContent)).toEqual(["—", "—", "—"]);
+  expect(cells.slice(4, 7).map((cell) => cell.textContent)).toEqual(["—", "—", "—"]);
 });
 
 test("tokens/s is the generated tokens between two readings", async () => {
@@ -508,7 +509,7 @@ test("tokens/s is the generated tokens between two readings", async () => {
   await act(() => vi.advanceTimersByTimeAsync(ENDPOINT_LIST_REFRESH_MS));
 
   const row = screen.getByRole("link", { name: "chat" }).closest("tr")!;
-  expect(within(row).getAllByRole("cell")[4]).toHaveTextContent("50.0");
+  expect(within(row).getAllByRole("cell")[5]).toHaveTextContent("50.0");
   vi.useRealTimers();
 });
 
@@ -860,4 +861,62 @@ test("edits in open judging settings survive the list's refresh", async () => {
   expect(every).toHaveValue(3);
   expect(within(settings).getByLabelText(/^Judge this Endpoint/)).not.toBeChecked();
   vi.useRealTimers();
+});
+
+test("an Endpoint's row shows its GPU Share", async () => {
+  fakeApi(routes);
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  expect(within(row).getByText("85%")).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "GPU Share" })).toBeInTheDocument();
+});
+
+test("the GPU Share and length a start would pin show before starting", async () => {
+  const calls = fakeApi({
+    ...routes,
+    "POST /endpoints/preview": [
+      200,
+      { gpu_memory_utilization: 0.95, max_model_len: 8192, kv_cache_dtype: "fp8" },
+    ],
+  });
+  renderApp("/serving");
+
+  await userEvent.type(await screen.findByRole("combobox", { name: /^Model/ }), "hf:x/y");
+
+  expect(
+    await screen.findByText(/GPU Share 95%, up to 8192 tokens, KV cache in fp8/),
+  ).toBeInTheDocument();
+  const asked = calls.filter((call) => call.route === "POST /endpoints/preview").at(-1)!.body;
+  expect(asked).toEqual({ model: "hf:x/y", ...DEFAULTS });
+});
+
+test("a model that can't be served shows no GPU Share before starting", async () => {
+  const calls = fakeApi({
+    ...routes,
+    "POST /endpoints/preview": [422, { detail: "Can't serve hf:x/y" }],
+  });
+  renderApp("/serving");
+
+  await screen.findByRole("combobox", { name: /^Model/ });
+  expect(calls.some((call) => call.route === "POST /endpoints/preview")).toBe(false);
+
+  await userEvent.type(screen.getByRole("combobox", { name: /^Model/ }), "hf:x/y");
+
+  await waitFor(() =>
+    expect(calls.some((call) => call.route === "POST /endpoints/preview")).toBe(true),
+  );
+  expect(screen.queryByText(/GPU Share \d+%/)).not.toBeInTheDocument();
+});
+
+test("the GPU Share the Judge would run on shows before saving", async () => {
+  fakeApi({
+    ...routes,
+    "POST /endpoints/preview": [200, { gpu_memory_utilization: 0.2, max_model_len: 4096 }],
+  });
+  renderApp("/serving");
+
+  await userEvent.type(await screen.findByRole("combobox", { name: /^Judge model/ }), "hf:x/y");
+
+  expect(await screen.findByText("GPU Share 20%, up to 4096 tokens")).toBeInTheDocument();
 });

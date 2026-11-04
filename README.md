@@ -72,7 +72,7 @@ The machine has its own Model Cache directory, which the janitor doesn't clean (
 
 Every GPU workload holds a **GPU Share**, a share of a GPU's memory; whatever fits runs, and the rest waits, oldest first, though a newer one goes ahead if the older one doesn't fit. Nothing running is evicted. A share gives no extra compute: time-slicing gives each process equal turns.
 
-| Workload | Set by | Default | Kept to it by |
+| Workload | Set by | Default, [calculated](#calculated-defaults), else | Kept to it by |
 |---|---|---|---|
 | Endpoint, Judge | `gpu_memory_utilization` | 0.3 | vLLM's budget |
 | `distill`, `evaluate` with their own vLLM | `serving.gpu_memory_utilization` | 0.3 | vLLM's budget |
@@ -81,11 +81,39 @@ Every GPU workload holds a **GPU Share**, a share of a GPU's memory; whatever fi
 
 `gpu_share` is one optional top-level field of the Pipeline Request, or of the CLI Profile, for the whole Pipeline. A step holds its share only while it runs, so a Pipeline can wait again between steps. A `grpo` or `rloo` Phase's colocated vLLM runs inside the training process, so `gpu_share` covers both, and the step fails with a clear message unless it is larger than `vllm_gpu_memory_utilization`.
 
-The device plugin's time-slicing offers each GPU as slices of `gpu_slice` (5%), a share is rounded up to whole slices and requested as `nvidia.com/gpu`, and Kueue counts them. `gpu_budget` in `deploy/values.yaml` (default 1.0, a whole number of slices) is the share of each GPU the platform may hand out, in case other apps use the machine; a larger share can never fit, so the API refuses it. Anything else is your call: a share that's too small fails, and you raise it. Shares may add up to all of a GPU's memory, which leaves nothing for other processes on the machine.
+The device plugin's time-slicing offers each GPU as slices of `gpu_slice` (5%), a share is rounded up to whole slices and requested as `nvidia.com/gpu`, and Kueue counts them. `gpu_budget` in `deploy/values.yaml` (default 1.0, a whole number of slices) is the share of each GPU the platform may hand out, in case other apps use the machine; a larger share you enter can never fit, so the API refuses it. Anything else is your call: a share that's too small fails, and you raise it. Shares may add up to all of a GPU's memory, which leaves nothing for other processes on the machine.
 
 Several machines share one cluster-wide total, so Kueue may admit a job its machine has no room for; the scheduler then holds it until there is room.
 
 If any machine has more than one GPU, the device plugin could spread one job's slices across its GPUs, so `install.sh` leaves sharing off and prints why: jobs request whole GPUs and shares are ignored. Training across GPUs through Kubeflow Trainer is unchanged.
+
+### Calculated defaults
+
+A share depends on both the model and the GPU, so a share you leave out is calculated when the work is submitted, with no model running, and rounded up to slices. Enter a value, in the form, as `-o gpu_memory_utilization=0.4` or as `gpu_share` in a CLI Profile, and it always wins, up to 1. The result is stored with the pinned spec or request, so a restart, resume or rerun keeps it. The Web UI shows it before you submit and on each Endpoint and Pipeline.
+
+For vLLM, with `W` the weights and `B` the KV cache's bytes per token (`2 × layers × KV heads × head dimension × bytes per value`, from `config.json`), each per GPU with tensor parallelism:
+
+```
+L     = max_model_len, or min(model limit, 32768)
+need  = 1.1 × W + 2 GiB + (4 GiB on shared-memory GPUs) + B × max(L, 65536)
+```
+
+65,536 tokens is about 2 requests of 32k or 8 of 8k at once. `max_model_len` is now always passed where the model's files can be read, so **a model with a longer limit is cut to 32k unless you raise it**.
+
+Training, `sweep`, `quantize` and `speculate` need `M × W + 2 GiB`, with `M` 6 for `full` and 2 for everything else, plus a Teacher's weights beside a Phase that learns from one; the Pipeline takes what its largest step needs, and a `grpo` or `rloo` Phase adds the share colocated vLLM takes.
+
+| Model | 12 GB | 24 GB | GB10 |
+|---|---|---|---|
+| Qwen2.5-0.5B | 35% | 20% | 10% |
+| Llama 8B | doesn't fit | 85% | 25% |
+| Llama 3.3 70B (w4a16 quantized) | doesn't fit | doesn't fit | 55% |
+| Qwen3-32B | doesn't fit | doesn't fit | 75% |
+
+A default that doesn't fit is never refused. In order, it reserves KV cache for only `B × L`, then uses `kv_cache_dtype: fp8`, then takes the maximum: 95%, 85% on shared memory, or `gpu_budget` if lower. The job then runs and, if it can't, fails with a clear message.
+
+`W` comes from the safetensors index's `total_size`, or the size of a single `model.safetensors`; an Adapter adds its file to its base. A Stage's output doesn't exist yet at submission, so `@finetune` and `@quantize` are sized as the model they start from, which overestimates a quantized output. If the model's files or the GPU's memory can't be read, the fixed defaults in the table above apply.
+
+These numbers are derived from vLLM v0.30.0's source and logs and are **untested on our hardware**; the 4 GiB reserve rests on [one older forum log](https://forums.developer.nvidia.com/t/with-the-same-model-and-vllm-image-gb10-uses-more-vram-than-x86-gpu/353523), and the training multipliers are the weakest. Multimodal and speculative overhead can be much larger and isn't covered. Correct them from real runs: they are the `gpu_share_*` settings in `deploy/values.yaml`.
 
 The Web UI's Storage tab shows how full each GPU is, live, with no history. A small reporter pod on each machine reads `nvidia-smi`; a GPU that reports its memory as `Not Supported`, as the GB10 does, shows the machine's `/proc/meminfo`, labelled as shared with the system. Reserved adds up the slices of the jobs scheduled on the machine, so a job can wait while memory looks free: its share is reserved but not yet used. A machine whose reporter doesn't answer is left out.
 
@@ -166,14 +194,14 @@ client = OpenAI(base_url="https://<domain>/serving/<uuid>/v1", api_key="<Endpoin
 client.chat.completions.create(model="chat", messages=[{"role": "user", "content": "Hi"}])
 ```
 
-Serving options, all optional (`POST /endpoints` takes `name`, `model` and these; anything else, `tensor_parallel_size` included, is rejected). Where vLLM's default doesn't depend on the model, it is the option's default, so forms start from it; `max_model_len` and `tool_parser` are left to vLLM, which reads them from the model:
+Serving options, all optional (`POST /endpoints` takes `name`, `model` and these; anything else, `tensor_parallel_size` included, is rejected). Where vLLM's default doesn't depend on the model, it is the option's default, so forms start from it; `gpu_memory_utilization` and `max_model_len` are [calculated](#calculated-defaults), and `tool_parser` is left to vLLM, which reads it from the model:
 
 | Option | vLLM flag |
 |---|---|
 | `max_model_len` | `--max-model-len` |
 | `prefix_caching` (default `true`) | `--[no-]enable-prefix-caching` |
 | `dtype` (default `auto`): `auto`, `half`, `float16`, `bfloat16`, `float32` | `--dtype` |
-| `gpu_memory_utilization` (default 0.3, its [GPU Share](#gpu-sharing)), `max_num_seqs` (default 256), `max_num_batched_tokens` | the same names |
+| `gpu_memory_utilization` (its [GPU Share](#gpu-sharing), [calculated](#calculated-defaults) by default), `max_num_seqs` (default 256), `max_num_batched_tokens` | the same names |
 | `async_scheduling` | `--[no-]async-scheduling` |
 | `kv_cache_dtype` (default `auto`): `auto`, `fp8`, `fp8_e4m3`, `fp8_e5m2` | `--kv-cache-dtype` |
 | `tool_parser`: one of vLLM's built-in parsers | `--tool-call-parser` |

@@ -7,6 +7,8 @@ export type Endpoint = {
   owner: string;
   model: string;
   status: string;
+  // The share of a GPU's memory it holds while it runs.
+  gpu_share: number;
   // Why it crashed, until a restart: a plain message or the last log lines.
   failure?: string | null;
   url: string;

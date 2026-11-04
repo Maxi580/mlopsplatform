@@ -10,6 +10,7 @@ const running: Pipeline = {
   owner: "shared",
   status: "running",
   stages: ["finetune"],
+  gpu_shares: { finetune: 0.3 },
   created_at: new Date().toISOString(),
   kubeflow_run_url: "/pipeline/#/runs/details/run-1",
   mlflow_run_url: "https://platform.test/mlflow/#/runs/abc",
@@ -132,4 +133,23 @@ test("cancel asks once more, then cancels", async () => {
   expect(await screen.findByText("cancelled")).toBeInTheDocument();
   expect(calls.map((call) => call.route)).toContain("POST /pipelines/7/cancel");
   expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+});
+
+test("a Pipeline's row shows the GPU Share of its Stages", async () => {
+  fakeApi({
+    "GET /pipelines": [
+      200,
+      [
+        {
+          ...running,
+          stages: ["finetune", "evaluate"],
+          gpu_shares: { finetune: 0.3, evaluate: 0.25 },
+        },
+      ],
+    ],
+    "GET /settings": [200, { node_count: 1, gpu_count: 1 }],
+  });
+  renderApp("/");
+
+  expect(await screen.findByText("GPU Share: finetune 30%, evaluate 25%")).toBeInTheDocument();
 });
