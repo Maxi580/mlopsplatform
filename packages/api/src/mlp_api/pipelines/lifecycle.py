@@ -35,6 +35,8 @@ pipeline = Table(
     # The resolved request; it never holds a Secret value.
     Column("request", JSON, nullable=False),
     Column("status", String, nullable=False),
+    # Why it failed.
+    Column("failure", String),
     Column("kubeflow_run_id", String),
     Column("mlflow_run_url", String),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -79,8 +81,9 @@ def submit_pipeline(
         spec = compile_pipeline(pipeline_id, request, fetched, cluster.steps, settings, resume)
         run_id = cluster.submit_run(f"{request.name}-{pipeline_id}", spec)
     except Exception as error:
-        set_pipeline(engine, pipeline_id, status="failed")
-        raise RuntimeError(f"Kubeflow did not start Pipeline {pipeline_id}: {error}") from None
+        failure = f"Kubeflow did not start Pipeline {pipeline_id}: {error}"
+        set_pipeline(engine, pipeline_id, status="failed", failure=failure)
+        raise RuntimeError(failure) from None
     set_pipeline(engine, pipeline_id, kubeflow_run_id=run_id)
     return pipeline_id
 
@@ -160,6 +163,7 @@ def pipeline_summary(row) -> dict:
         "name": row.name,
         "owner": row.owner,
         "status": row.status,
+        "failure": row.failure,
         "stages": [stage for stage in config.STAGES if row.request.get(stage)],
         "created_at": row.created_at.isoformat(),
         "kubeflow_run_url": row.kubeflow_run_id and kubeflow_run_url(row.kubeflow_run_id),
@@ -180,7 +184,7 @@ def fail_unsubmitted_pipelines(engine: Engine) -> None:
         connection.execute(
             update(pipeline)
             .where(pipeline.c.kubeflow_run_id.is_(None), unfinished)
-            .values(status="failed")
+            .values(status="failed", failure=config.UNSUBMITTED_FAILURE)
         )
 
 

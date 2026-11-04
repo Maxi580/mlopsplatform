@@ -219,9 +219,30 @@ test("a stopped Endpoint is deleted with its trashcan, and only a stopped one ha
   expect(calls.map((call) => call.route)).toContain("DELETE /endpoints/old");
 });
 
+test("a failed Endpoint says why and links its saved log", async () => {
+  const failed = { ...chat, status: "failed", failure: "Out of GPU memory." };
+  fakeApi({ ...routes, "GET /endpoints": [200, [failed]] });
+  renderApp("/serving");
+
+  expect(await screen.findByText("Out of GPU memory.")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /full log/i })).toHaveAttribute(
+    "href",
+    "/endpoints/chat/log",
+  );
+});
+
+test("an Endpoint that did not fail shows no failure or log", async () => {
+  fakeApi({ ...routes, "GET /endpoints": [200, [chat]] });
+  renderApp("/serving");
+
+  await screen.findByText("chat");
+  expect(screen.queryByRole("link", { name: /full log/i })).not.toBeInTheDocument();
+});
+
 test.each([
   ["running", ["Judge", "Stop"]],
   ["pending", ["Judge", "Stop"]],
+  ["waiting for GPU", ["Judge", "Stop"]],
   ["failed", ["Judge", "Restart", "Stop"]],
   ["stopped", ["Judge", "Restart", "Delete chat"]],
 ])("a %s Endpoint's row offers %j", async (status, actions) => {
@@ -245,7 +266,7 @@ test("a stopped Endpoint restarts from its row", async () => {
   await userEvent.click(within(stopped).getByRole("button", { name: /restart/i }));
 
   expect(
-    await screen.findByText("Restarted old; it is pending until vLLM is ready"),
+    await screen.findByText("Restarted old; it answers once vLLM is ready"),
   ).toBeInTheDocument();
   expect(calls.map((call) => call.route)).toContain("POST /endpoints/old/restart");
 });

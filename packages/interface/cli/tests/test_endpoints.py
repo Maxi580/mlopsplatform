@@ -32,6 +32,20 @@ def test_endpoints_lists_each_with_its_model_status_and_full_url(logged_in, fake
     assert row.split() == ["chat", "model:qwen-sft@1", "running", URL]
 
 
+def test_endpoints_aligns_a_long_status_and_says_why_one_failed(logged_in, fake_api):
+    waiting = {**ENDPOINT, "name": "queued", "status": "waiting for GPU"}
+    failed = {**ENDPOINT, "status": "failed", "failure": "Out of GPU memory."}
+    fake_api.answers[api_paths.ENDPOINTS] = (200, [waiting, failed])
+
+    result = mlp_endpoints()
+
+    assert result.exit_code == 0, result.output
+    header, queued, chat = result.output.splitlines()[:3]
+    assert header.index("URL") == queued.index(URL) == chat.index(URL)
+    assert "chat failed: Out of GPU memory." in result.output
+    assert "queued failed" not in result.output
+
+
 def test_start_sends_the_model_and_serving_options_and_prints_the_url(logged_in, fake_api):
     fake_api.answers[api_paths.ENDPOINTS] = (201, {**ENDPOINT, "status": "pending"})
 

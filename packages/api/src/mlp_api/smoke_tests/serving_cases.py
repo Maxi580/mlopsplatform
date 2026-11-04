@@ -65,7 +65,7 @@ def serving_case_result(state, name: str, serving: dict, cases: dict, endpoints:
 
     # 3. Passed once vLLM is ready, answers a real chat request and its stats and trace show it;
     # then it stops.
-    if endpoint["status"] == "pending":
+    if endpoint["status"] in config.ENDPOINT_STARTING_STATUSES:
         return "pending"
     passed = endpoint["status"] == "running" and counts_a_chat_request(state, name)
     if endpoint["status"] != "stopped":

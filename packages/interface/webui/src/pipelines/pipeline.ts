@@ -4,6 +4,8 @@ export type Pipeline = {
   name: string;
   owner: string;
   status: string;
+  // Why it failed: a plain message or the last log lines.
+  failure?: string | null;
   stages: string[];
   created_at: string;
   kubeflow_run_url: string | null;

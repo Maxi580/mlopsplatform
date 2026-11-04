@@ -181,8 +181,9 @@ def start_smoke_test(state, selection: SmokeTestSelection) -> dict:
         )
         run_id = state.cluster.submit_run(name, spec)
     except Exception as error:
-        set_pipeline(engine, pipeline_id, status="failed")
-        raise RuntimeError(f"Smoke Test {name} did not start: {error}") from None
+        failure = f"Smoke Test {name} did not start: {error}"
+        set_pipeline(engine, pipeline_id, status="failed", failure=failure)
+        raise RuntimeError(failure) from None
     set_pipeline(engine, pipeline_id, kubeflow_run_id=run_id)
     return {"id": pipeline_id, "name": name, "kubeflow_run_url": kubeflow_run_url(run_id)}
 

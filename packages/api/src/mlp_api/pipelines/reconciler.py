@@ -8,6 +8,7 @@ from mlp_api.endpoints.history_retention import trim_endpoint_history
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
 from mlp_api.endpoints.stats_history import sample_endpoint_stats
 from mlp_api.judge.lifecycle import reconcile_judge
+from mlp_api.pipelines.failure import failure_reason
 from mlp_api.pipelines.lifecycle import pipeline, pipeline_secret_name, set_pipeline, unfinished
 from mlp_api.pipelines.mlflow_run import log_pipeline_request
 from mlp_api.smoke_tests.cases import case_results, has_pending_serving_cases
@@ -31,7 +32,7 @@ def reconcile_once(state) -> None:
     """One round: Pipelines and Endpoints follow the cluster and are sampled; Smoke Tests go on."""
     now = datetime.now(UTC)
     reconcile_pipelines(state)
-    reconcile_endpoints(state.engine, state.cluster)
+    reconcile_endpoints(state)
     try:
         reconcile_judge(state)
     except Exception:
@@ -64,6 +65,13 @@ def reconcile_pipelines(state) -> None:
         first_seen = url and row.mlflow_run_url is None
         if first_seen and (logged_pipeline_request(state, row, url) or finished):
             values["mlflow_run_url"] = url
+        # Once, as a Pipeline that failed no longer comes here.
+        if status == "failed":
+            values["failure"] = (
+                config.RUN_DELETED_FAILURE
+                if run is None
+                else failure_reason(cluster.failed_step_log(row.kubeflow_run_id))
+            )
         waiting = run is not None and not finished
         if waiting and cluster.is_waiting_for_gpu(row.kubeflow_run_id, row.id):
             values["status"] = config.WAITING_FOR_GPU

@@ -24,10 +24,15 @@ def endpoints(context: typer.Context) -> None:
     # 2. One row per Endpoint, under a header, in aligned columns.
     rows = [(e["name"], e["model"], e["status"], e["url"]) for e in listing]
     header = ("Endpoint", "Model", "Status", "URL")
-    name_width = max(len(row[0]) for row in [header, *rows])
-    model_width = max(len(row[1]) for row in [header, *rows])
-    for name, model, status, endpoint_url in [header, *rows]:
-        typer.echo(f"{name:<{name_width}}  {model:<{model_width}}  {status:<8}  {endpoint_url}")
+    widths = [max(len(row[column]) for row in [header, *rows]) for column in range(3)]
+    for *aligned, endpoint_url in [header, *rows]:
+        columns = [value.ljust(width) for value, width in zip(aligned, widths, strict=True)]
+        typer.echo("  ".join([*columns, endpoint_url]))
+
+    # 3. Why any of them failed.
+    for e in listing:
+        if e.get("failure"):
+            typer.echo(f"{e['name']} failed: {e['failure']}")
 
 
 @app.command()
@@ -41,7 +46,7 @@ def start(
         ),
     ] = None,
 ) -> None:
-    """Start an Endpoint serving the model; it waits as pending while GPUs are busy."""
+    """Start an Endpoint serving the model; it shows `waiting for GPU` while none is free."""
     # 1. The serving options, their values read as YAML so numbers and booleans keep their type.
     options = {}
     for pair in option or []:

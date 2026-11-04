@@ -454,10 +454,15 @@ class FakeCluster:
         # Pipeline ids that have TrainJobs, and those of them Kueue holds back.
         self.trainjobs = set()
         self.queued_trainjobs = set()
+        # Run ID -> the log of its first failed step.
+        self.failed_step_logs = {}
         # Endpoint name -> its Kubernetes objects, and the state its pod is in.
         self.endpoints = {}
         self.endpoint_states = {}
         self.deleted_endpoints = []
+        # Endpoint name -> what Kubernetes still has of its logs, and those scaled down.
+        self.logs = {}
+        self.scaled_to_zero = []
         # Endpoint name -> its vLLM's `/metrics` text; any other Endpoint is unreachable.
         self.metrics = {}
         self.chat_requests = []
@@ -494,6 +499,9 @@ class FakeCluster:
     def is_waiting_for_gpu(self, run_id, pipeline_id):
         return run_id in self.waiting_for_gpu or pipeline_id in self.queued_trainjobs
 
+    def failed_step_log(self, run_id):
+        return self.failed_step_logs.get(run_id, "")
+
     def trainjob_pipelines(self):
         return set(self.trainjobs)
 
@@ -510,6 +518,13 @@ class FakeCluster:
 
     def endpoint_state(self, name):
         return self.endpoint_states.get(name, "pending") if name in self.endpoints else None
+
+    def endpoint_logs(self, name):
+        return self.logs.get(name, "")
+
+    def scale_endpoint_to_zero(self, name):
+        self.scaled_to_zero.append(name)
+        self.endpoint_states[name] = "failed"
 
     def endpoint_metrics(self, name):
         if name not in self.metrics:

@@ -124,6 +124,27 @@ def test_ls_shows_owner_status_stages_and_links(logged_in, home, fake_api, platf
     assert "https://mlflow.test/#/runs/old" in result.output
 
 
+def test_ls_says_why_a_pipeline_failed(logged_in, home, fake_api, platform_ca):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE)
+    pipeline = {
+        "id": 7,
+        "name": "qwen-sft",
+        "owner": "shared",
+        "status": "failed",
+        "stages": ["finetune"],
+        "created_at": "2026-10-02T12:00:00+00:00",
+        "kubeflow_run_url": None,
+        "mlflow_run_url": None,
+        "failure": "Out of GPU memory.",
+    }
+    fake_api.answers[api_paths.PIPELINES] = (200, [pipeline])
+
+    result = mlp("ls")
+
+    assert result.exit_code == 0, result.output
+    assert "7 Failure:  Out of GPU memory." in result.output
+
+
 def test_ls_shows_the_best_parameters_a_sweep_found(logged_in, home, fake_api, platform_ca):
     write_profile(home, fake_api.url, platform_ca, **PROFILE)
     sweep = {

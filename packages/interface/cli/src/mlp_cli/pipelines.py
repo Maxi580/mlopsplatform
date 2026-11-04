@@ -89,7 +89,7 @@ def resume(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")])
 
 
 def ls() -> None:
-    """List Pipelines with their Owner, status, Stages and links."""
+    """List Pipelines with their Owner, status, Stages, links and why any failed."""
     profile = load_profile()
     with api_client() as client:
         pipelines = exit_on_error(client.get(api_paths.PIPELINES)).json()
@@ -116,6 +116,8 @@ def ls() -> None:
             typer.echo(
                 f"{p['id']} Sweep:    {' '.join(values)} (objective {p['sweep']['objective']})"
             )
+        if p.get("failure"):
+            typer.echo(f"{p['id']} Failure:  {p['failure']}")
 
 
 def cancel(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:

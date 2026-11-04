@@ -19,6 +19,10 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [list]
+  # A failed step's log says why its Pipeline failed.
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
   - apiGroups: [trainer.kubeflow.org]
     resources: [trainjobs]
     verbs: [list, deletecollection]

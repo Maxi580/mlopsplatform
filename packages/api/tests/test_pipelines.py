@@ -5,6 +5,7 @@ import pytest
 
 from mlp_api.pipelines.cluster import KubeflowRun
 from mlp_api.pipelines.hugging_face import HubModel
+from mlp_api.pipelines.lifecycle import create_pipeline, fail_unsubmitted_pipelines
 from mlp_api.pipelines.reconciler import reconcile_pipelines
 from mlp_core import api_paths, config
 
@@ -300,6 +301,119 @@ def test_a_pipeline_whose_trainjob_waits_for_gpus_shows_it(logged_in_api, submit
     reconcile(logged_in_api)
 
     assert pipelines(logged_in_api)[0]["status"] == "waiting for GPU"
+
+
+def test_a_failed_pipeline_shows_the_last_lines_of_its_failed_step(
+    logged_in_api, submittable, cluster
+):
+    submit(logged_in_api)
+    finish_run(cluster, "FAILED")
+    lines = [f"line {number}" for number in range(40)]
+    cluster.failed_step_logs = dict.fromkeys(cluster.runs, "\n".join(lines))
+
+    reconcile(logged_in_api)
+
+    [found] = pipelines(logged_in_api)
+    assert found["status"] == "failed"
+    assert found["failure"] == "\n".join(lines[-config.FAILURE_SHOWN_LINES :])
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2 GiB",
+        "CUDA_ERROR_OUT_OF_MEMORY",
+        "Out of GPU memory: tried to allocate 2 GiB",
+        "ValueError: Free memory on device (1/8 GiB) on startup is less than desired GPU memory "
+        "utilization (0.9, 7 GiB).",
+    ],
+)
+def test_a_pipeline_out_of_gpu_memory_gets_the_plain_message(
+    logged_in_api, submittable, cluster, error
+):
+    submit(logged_in_api)
+    finish_run(cluster, "FAILED")
+    cluster.failed_step_logs = dict.fromkeys(cluster.runs, f"{error}\n  and a traceback after it")
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["failure"] == config.OUT_OF_MEMORY_FAILURE
+
+
+def test_a_reward_out_of_sandbox_memory_is_not_blamed_on_the_gpu(
+    logged_in_api, submittable, cluster
+):
+    submit(logged_in_api)
+    finish_run(cluster, "FAILED")
+    log = f"The reward {config.REWARD_FAILURES['memory_limit']}"
+    cluster.failed_step_logs = dict.fromkeys(cluster.runs, log)
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["failure"] == log
+
+
+def test_a_failed_pipeline_whose_logs_are_gone_says_so(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+    finish_run(cluster, "FAILED")
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["failure"] == config.NO_LOG_FAILURE
+
+
+def test_a_pipeline_that_has_not_failed_has_no_failure(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+    finish_run(cluster, "RUNNING")
+    cluster.failed_step_logs = dict.fromkeys(cluster.runs, "a step's log")
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["failure"] is None
+
+
+def test_a_pipelines_failure_is_filled_once(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+    finish_run(cluster, "FAILED")
+    cluster.failed_step_logs = dict.fromkeys(cluster.runs, "the cause")
+    reconcile(logged_in_api)
+    cluster.failed_step_logs = dict.fromkeys(cluster.runs, "something later")
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["failure"] == "the cause"
+
+
+def test_a_run_deleted_in_the_kfp_ui_says_so(logged_in_api, submittable, cluster):
+    submit(logged_in_api)
+    cluster.runs.clear()
+
+    reconcile(logged_in_api)
+
+    assert pipelines(logged_in_api)[0]["failure"] == config.RUN_DELETED_FAILURE
+
+
+def test_a_pipeline_kubeflow_would_not_start_says_why(
+    logged_in_api, submittable, cluster, monkeypatch
+):
+    def refuse(display_name, pipeline_spec):
+        raise ConnectionError("ml-pipeline is down")
+
+    monkeypatch.setattr(cluster, "submit_run", refuse)
+
+    submit(logged_in_api)
+
+    assert "ml-pipeline is down" in pipelines(logged_in_api)[0]["failure"]
+
+
+def test_a_pipeline_the_api_restarted_before_submitting_says_so(logged_in_api):
+    engine = logged_in_api.app.state.engine
+    create_pipeline(engine, "unsubmitted", {})
+
+    fail_unsubmitted_pipelines(engine)
+
+    [found] = pipelines(logged_in_api)
+    assert (found["status"], found["failure"]) == ("failed", config.UNSUBMITTED_FAILURE)
 
 
 def test_trainjobs_of_finished_or_unknown_pipelines_are_deleted(

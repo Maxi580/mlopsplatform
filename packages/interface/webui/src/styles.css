@@ -579,6 +579,15 @@ span.pipeline-name {
   color: var(--danger);
 }
 
+.failure {
+  margin: 0 0 4px;
+  max-height: 16em;
+  overflow: auto;
+  color: var(--danger);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .live {
   display: inline-flex;
   align-items: center;

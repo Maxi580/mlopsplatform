@@ -19,6 +19,8 @@ endpoint = Table(
     Column("uses", JSON, nullable=False),
     Column("gpus", Integer, nullable=False),
     Column("status", String, nullable=False),
+    # Why it crashed, until a restart.
+    Column("failure", String),
     Column("created_at", DateTime(timezone=True), nullable=False),
     # Whether the Judge scores every `judge_every`th of its Request Traces since `judging_since`,
     # at most `judge_max_per_hour`; `judge_count` counts the traces seen, so a restart goes on.

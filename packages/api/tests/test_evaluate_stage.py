@@ -43,7 +43,7 @@ def errors(api, request) -> list[dict]:
 def running_endpoint(api, cluster, name="chat"):
     assert start_endpoint(api, f"hf:{BASE_MODEL}", name=name).status_code == 201
     cluster.endpoint_states[name] = "running"
-    reconcile_endpoints(api.app.state.engine, cluster)
+    reconcile_endpoints(api.app.state)
 
 
 def tasks(cluster) -> dict:

@@ -10,6 +10,7 @@ from mlp_api.endpoints.keys import endpoint_opened_by, refresh_endpoint_key
 from mlp_api.endpoints.lifecycle import (
     EndpointConflict,
     delete_endpoint,
+    endpoint_log_key,
     endpoint_summary,
     find_endpoint,
     list_endpoints,
@@ -67,6 +68,17 @@ def history(name: str, request: Request, span: str = "live") -> dict:
     if find_endpoint(request.app.state.engine, name) is None:
         raise HTTPException(404, f"No Endpoint {name}")
     return endpoint_history(request.app.state.model_registry, name, span, datetime.now(UTC))
+
+
+# Plain text, so the Web UI can just link it; an Endpoint has one from a crash until a restart.
+@router.get(api_paths.ENDPOINT_LOG)
+def log(name: str, request: Request) -> Response:
+    state = request.app.state
+    found = find_endpoint(state.engine, name)
+    if found is None or found.failure is None:
+        raise HTTPException(404, f"Endpoint {name} has no saved log")
+    content = state.object_store.read(state.object_store.bucket, endpoint_log_key(name))
+    return Response(content, media_type="text/plain")
 
 
 # Stopped Endpoints have their Request Traces too.

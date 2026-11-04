@@ -74,7 +74,7 @@ def contains(args: list[str], expected: list[str]) -> bool:
 
 
 def reconcile(api):
-    reconcile_endpoints(api.app.state.engine, api.app.state.cluster)
+    reconcile_endpoints(api.app.state)
 
 
 def test_an_endpoint_for_a_base_model_fetches_it_and_serves_it_offline_from_the_model_cache(
@@ -522,7 +522,162 @@ def test_a_failed_endpoint_whose_model_is_gone_keeps_its_deployment(
     assert "chat" in cluster.endpoints
 
 
-@pytest.mark.parametrize("status", ["pending", "running"])
+def crash(api, cluster, log="Traceback\nValueError: no such tokenizer", name="chat"):
+    """The Endpoint reaches CrashLoopBackOff, with the log, and a round of the reconciler."""
+    cluster.endpoint_states[name] = config.ENDPOINT_CRASHING
+    cluster.logs[name] = log
+    reconcile(api)
+
+
+def saved_log(object_store, name="chat"):
+    return object_store.objects.get(config.ENDPOINT_LOG_KEY.format(name=name))
+
+
+def test_an_endpoint_held_back_for_a_gpu_shows_it(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    cluster.endpoint_states["chat"] = "waiting for GPU"
+
+    reconcile(logged_in_api)
+
+    assert [e["status"] for e in endpoints(logged_in_api)] == ["waiting for GPU"]
+
+
+def test_a_crashed_endpoint_saves_its_logs_frees_its_gpu_share_and_says_why(
+    logged_in_api, qwen_on_the_hub, cluster, object_store
+):
+    start(logged_in_api)
+
+    crash(logged_in_api, cluster)
+
+    [found] = endpoints(logged_in_api)
+    assert found["status"] == "failed"
+    assert found["failure"] == "Traceback\nValueError: no such tokenizer"
+    assert saved_log(object_store) == b"Traceback\nValueError: no such tokenizer"
+    assert cluster.scaled_to_zero == ["chat"]
+    # Its Deployment and Service stay.
+    assert "chat" in cluster.endpoints
+
+
+def test_a_crashed_endpoint_is_handled_once(logged_in_api, qwen_on_the_hub, cluster, object_store):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+    # Its pods are gone with the scale to 0, so nothing is left to overwrite what was saved with.
+    cluster.logs.clear()
+
+    reconcile(logged_in_api)
+
+    assert endpoints(logged_in_api)[0]["status"] == "failed"
+    assert saved_log(object_store) == b"Traceback\nValueError: no such tokenizer"
+    assert cluster.scaled_to_zero == ["chat"]
+
+
+def test_an_endpoint_out_of_gpu_memory_gets_the_plain_message(
+    logged_in_api, qwen_on_the_hub, cluster, object_store
+):
+    start(logged_in_api)
+    log = "torch.OutOfMemoryError: CUDA out of memory.\n  raised in worker\n"
+
+    crash(logged_in_api, cluster, log)
+
+    assert endpoints(logged_in_api)[0]["failure"] == config.OUT_OF_MEMORY_FAILURE
+    assert saved_log(object_store) == log.encode()
+
+
+def test_a_crash_whose_log_cant_be_saved_keeps_its_share_and_tries_again(
+    logged_in_api, qwen_on_the_hub, cluster, object_store, monkeypatch
+):
+    start(logged_in_api)
+    with monkeypatch.context() as down:
+
+        def refuse(key, content):
+            raise ConnectionError("SeaweedFS is down")
+
+        down.setattr(object_store, "write", refuse)
+        crash(logged_in_api, cluster)
+
+        assert cluster.scaled_to_zero == []
+        assert endpoints(logged_in_api)[0]["status"] == "failed"
+
+    reconcile(logged_in_api)
+
+    assert cluster.scaled_to_zero == ["chat"]
+    assert saved_log(object_store) is not None
+
+
+def test_a_failed_endpoint_keeps_its_log_readable(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+
+    response = logged_in_api.get(api_paths.ENDPOINT_LOG.format(name="chat"))
+
+    assert response.status_code == 200, response.text
+    assert response.text == "Traceback\nValueError: no such tokenizer"
+    assert response.headers["content-type"].startswith("text/plain")
+
+
+@pytest.mark.parametrize("name", ["chat", "unknown"])
+def test_an_endpoint_that_did_not_crash_has_no_saved_log(
+    logged_in_api, qwen_on_the_hub, cluster, name
+):
+    start(logged_in_api)
+
+    assert logged_in_api.get(api_paths.ENDPOINT_LOG.format(name=name)).status_code == 404
+
+
+def test_a_stopped_endpoint_still_says_why_it_failed(
+    logged_in_api, qwen_on_the_hub, cluster, object_store
+):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+
+    stop(logged_in_api)
+
+    [found] = endpoints(logged_in_api)
+    assert found["status"] == "stopped"
+    assert found["failure"] is not None
+    assert saved_log(object_store) is not None
+
+
+def test_a_restart_clears_the_failure(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+    cluster.endpoint_states.clear()
+
+    assert restart(logged_in_api).json()["failure"] is None
+    assert endpoints(logged_in_api)[0]["failure"] is None
+    assert logged_in_api.get(api_paths.ENDPOINT_LOG.format(name="chat")).status_code == 404
+
+
+def test_deleting_an_endpoint_deletes_its_saved_log(
+    logged_in_api, qwen_on_the_hub, cluster, object_store
+):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+    stop(logged_in_api)
+
+    assert delete_endpoint(logged_in_api).status_code == 204
+
+    assert saved_log(object_store) is None
+
+
+def test_a_saved_log_that_cant_be_deleted_keeps_its_endpoint(
+    logged_in_api, qwen_on_the_hub, cluster, object_store, monkeypatch
+):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+    stop(logged_in_api)
+
+    def refuse(key):
+        raise ConnectionError("SeaweedFS is down")
+
+    monkeypatch.setattr(object_store, "delete", refuse)
+    with pytest.raises(ConnectionError):
+        delete_endpoint(logged_in_api)
+
+    assert [e["name"] for e in endpoints(logged_in_api)] == ["chat"]
+
+
+@pytest.mark.parametrize("status", ["pending", "waiting for GPU", "running"])
 def test_an_endpoint_that_is_not_stopped_cannot_be_restarted(
     logged_in_api, qwen_on_the_hub, cluster, status
 ):

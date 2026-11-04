@@ -796,6 +796,62 @@ def test_a_serving_case_passes_once_its_endpoint_answered_a_chat_request_and_the
     assert list(cluster.endpoints) == ["judge"]
 
 
+def test_a_smoke_test_kubeflow_would_not_start_says_why(
+    logged_in_api, qwen_on_the_hub, cluster, monkeypatch
+):
+    def refuse(display_name, pipeline_spec):
+        raise ConnectionError("ml-pipeline is down")
+
+    monkeypatch.setattr(cluster, "submit_run", refuse)
+
+    start(logged_in_api)
+
+    assert "ml-pipeline is down" in smoke_test(logged_in_api)["failure"]
+
+
+def test_a_serving_case_stays_pending_while_its_endpoint_waits_for_a_gpu(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api, {"serving": True}).json()["name"]
+    reconcile(logged_in_api)
+    cluster.endpoint_states[f"{name}-serve-base-model"] = "waiting for GPU"
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["serve-base-model"] == "pending"
+    assert f"{name}-serve-base-model" in cluster.endpoints
+
+
+def test_the_judge_case_stays_pending_while_the_judge_waits_for_a_gpu(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, {"serving": True})
+    reconcile(logged_in_api)
+    cluster.endpoint_states["judge"] = "waiting for GPU"
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["judge"] == "pending"
+    assert "judge" in cluster.endpoints
+
+
+def test_the_judge_case_stays_pending_while_its_judged_endpoint_waits_for_a_gpu(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    logged_in_api.app.state.settings.gpu_count = 2
+    name = start(logged_in_api, {"serving": True}).json()["name"]
+    reconcile(logged_in_api)
+    cluster.endpoint_states["judge"] = "running"
+    cluster.metrics["judge"] = SERVED
+    reconcile(logged_in_api)
+    cluster.endpoint_states[f"{name}-judge"] = "waiting for GPU"
+
+    reconcile(logged_in_api)
+
+    assert smoke_test(logged_in_api)["cases"]["judge"] == "pending"
+    assert f"{name}-judge" in cluster.endpoints
+
+
 @pytest.mark.parametrize("lost", ["endpoint_request", "llm_request"])
 def test_a_serving_case_fails_unless_its_chat_is_traced_in_full(
     logged_in_api, qwen_on_the_hub, cluster, model_registry, monkeypatch, lost

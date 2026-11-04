@@ -5,6 +5,7 @@ import { pathOnThisOrigin } from "../address";
 import { callApi, errorMessage, useApi } from "../api";
 import { cancelPipeline, PIPELINES, pipelineById } from "../apiPaths";
 import { FINISHED_STATUSES, PIPELINE_LIST_REFRESH_MS } from "../config";
+import FailureRow from "./FailureRow";
 import type { Pipeline, SweepOutput } from "./pipeline";
 import StatusBadge from "./StatusBadge";
 
@@ -126,83 +127,90 @@ function PipelineRow({
   const created = new Date(pipeline.created_at);
 
   return (
-    <tr className={highlighted ? "highlighted" : undefined}>
-      <td>
-        <span className="pipeline-name">{pipeline.name}</span>
-        <span className="muted mono">#{pipeline.id}</span>
-      </td>
-      <td>
-        <StatusBadge status={pipeline.status} />
-      </td>
-      <td>
-        {pipeline.stages.map((stage) => (
-          <span key={stage} className="chip">
-            {stage}
-          </span>
-        ))}
-        {pipeline.sweep && <div className="muted">{bestParameters(pipeline.sweep)}</div>}
-      </td>
-      <td>{pipeline.owner}</td>
-      <td title={created.toLocaleString()}>{timeAgo(created)}</td>
-      <td>
-        <div className="links">
-          {pipeline.kubeflow_run_url && (
-            <a
-              className="link-button"
-              href={pipeline.kubeflow_run_url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Workflow size={14} /> Kubeflow
-            </a>
-          )}
-          {pipeline.mlflow_run_url && (
-            <a
-              className="link-button"
-              href={pathOnThisOrigin(pipeline.mlflow_run_url)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ChartLine size={14} /> MLflow
-            </a>
-          )}
-        </div>
-      </td>
-      <td className="actions">
-        {FINISHED_STATUSES.includes(pipeline.status) ? (
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`Delete Pipeline ${pipeline.id}`}
-            title={`Delete Pipeline ${pipeline.id}`}
-            onClick={() => onDelete(pipeline)}
-          >
-            <Trash2 size={16} />
-          </button>
-        ) : confirming ? (
-          <>
+    <>
+      <tr className={highlighted ? "highlighted" : undefined}>
+        <td>
+          <span className="pipeline-name">{pipeline.name}</span>
+          <span className="muted mono">#{pipeline.id}</span>
+        </td>
+        <td>
+          <StatusBadge status={pipeline.status} />
+        </td>
+        <td>
+          {pipeline.stages.map((stage) => (
+            <span key={stage} className="chip">
+              {stage}
+            </span>
+          ))}
+          {pipeline.sweep && <div className="muted">{bestParameters(pipeline.sweep)}</div>}
+        </td>
+        <td>{pipeline.owner}</td>
+        <td title={created.toLocaleString()}>{timeAgo(created)}</td>
+        <td>
+          <div className="links">
+            {pipeline.kubeflow_run_url && (
+              <a
+                className="link-button"
+                href={pipeline.kubeflow_run_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Workflow size={14} /> Kubeflow
+              </a>
+            )}
+            {pipeline.mlflow_run_url && (
+              <a
+                className="link-button"
+                href={pathOnThisOrigin(pipeline.mlflow_run_url)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ChartLine size={14} /> MLflow
+              </a>
+            )}
+          </div>
+        </td>
+        <td className="actions">
+          {FINISHED_STATUSES.includes(pipeline.status) ? (
             <button
               type="button"
-              className="button danger small"
-              onClick={() => onCancel(pipeline)}
+              className="icon-button"
+              aria-label={`Delete Pipeline ${pipeline.id}`}
+              title={`Delete Pipeline ${pipeline.id}`}
+              onClick={() => onDelete(pipeline)}
             >
-              Cancel Pipeline
+              <Trash2 size={16} />
             </button>
+          ) : confirming ? (
+            <>
+              <button
+                type="button"
+                className="button danger small"
+                onClick={() => onCancel(pipeline)}
+              >
+                Cancel Pipeline
+              </button>
+              <button
+                type="button"
+                className="button ghost small"
+                onClick={() => setConfirming(false)}
+              >
+                Keep
+              </button>
+            </>
+          ) : (
             <button
               type="button"
               className="button ghost small"
-              onClick={() => setConfirming(false)}
+              onClick={() => setConfirming(true)}
             >
-              Keep
+              Cancel
             </button>
-          </>
-        ) : (
-          <button type="button" className="button ghost small" onClick={() => setConfirming(true)}>
-            Cancel
-          </button>
-        )}
-      </td>
-    </tr>
+          )}
+        </td>
+      </tr>
+      {pipeline.failure && <FailureRow failure={pipeline.failure} columns={7} />}
+    </>
   );
 }
 

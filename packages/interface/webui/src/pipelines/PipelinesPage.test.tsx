@@ -46,6 +46,14 @@ test("each Pipeline shows its Owner, status, Stages and links", async () => {
   ]);
 });
 
+test("a failed Pipeline says why", async () => {
+  const failed: Pipeline = { ...running, status: "failed", failure: "Out of GPU memory." };
+  fakeApi({ "GET /pipelines": [200, [failed]], "GET /settings": [200, { gpu_count: 1 }] });
+  renderApp("/");
+
+  expect(await screen.findByText("Out of GPU memory.")).toBeInTheDocument();
+});
+
 test("a Pipeline that swept shows the best parameters it found", async () => {
   const swept: Pipeline = {
     ...running,

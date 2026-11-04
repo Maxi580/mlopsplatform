@@ -102,16 +102,34 @@ class Cluster:
             label_selector=f"pipeline/runid={run_id}",
             field_selector="status.phase=Pending",
         )
-        # Kueue holds a GPU step back until its GPU Share fits; the scheduler may still find none.
-        return any(
-            condition.reason == "SchedulingGated"
-            or (
-                condition.reason == "Unschedulable"
-                and config.GPU_RESOURCE in (condition.message or "")
+        return any(is_held_back_for_gpu(pod) for pod in pods.items)
+
+    def failed_step_log(self, run_id: str) -> str:
+        """The log of the run's first failed step; empty once its pod or log is gone."""
+        failed = self.kubernetes.list_namespaced_pod(
+            self.namespace,
+            label_selector=f"pipeline/runid={run_id}",
+            field_selector="status.phase=Failed",
+        ).items
+        if not failed:
+            return ""
+        first = min(failed, key=lambda pod: pod.metadata.creation_timestamp)
+        return self.container_log(first.metadata.name, config.STEP_CONTAINER, self.namespace)
+
+    def container_log(
+        self, pod: str, container: str, namespace: str, previous: bool = False
+    ) -> str:
+        """The attempt's log; empty once its pod is cleaned up or if that attempt never ran."""
+        try:
+            response = self.kubernetes.read_namespaced_pod_log(
+                pod, namespace, container=container, previous=previous, _preload_content=False
             )
-            for pod in pods.items
-            for condition in pod.status.conditions or []
-        )
+        except ApiException as error:
+            if error.status in (400, 404):
+                return ""
+            raise
+        # Read raw, as a log may hold anything, and the client decodes strictly and parses JSON.
+        return response.data.decode("utf-8", "replace")
 
     def trainjobs(self, pipeline_id: int | None = None) -> list[dict]:
         """The Pipeline's TrainJobs, or every Pipeline's."""
@@ -172,29 +190,57 @@ class Cluster:
                     raise
 
     def endpoint_state(self, name: str) -> str | None:
-        """running, failed once a container restarted unready, else pending; None if deleted."""
+        """Its status from its pods, or ENDPOINT_CRASHING, never stored; None if deleted."""
         namespace = self.endpoint_environment.namespace
         try:
-            client.AppsV1Api(self.kubernetes_client).read_namespaced_deployment(
+            deployment = client.AppsV1Api(self.kubernetes_client).read_namespaced_deployment(
                 config.ENDPOINT_OBJECT_NAME.format(name=name), namespace
             )
         except ApiException as error:
             if error.status == 404:
                 return None
             raise
-        pods = self.kubernetes.list_namespaced_pod(
-            namespace, label_selector=f"{config.ENDPOINT_LABEL}={name}"
-        ).items
-        for pod in pods:
-            if any(c.type == "Ready" and c.status == "True" for c in pod.status.conditions or []):
-                return "running"
-            containers = (pod.status.init_container_statuses or []) + (
-                pod.status.container_statuses or []
-            )
-            # vLLM exits when the model doesn't fit or load, and Kubernetes restarts it.
-            if any(container.restart_count for container in containers):
-                return "failed"
+        # Only a crashed Endpoint is scaled down.
+        if deployment.spec.replicas == 0:
+            return "failed"
+        pods = self.endpoint_pods(name)
+        if any(is_ready(pod) for pod in pods):
+            return "running"
+        # Not on the first restart, as a machine reboot restarts containers too.
+        if any(is_crash_looping(pod) for pod in pods):
+            return config.ENDPOINT_CRASHING
+        if any(is_held_back_for_gpu(pod) for pod in pods):
+            return config.WAITING_FOR_GPU
         return "pending"
+
+    def endpoint_pods(self, name: str) -> list:
+        return self.kubernetes.list_namespaced_pod(
+            self.endpoint_environment.namespace,
+            label_selector=f"{config.ENDPOINT_LABEL}={name}",
+        ).items
+
+    def endpoint_logs(self, name: str) -> str:
+        """All Kubernetes still has of the Endpoint's containers, each's oldest attempt first."""
+        namespace = self.endpoint_environment.namespace
+        sections = []
+        for pod in self.endpoint_pods(name):
+            for container in container_statuses(pod):
+                attempts = [
+                    self.container_log(pod.metadata.name, container.name, namespace, previous)
+                    for previous in (True, False)
+                ]
+                # While a container backs off, Kubernetes answers both with its last attempt.
+                for log in filter(None, dict.fromkeys(attempts)):
+                    sections.append(f"--- {pod.metadata.name}/{container.name} ---\n{log}")
+        return "\n".join(sections)
+
+    def scale_endpoint_to_zero(self, name: str) -> None:
+        """Frees its GPU Share; its Deployment and Service stay, so a restart finds them."""
+        client.AppsV1Api(self.kubernetes_client).patch_namespaced_deployment_scale(
+            config.ENDPOINT_OBJECT_NAME.format(name=name),
+            self.endpoint_environment.namespace,
+            {"spec": {"replicas": 0}},
+        )
 
     def endpoint_metrics(self, name: str) -> str:
         """vLLM's Prometheus metrics of the Endpoint, read through its Service."""
@@ -229,3 +275,32 @@ class Cluster:
         )
         response.raise_for_status()
         return response.headers[config.TRACE_ID_HEADER]
+
+
+def is_held_back_for_gpu(pod) -> bool:
+    # Kueue holds a GPU pod back until its GPU Share fits; the scheduler may still find none.
+    return any(
+        condition.reason == "SchedulingGated"
+        or (
+            condition.reason == "Unschedulable" and config.GPU_RESOURCE in (condition.message or "")
+        )
+        for condition in pod.status.conditions or []
+    )
+
+
+def is_ready(pod) -> bool:
+    return any(c.type == "Ready" and c.status == "True" for c in pod.status.conditions or [])
+
+
+def is_crash_looping(pod) -> bool:
+    return any(
+        container.state
+        and container.state.waiting
+        and container.state.waiting.reason == "CrashLoopBackOff"
+        for container in container_statuses(pod)
+    )
+
+
+def container_statuses(pod) -> list:
+    """The statuses of its init containers, which run first, then its containers."""
+    return (pod.status.init_container_statuses or []) + (pod.status.container_statuses or [])

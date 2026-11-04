@@ -32,7 +32,7 @@ def judge_case_result(state, smoke_test: str, case: dict) -> str:
 
     # 2. Once vLLM is ready, a chat request on its Service.
     found = find_endpoint(state.engine, config.JUDGE_ENDPOINT_NAME)
-    if found is None or found.status == "pending":
+    if found is None or found.status in config.ENDPOINT_STARTING_STATUSES:
         return "pending"
     passed = found.status == "running" and judge_answers(state)
 
@@ -76,7 +76,7 @@ def judged_answer_result(state, name: str, case: dict) -> str:
             logger.exception("The Smoke Test's judged Endpoint %s did not start", name)
             return "failed"
         return "pending"
-    if found.status == "pending":
+    if found.status in config.ENDPOINT_STARTING_STATUSES:
         return "pending"
 
     # 2. Its answer, traced in full, then scored by a judging round.

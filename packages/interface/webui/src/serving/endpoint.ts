@@ -7,6 +7,8 @@ export type Endpoint = {
   owner: string;
   model: string;
   status: string;
+  // Why it crashed, until a restart: a plain message or the last log lines.
+  failure?: string | null;
   url: string;
   // The Endpoint Key: the bearer token its URL takes.
   key: string;
@@ -15,7 +17,7 @@ export type Endpoint = {
   judge: boolean;
   // Whether the Judge scores every `every`th answer, at most `max_per_hour`.
   judging: Judging;
-  // Null while it is pending, loading or unreachable.
+  // Null while it is waiting for a GPU, pending, loading or unreachable.
   stats: EndpointStatsSummary | null;
 };
 

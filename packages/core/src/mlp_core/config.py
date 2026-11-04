@@ -526,6 +526,29 @@ CHECKPOINTS_PREFIX = "checkpoints/"
 # Uploaded last, so a Checkpoint holding it arrived whole.
 CHECKPOINT_COMPLETE_FILE = "trainer_state.json"
 WAITING_FOR_GPU = "waiting for GPU"
+# An Endpoint in these hasn't failed or answered yet.
+ENDPOINT_STARTING_STATUSES = ("pending", WAITING_FOR_GPU)
+# What the cluster reports of an Endpoint in CrashLoopBackOff, until the reconciler has freed it.
+ENDPOINT_CRASHING = "crashing"
+# An Endpoint's logs as saved when it crashed, kept until it is deleted.
+ENDPOINT_LOG_KEY = "endpoint-logs/{name}.log"
+# The container of a Kubeflow step that runs its command.
+STEP_CONTAINER = "main"
+# How far back a log may hold an out-of-memory error, tracebacks following it, and what is shown.
+FAILURE_SEARCHED_LINES = 200
+FAILURE_SHOWN_LINES = 15
+FAILURE_SHOWN_CHARACTERS = 4000
+# torch's, CUDA's, finetune's and vLLM's; a reward's `ran out of memory` is the Sandbox's.
+OUT_OF_MEMORY_ERROR = re.compile(
+    r"(?<!ran )out[ _]?of[ _]?(gpu[ _]?)?memory|less than desired gpu memory", re.IGNORECASE
+)
+OUT_OF_MEMORY_FAILURE = (
+    "Out of GPU memory. Raise gpu_share or gpu_memory_utilization, stop something else on the GPU, "
+    "or use a smaller model or batch."
+)
+NO_LOG_FAILURE = "Failed without a log left to explain why."
+RUN_DELETED_FAILURE = "Its Kubeflow run was deleted."
+UNSUBMITTED_FAILURE = "The API restarted before its Kubeflow run was submitted."
 RECONCILE_INTERVAL = timedelta(seconds=10)
 # Backstop for Secrets the reconciler missed, e.g. while the API was down.
 SECRET_MAX_AGE = timedelta(hours=48)

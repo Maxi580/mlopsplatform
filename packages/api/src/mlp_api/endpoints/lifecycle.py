@@ -13,6 +13,7 @@ from mlp_api.endpoints.table import endpoint, not_stopped
 from mlp_api.model_cache.downloads import preview_downloads
 from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.pipelines.cluster import Cluster
+from mlp_api.pipelines.failure import failure_reason
 from mlp_core import config
 from mlp_core.endpoint_spec import EndpointSpec, without_stored_quantization
 
@@ -66,7 +67,7 @@ def restart_endpoint(state, name: str) -> dict:
         found = find_endpoint(state.engine, name)
         if found is None:
             raise LookupError(f"No Endpoint {name}")
-        if found.status in ("pending", "running"):
+        if found.status in (*config.ENDPOINT_STARTING_STATUSES, "running"):
             raise EndpointConflict(f"Endpoint {name} is {found.status}; stop it first")
 
         # 2. What vLLM loads from the pinned spec, on a GPU Share that fits today's budget.
@@ -81,7 +82,7 @@ def restart_endpoint(state, name: str) -> dict:
             connection.execute(
                 update(endpoint)
                 .where(endpoint.c.id == found.id)
-                .values(status="pending", gpus=gpus)
+                .values(status="pending", gpus=gpus, failure=None)
             )
 
         # 4. Its Kubernetes objects under the same UUID.
@@ -175,6 +176,9 @@ def delete_endpoint(state, name: str) -> None:
         with engine.begin() as connection:
             named = endpoint.c.name == name
             deleted = connection.execute(delete(endpoint).where(named, ~not_stopped)).rowcount
+            # Inside the transaction, so an Endpoint whose log stays can be deleted again.
+            if deleted:
+                state.object_store.delete(endpoint_log_key(name))
         if deleted:
             delete_endpoint_history(state, name, datetime.now(UTC))
             return
@@ -191,13 +195,38 @@ def list_endpoints(engine: Engine, domain: str) -> list[dict]:
     return [endpoint_summary(row, domain) for row in rows]
 
 
-def reconcile_endpoints(engine: Engine, cluster: Cluster) -> None:
-    """Copies each Endpoint's pod state into its status; without a Deployment it is stopped."""
+def reconcile_endpoints(state) -> None:
+    """Copies each Endpoint's pod state into its status, freeing a crashed one; gone is stopped."""
+    engine, cluster = state.engine, state.cluster
     with endpoints_lock:
         with engine.connect() as connection:
             rows = connection.execute(select(endpoint).where(not_stopped)).all()
         for row in rows:
-            set_status(engine, row.name, cluster.endpoint_state(row.name) or "stopped")
+            status = cluster.endpoint_state(row.name) or "stopped"
+            if status == config.ENDPOINT_CRASHING:
+                free_crashed_endpoint(state, row.name)
+                status = "failed"
+            set_status(engine, row.name, status)
+
+
+def free_crashed_endpoint(state, name: str) -> None:
+    """Saves its logs and failure, then frees its GPU Share; a failure is retried next round."""
+    try:
+        # 1. Its logs, which are lost with its pods.
+        log = state.cluster.endpoint_logs(name)
+        state.object_store.write(endpoint_log_key(name), log.encode())
+
+        # 2. Why it crashed.
+        set_status(state.engine, name, "failed", failure=failure_reason(log))
+
+        # 3. Its GPU Share, for what waits.
+        state.cluster.scale_endpoint_to_zero(name)
+    except Exception:
+        logger.exception("Freeing crashed Endpoint %s failed", name)
+
+
+def endpoint_log_key(name: str) -> str:
+    return config.ENDPOINT_LOG_KEY.format(name=name)
 
 
 def endpoint_summary(row, domain: str) -> dict:
@@ -208,6 +237,7 @@ def endpoint_summary(row, domain: str) -> dict:
         "spec": row.spec,
         "gpus": row.gpus,
         "status": row.status,
+        "failure": row.failure,
         "url": config.ENDPOINT_URL.format(domain=domain, uuid=row.uuid),
         "key": row.key,
         "created_at": row.created_at.isoformat(),
@@ -228,8 +258,10 @@ def find_endpoint(engine: Engine, name: str):
 
 
 # A stopped Endpoint stays stopped; only a restart brings it back.
-def set_status(engine: Engine, name: str, status: str) -> None:
+def set_status(engine: Engine, name: str, status: str, **values) -> None:
     with engine.begin() as connection:
         connection.execute(
-            update(endpoint).where(endpoint.c.name == name, not_stopped).values(status=status)
+            update(endpoint)
+            .where(endpoint.c.name == name, not_stopped)
+            .values(status=status, **values)
         )

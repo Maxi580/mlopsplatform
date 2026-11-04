@@ -15,6 +15,7 @@ import { ApiError, callApi, errorMessage, useApi } from "../api";
 import {
   ENDPOINTS,
   endpointByName,
+  endpointLog,
   MODELS,
   refreshEndpointKey,
   restartEndpoint,
@@ -24,6 +25,7 @@ import {
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { NO_CATALOG } from "../fields/catalog";
 import ModelPicker from "../fields/ModelPicker";
+import FailureRow from "../pipelines/FailureRow";
 import FormSectionView from "../pipelines/FormSectionView";
 import {
   type FieldError,
@@ -67,7 +69,7 @@ export default function ServingPage() {
   async function restart(name: string) {
     try {
       await callApi(restartEndpoint(name), {});
-      setNotice({ text: `Restarted ${name}; it is pending until vLLM is ready`, failed: false });
+      setNotice({ text: `Restarted ${name}; it answers once vLLM is ready`, failed: false });
     } catch (failure) {
       setNotice({ text: errorMessage(failure), failed: true });
     }
@@ -188,7 +190,7 @@ export default function ServingPage() {
         <StartForm
           onStarted={(name) => {
             setNotice({
-              text: `Started ${name}; it is pending until vLLM is ready`,
+              text: `Started ${name}; it answers once vLLM is ready`,
               failed: false,
             });
             endpoints.reload();
@@ -305,6 +307,9 @@ function EndpointRow({
           />
         )}
       </tr>
+      {endpoint.failure && (
+        <FailureRow failure={endpoint.failure} columns={10} logUrl={endpointLog(endpoint.name)} />
+      )}
       {judgingOpen && (
         <tr className="judging-open">
           <td colSpan={10}>
