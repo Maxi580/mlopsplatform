@@ -1,5 +1,6 @@
 import {
   CircleAlert,
+  Gavel,
   LoaderCircle,
   Play,
   RefreshCw,
@@ -42,7 +43,7 @@ import {
   servingOptionsForm,
 } from "./endpoint";
 import JudgeSettings from "./JudgeSettings";
-import JudgingMenu from "./JudgingMenu";
+import JudgingForm from "./JudgingForm";
 import SpeculatorPicker, { type Speculative } from "./SpeculatorPicker";
 
 type Notice = { text: string; failed: boolean };
@@ -151,7 +152,7 @@ export default function ServingPage() {
                   judgeRunning={judgeRunning}
                   onJudging={(text, failed) => {
                     setNotice({ text, failed });
-                    endpoints.reload();
+                    return endpoints.reload();
                   }}
                   onStop={stop}
                   onRestart={restart}
@@ -235,82 +236,101 @@ function EndpointRow({
   endpoint: Endpoint;
   tokensPerSecond?: number | null;
   judgeRunning: boolean;
-  onJudging: (text: string, failed: boolean) => void;
+  onJudging: (text: string, failed: boolean) => Promise<void>;
   onStop: (name: string) => void;
   onRestart: (name: string) => void;
   onRefreshKey: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
+  const [judgingOpen, setJudgingOpen] = useState(false);
   const stopped = endpoint.status === "stopped";
   // The API starts and stops the Judge as judging is switched, and only it calls the Judge.
   const managed = endpoint.judge;
   const { stats } = endpoint;
   const started = endpoint.created_at.slice(0, 16).replace("T", " ");
   return (
-    <tr>
-      <td className="pipeline-name" title={endpoint.name}>
-        <span className="cut-off-name">
-          {managed ? (
-            <strong>Judge</strong>
-          ) : (
-            <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>
+    <>
+      <tr className={judgingOpen ? "judging-open" : undefined}>
+        <td className="pipeline-name" title={endpoint.name}>
+          <span className="cut-off-name">
+            {managed ? (
+              <strong>Judge</strong>
+            ) : (
+              <Link to={`/serving/${endpoint.name}`}>{endpoint.name}</Link>
+            )}
+          </span>
+        </td>
+        <td className="cut-off">
+          <CopyValue label="model" value={endpoint.model} />
+        </td>
+        <td>
+          <StatusBadge status={endpoint.status} />
+          {endpoint.judging.judged && !judgeRunning && (
+            <span className="badge status-stopped" title="Its answers wait until the Judge runs">
+              Judge stopped
+            </span>
           )}
-        </span>
-      </td>
-      <td className="cut-off">
-        <CopyValue label="model" value={endpoint.model} />
-      </td>
-      <td>
-        <StatusBadge status={endpoint.status} />
-        {endpoint.judging.judged && !judgeRunning && (
-          <span className="badge status-stopped" title="Its answers wait until the Judge runs">
-            Judge stopped
-          </span>
+        </td>
+        <td title={stats ? `${stats.running} running · ${stats.waiting} waiting` : undefined}>
+          {stats ? `${stats.running} · ${stats.waiting}` : "—"}
+        </td>
+        <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
+        <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
+        <td className="cut-off">
+          {!stopped && !managed && <CopyValue label="URL" value={urlOnThisOrigin(endpoint.url)} />}
+        </td>
+        <td>
+          {!stopped && !managed && (
+            <span className="copy-value">
+              <CopyValue label="Endpoint Key" value={endpoint.key} hidden />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Refresh Endpoint Key"
+                title="Refresh Endpoint Key; the old one stops working"
+                onClick={() => onRefreshKey(endpoint.name)}
+              >
+                <RefreshCw size={14} />
+              </button>
+            </span>
+          )}
+        </td>
+        <td title={started}>{started.slice("YYYY-".length)}</td>
+        {managed ? (
+          <td />
+        ) : (
+          <EndpointActions
+            {...{ endpoint, judgingOpen, onRestart, onStop, onDelete }}
+            onToggleJudging={() => setJudgingOpen(!judgingOpen)}
+          />
         )}
-      </td>
-      <td title={stats ? `${stats.running} running · ${stats.waiting} waiting` : undefined}>
-        {stats ? `${stats.running} · ${stats.waiting}` : "—"}
-      </td>
-      <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
-      <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
-      <td className="cut-off">
-        {!stopped && !managed && <CopyValue label="URL" value={urlOnThisOrigin(endpoint.url)} />}
-      </td>
-      <td>
-        {!stopped && !managed && (
-          <span className="copy-value">
-            <CopyValue label="Endpoint Key" value={endpoint.key} hidden />
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Refresh Endpoint Key"
-              title="Refresh Endpoint Key; the old one stops working"
-              onClick={() => onRefreshKey(endpoint.name)}
-            >
-              <RefreshCw size={14} />
-            </button>
-          </span>
-        )}
-      </td>
-      <td title={started}>{started.slice("YYYY-".length)}</td>
-      {managed ? (
-        <td />
-      ) : (
-        <EndpointActions {...{ endpoint, onJudging, onRestart, onStop, onDelete }} />
+      </tr>
+      {judgingOpen && (
+        <tr className="judging-open">
+          <td colSpan={10}>
+            <JudgingForm
+              endpoint={endpoint}
+              onSaved={onJudging}
+              onClose={() => setJudgingOpen(false)}
+            />
+          </td>
+        </tr>
       )}
-    </tr>
+    </>
   );
 }
 
 function EndpointActions({
   endpoint,
-  onJudging,
+  judgingOpen,
+  onToggleJudging,
   onStop,
   onRestart,
   onDelete,
 }: {
   endpoint: Endpoint;
-  onJudging: (text: string, failed: boolean) => void;
+  judgingOpen: boolean;
+  onToggleJudging: () => void;
   onStop: (name: string) => void;
   onRestart: (name: string) => void;
   onDelete: (name: string) => void;
@@ -318,7 +338,14 @@ function EndpointActions({
   const stopped = endpoint.status === "stopped";
   return (
     <td className="actions">
-      <JudgingMenu endpoint={endpoint} onSaved={onJudging} />
+      <button
+        type="button"
+        className={`button ghost small ${endpoint.judging.judged ? "judged" : ""}`}
+        aria-expanded={judgingOpen}
+        onClick={onToggleJudging}
+      >
+        <Gavel size={14} /> Judge
+      </button>
       {(stopped || endpoint.status === "failed") && (
         <button
           type="button"

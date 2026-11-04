@@ -1501,37 +1501,71 @@ legend .switch-button {
   color: var(--text-muted);
 }
 
-/* An Endpoint's judging opt-in, opened from its row */
+/* An Endpoint's judging opt-in: its row and the settings below it read as one bar. */
 
-.judging-menu {
-  display: inline-block;
-}
-
-.judging-menu summary {
-  list-style: none;
-}
-
-.judging-menu summary.judged {
+.button.ghost.judged {
   color: var(--accent);
 }
 
-/* Fixed, so the table's overflow neither clips it nor scrolls to fit it. */
-.judging-popover {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  translate: -50% -50%;
-  z-index: 10;
-  display: grid;
-  gap: 8px;
-  width: 220px;
-  padding: 12px;
+.endpoint-table .button.ghost[aria-expanded="true"] {
+  background: var(--surface);
+  border-color: var(--border);
 }
 
-.judging-popover label {
+tr.judging-open {
+  background: var(--surface-muted);
+}
+
+tr.judging-open:has(+ .judging-open) td {
+  border-bottom: none;
+}
+
+/* The form's width is measured against what the table shows, not the table's scrolled width. */
+.table-card:has(> .endpoint-table) {
+  container-type: inline-size;
+}
+
+td:has(> .judging-form) {
+  padding: 0 0 12px;
+}
+
+/* Pinned, so it's on screen however far the table is scrolled to reach the Judge button. */
+.judging-form {
+  position: sticky;
+  left: 0;
   display: grid;
-  gap: 2px;
+  gap: 12px;
+  width: min(560px, 100cqw);
+  padding: 0 8px;
+  white-space: normal;
+}
+
+.judging-form h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.judging-save {
+  justify-self: end;
+}
+
+.judging-setting {
+  display: grid;
+  grid-template-columns: 1fr 80px;
+  align-items: center;
+  gap: 16px;
+}
+
+.judging-setting .muted {
+  display: block;
   font-size: 13px;
+}
+
+/* Not stretched by the global input width: it sits at the column's right edge. */
+.judging-setting input[type="checkbox"] {
+  justify-self: end;
+  width: auto;
+  margin: 0;
 }
 
 /* Chat */

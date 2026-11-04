@@ -220,10 +220,10 @@ test("a stopped Endpoint is deleted with its trashcan, and only a stopped one ha
 });
 
 test.each([
-  ["running", ["Stop"]],
-  ["pending", ["Stop"]],
-  ["failed", ["Restart", "Stop"]],
-  ["stopped", ["Restart", "Delete chat"]],
+  ["running", ["Judge", "Stop"]],
+  ["pending", ["Judge", "Stop"]],
+  ["failed", ["Judge", "Restart", "Stop"]],
+  ["stopped", ["Judge", "Restart", "Delete chat"]],
 ])("a %s Endpoint's row offers %j", async (status, actions) => {
   fakeApi({ ...routes, "GET /endpoints": [200, [{ ...chat, status }]] });
   renderApp("/serving");
@@ -655,11 +655,11 @@ test("an Endpoint opts in to judging from its row, and says when the Judge is st
 
   const row = (await screen.findByText("chat")).closest("tr")!;
   expect(within(row).getByText("Judge stopped")).toBeInTheDocument();
-  await user.click(within(row).getByText("Judge"));
-  const every = within(row).getByLabelText("Every Nth answer");
+  const settings = await openJudging(user, row);
+  const every = within(settings).getByLabelText(/^Every Nth answer/);
   await user.clear(every);
   await user.type(every, "3");
-  await user.click(within(row).getByRole("button", { name: "Save" }));
+  await user.click(within(settings).getByRole("button", { name: "Save" }));
 
   await waitFor(() =>
     expect(calls.find((call) => call.route === "PUT /endpoints/chat/judging")?.body).toEqual({
@@ -668,4 +668,175 @@ test("an Endpoint opts in to judging from its row, and says when the Judge is st
       max_per_hour: 60,
     }),
   );
+});
+
+// Opens an Endpoint's judging settings, which sit directly below its row.
+async function openJudging(user: ReturnType<typeof userEvent.setup>, row: HTMLElement) {
+  await user.click(within(row).getByRole("button", { name: "Judge" }));
+  return row.nextElementSibling as HTMLElement;
+}
+
+test("an Endpoint's judging settings are absent until its Judge button opens them", async () => {
+  const user = userEvent.setup();
+  fakeApi(routes);
+  renderApp("/serving");
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const button = within(row).getByRole("button", { name: "Judge" });
+
+  expect(button).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByText("Judge Configuration:")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Every Nth answer/)).not.toBeInTheDocument();
+
+  // The rest of the row doesn't react to clicks.
+  await user.click(within(row).getByText("running"));
+  expect(screen.queryByText("Judge Configuration:")).not.toBeInTheDocument();
+
+  const settings = await openJudging(user, row);
+  expect(button).toHaveAttribute("aria-expanded", "true");
+  expect(within(settings).getByText("Judge Configuration:")).toBeInTheDocument();
+  // One cell spanning every column of the table.
+  expect(within(settings).getByRole("cell")).toHaveAttribute(
+    "colspan",
+    String(screen.getAllByRole("columnheader").length),
+  );
+  expect(within(settings).getByLabelText(/^Judge this Endpoint/)).not.toBeChecked();
+  expect(within(settings).getByLabelText(/^Every Nth answer/)).toHaveValue(10);
+  expect(within(settings).getByLabelText(/^At most per hour/)).toHaveValue(60);
+
+  await user.click(button);
+  expect(button).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByText("Judge Configuration:")).not.toBeInTheDocument();
+});
+
+test("two Endpoints' judging settings can be open at once, each with its own values", async () => {
+  const user = userEvent.setup();
+  const other = { ...chat, name: "other", judging: { judged: true, every: 5, max_per_hour: 7 } };
+  fakeApi({ ...routes, "GET /endpoints": [200, [chat, other]] });
+  renderApp("/serving");
+
+  const chatSettings = await openJudging(user, (await screen.findByText("chat")).closest("tr")!);
+  const otherSettings = await openJudging(user, screen.getByText("other").closest("tr")!);
+
+  expect(screen.getAllByText("Judge Configuration:")).toHaveLength(2);
+  expect(within(chatSettings).getByLabelText(/^Every Nth answer/)).toHaveValue(10);
+  expect(within(otherSettings).getByLabelText(/^Every Nth answer/)).toHaveValue(5);
+});
+
+test("the platform-managed Judge's row has no judging button", async () => {
+  fakeApi({ ...routes, "GET /endpoints": [200, [{ ...chat, name: "judge", judge: true }]] });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("Judge", { selector: "strong" })).closest("tr")!;
+  expect(within(row).queryByRole("button", { name: "Judge" })).not.toBeInTheDocument();
+});
+
+test("a successful save collapses the settings and the banner says so", async () => {
+  const user = userEvent.setup();
+  fakeApi({ ...routes, "PUT /endpoints/chat/judging": [200, chat] });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const settings = await openJudging(user, row);
+  await user.click(within(settings).getByLabelText(/^Judge this Endpoint/));
+  await user.click(within(settings).getByRole("button", { name: "Save" }));
+
+  expect(await screen.findByText("The Judge scores 1 in 10 answers of chat")).toBeInTheDocument();
+  expect(screen.queryByText("Judge Configuration:")).not.toBeInTheDocument();
+});
+
+test("reopening right after a save shows what was saved", async () => {
+  let stored = chat;
+  fakeApi({
+    ...routes,
+    "GET /endpoints": () => [200, [stored]],
+    "PUT /endpoints/chat/judging": (judging) => {
+      stored = { ...chat, judging };
+      return [200, stored];
+    },
+  });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const button = within(row).getByRole("button", { name: "Judge" });
+  fireEvent.click(button);
+  const settings = row.nextElementSibling as HTMLElement;
+  fireEvent.change(within(settings).getByLabelText(/^Every Nth answer/), {
+    target: { value: "3" },
+  });
+
+  // The list's reload after the save answers only when released.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const answer = globalThis.fetch;
+  vi.stubGlobal("fetch", async (path: string, init: RequestInit) => {
+    if (path === "/endpoints") await held;
+    return answer(path, init);
+  });
+  fireEvent.click(within(settings).getByRole("button", { name: "Save" }));
+
+  expect(await screen.findByText("chat is no longer judged")).toBeInTheDocument();
+  expect(button).toHaveAttribute("aria-expanded", "true");
+
+  release();
+  await waitFor(() => expect(button).toHaveAttribute("aria-expanded", "false"));
+  fireEvent.click(button);
+  const reopened = row.nextElementSibling as HTMLElement;
+  expect(within(reopened).getByLabelText(/^Every Nth answer/)).toHaveValue(3);
+});
+
+test("a failed save keeps the settings open with the edits and the banner shows the error", async () => {
+  const user = userEvent.setup();
+  fakeApi({ ...routes, "PUT /endpoints/chat/judging": [409, { detail: "Can't judge chat" }] });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const settings = await openJudging(user, row);
+  const perHour = within(settings).getByLabelText(/^At most per hour/);
+  fireEvent.change(perHour, { target: { value: "25" } });
+  await user.click(within(settings).getByRole("button", { name: "Save" }));
+
+  expect(await screen.findByText("Can't judge chat")).toBeInTheDocument();
+  expect(within(settings).getByLabelText(/^At most per hour/)).toHaveValue(25);
+});
+
+test("closing without saving discards the edits", async () => {
+  const user = userEvent.setup();
+  fakeApi(routes);
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const edited = await openJudging(user, row);
+  fireEvent.change(within(edited).getByLabelText(/^Every Nth answer/), { target: { value: "3" } });
+  await user.click(within(row).getByRole("button", { name: "Judge" }));
+
+  const reopened = await openJudging(user, row);
+  expect(within(reopened).getByLabelText(/^Every Nth answer/)).toHaveValue(10);
+});
+
+test("edits in open judging settings survive the list's refresh", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  const refreshed = { ...chat, judging: { judged: true, every: 20, max_per_hour: 60 } };
+  const answers = [[chat]];
+  const calls = fakeApi({
+    ...routes,
+    "GET /endpoints": () => [200, answers.shift() ?? [refreshed]],
+  });
+  renderApp("/serving");
+
+  const row = (await screen.findByText("chat")).closest("tr")!;
+  const settings = await openJudging(user, row);
+  const every = within(settings).getByLabelText(/^Every Nth answer/);
+  fireEvent.change(every, { target: { value: "3" } });
+
+  await act(() => vi.advanceTimersByTimeAsync(ENDPOINT_LIST_REFRESH_MS));
+
+  // The list did refresh: the button took the stored colour, the form kept its edit.
+  expect(calls.filter((call) => call.route === "GET /endpoints").length).toBeGreaterThan(1);
+  expect(within(row).getByRole("button", { name: "Judge" })).toHaveClass("judged");
+  expect(every).toHaveValue(3);
+  expect(within(settings).getByLabelText(/^Judge this Endpoint/)).not.toBeChecked();
+  vi.useRealTimers();
 });
