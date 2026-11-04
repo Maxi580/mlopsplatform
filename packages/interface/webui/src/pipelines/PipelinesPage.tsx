@@ -1,6 +1,7 @@
 import { ChartLine, CircleAlert, Plus, Trash2, Workflow } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { pathOnThisOrigin } from "../address";
 import { callApi, errorMessage, useApi } from "../api";
 import { cancelPipeline, PIPELINES, pipelineById } from "../apiPaths";
 import { FINISHED_STATUSES, PIPELINE_LIST_REFRESH_MS } from "../config";
@@ -158,7 +159,7 @@ function PipelineRow({
           {pipeline.mlflow_run_url && (
             <a
               className="link-button"
-              href={pipeline.mlflow_run_url}
+              href={pathOnThisOrigin(pipeline.mlflow_run_url)}
               target="_blank"
               rel="noreferrer"
             >

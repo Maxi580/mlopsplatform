@@ -1,4 +1,4 @@
-// The KFP and MLflow UIs, behind the platform's login on the same domain.
+// The KFP and MLflow UIs, behind the platform's login at the same address.
 export const KUBEFLOW_UI_URL = "/pipeline/";
 export const MLFLOW_UI_URL = "/mlflow/";
 export const PIPELINE_LIST_REFRESH_MS = 5000;

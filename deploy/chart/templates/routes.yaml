@@ -1,5 +1,4 @@
-# One domain, split by path, so a single DNS name without subdomains is enough.
-{{- $host := printf "Host(`%s`)" .Values.domain }}
+# Split by path alone, so the platform answers at any address: its domain, a tunnel or another name.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -8,34 +7,36 @@ spec:
   entryPoints: [websecure]
   tls: {}
   routes:
+    # Everything else is the API; the lowest priority, as Traefik otherwise ranks rules by length.
     - kind: Rule
-      match: {{ $host }}
+      match: PathPrefix(`/`)
+      priority: 1
       services:
         - name: api
           port: {{ .Values.ports.api }}
     - kind: Rule
-      match: {{ $host }} && (Path(`/`) || Path(`/ui`))
+      match: (Path(`/`) || Path(`/ui`))
       middlewares:
         - name: webui-redirect
       services:
         - name: noop@internal
           kind: TraefikService
     - kind: Rule
-      match: {{ $host }} && PathPrefix(`/ui/`)
+      match: PathPrefix(`/ui/`)
       services:
         - name: webui
           port: {{ .Values.ports.webui }}
     - kind: Rule
-      match: {{ $host }} && PathPrefix(`/pipeline/`)
+      match: PathPrefix(`/pipeline/`)
       middlewares:
         - name: login
       services:
         - name: ml-pipeline-ui
           namespace: {{ .Values.namespaces.kubeflow }}
           port: {{ .Values.ports.kfpUi }}
-    # The KFP UI reads run details from the metadata store at the domain root, not under /pipeline/.
+    # The KFP UI reads run details from the metadata store at the root, not under /pipeline/.
     - kind: Rule
-      match: {{ $host }} && PathPrefix(`/ml_metadata`)
+      match: PathPrefix(`/ml_metadata`)
       middlewares:
         - name: login
       services:
@@ -45,21 +46,21 @@ spec:
     # Presigned downloads and model part uploads; their signature is the login, so the path goes to
     # SeaweedFS as is. Matched by signature, as the mlflow bucket's paths overlap the MLflow UI's.
     - kind: Rule
-      match: {{ $host }} && QueryRegexp(`X-Amz-Signature`, `.+`) && (Method(`GET`) || Method(`PUT`))
+      match: QueryRegexp(`X-Amz-Signature`, `.+`) && (Method(`GET`) || Method(`PUT`))
       priority: 1000
       services:
         - name: seaweedfs
           namespace: {{ .Values.namespaces.kubeflow }}
           port: {{ .Values.ports.seaweedfs }}
     - kind: Rule
-      match: {{ $host }} && Path(`/mlflow`)
+      match: Path(`/mlflow`)
       middlewares:
         - name: mlflow-add-slash
       services:
         - name: noop@internal
           kind: TraefikService
     - kind: Rule
-      match: {{ $host }} && PathPrefix(`/mlflow/`)
+      match: PathPrefix(`/mlflow/`)
       middlewares:
         - name: login
         - name: mlflow-strip-prefix

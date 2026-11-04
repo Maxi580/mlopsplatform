@@ -480,6 +480,8 @@ HF_TOKEN_PATTERN = re.compile(r"hf_[A-Za-z0-9]{30,}")
 DOWNLOAD_URL_LIFETIME = timedelta(hours=1)
 # Long enough to upload a large model over a slow line.
 UPLOAD_URL_LIFETIME = timedelta(hours=24)
+# How many addresses keep a client for signing URLs; a client takes a moment to create.
+PUBLIC_S3_CLIENTS_KEPT = 8
 # Where the API sends a browser without login; the Web UI is served under /ui/.
 WEB_UI_LOGIN_URL = "/ui/login"
 

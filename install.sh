@@ -368,16 +368,17 @@ EOF
 }
 
 # Upstream's API server config plus the MLflow plugin, which hands every step its own MLflow Run.
+# Its links are relative, so they work at whatever address the platform is opened.
 write_kfp_api_server_config() {
   curl -fsSL "$(kfp_api_server_config)" > "$WORK/upstream-config.json"
   MLFLOW_URL="http://mlflow.$(value .namespaces.mlflow).svc.cluster.local:$(value .ports.mlflow)" \
-    PLATFORM_URL="https://$(value .domain)" yq -p json -o json '.plugins.mlflow = {
+    yq -p json -o json '.plugins.mlflow = {
       "endpoint": strenv(MLFLOW_URL),
       "settings": {
         "authType": "none",
         "injectUserEnvVars": true,
-        "mlflowBaseURL": strenv(PLATFORM_URL) + "/mlflow",
-        "kfpBaseURL": strenv(PLATFORM_URL) + "/pipeline",
+        "mlflowBaseURL": "/mlflow",
+        "kfpBaseURL": "/pipeline",
         "kfpRunURLPathTemplate": "/#/runs/details/{run_id}"
       }
     }' "$WORK/upstream-config.json" > "$1"

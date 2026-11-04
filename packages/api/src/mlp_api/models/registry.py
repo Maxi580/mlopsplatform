@@ -56,7 +56,7 @@ def find_referenced_model_version(model_registry: MLflow, reference: str) -> Mod
 
 
 def model_version_files(
-    model_registry: MLflow, object_store: ObjectStore, name: str, version: int
+    model_registry: MLflow, object_store: ObjectStore, name: str, version: int, address: str
 ) -> list[dict]:
     """Each file of the version with its size and a presigned URL; LookupError if unknown."""
     found = find_model_version(model_registry, name, version)
@@ -67,7 +67,7 @@ def model_version_files(
         {
             "path": item["Key"].removeprefix(found.artifact_prefix),
             "size_bytes": item["Size"],
-            "url": object_store.download_url(item["Key"], bucket),
+            "url": object_store.download_url(item["Key"], address, bucket),
         }
         for item in object_store.list_objects(bucket, found.artifact_prefix)
     ]

@@ -15,6 +15,26 @@ It installs only missing host prerequisites (k3s, nerdctl + BuildKit, NVIDIA con
 
 On any other Ubuntu host (a cloud VM, a bare-metal server), set `domain` in `deploy/values-prod.yaml` to a DNS name that points at the host, open port 443 to it, and run `./install.sh prod`. One name is enough, since everything is routed by path; a cloud VM's free DNS name works. `values-prod.yaml` holds only the domain and disk sizes; everything else comes from `deploy/values.yaml`.
 
+### Reaching the Web UI
+
+Traefik routes by path alone, so the Web UI, the CLI and Endpoints work at any address that reaches port 443 of a node. Through an SSH tunnel, on any free local port, with the node's IP from `kubectl get nodes -o wide`:
+
+```sh
+ssh -L 8443:<node IP>:443 <user>@<host>
+```
+
+Then open `https://localhost:8443/`. Tunnel port 443: port 80 only redirects to port 443 of whatever address it was called at. The certificate names the domain, `localhost` and `127.0.0.1`; add any other name or IP the platform is opened under to `extraAddresses` in `deploy/values-<env>.yaml` and run `install.sh` again, or browsers warn about it. A proxy in front of Traefik must pass the `Host` header on, as links to the object store are signed for it. A URL copied from the Web UI uses the address the page is open at; the CLI and API name Endpoints under `domain`. Once `ca.crt` is trusted, a browser that opens the platform at `localhost` remembers its HSTS header for a year, which holds for every port of `localhost`; clear it in the browser's settings if another local `http://` service stops loading.
+
+If `curl https://localhost/` is refused on the host, Traefik is listening on the node's IP only: `curl --resolve <domain>:443:<node IP> https://<domain>/health`.
+
+After a change to routes, links or the certificate, check by hand on the host, through a tunnel on a port other than 443, and under another address:
+
+- Log in, and open every tab of the Web UI.
+- Chat: send a message, watch the answer stream and rate it. The vLLM log shows `POST /v1/chat/completions`.
+- Storage: upload and download a Dataset and a model.
+- A copied Endpoint URL answers from the same machine.
+- The links to the MLflow and Kubeflow UIs, in the sidebar, on a Pipeline, and from the KFP UI to its MLflow Run.
+
 `install.sh` counts the cluster's GPU machines (`node_count`) and all their GPUs (`gpu_count`) from the nodes, and asks once per run `How many nodes should a finetune Phase use?` (`nodes_per_stage`, default the current setting or 1; `MLP_NODES_PER_STAGE` answers it). A finetune Phase then trains as one Kubeflow Trainer TrainJob on `nodes_per_stage` nodes with `gpus_per_stage` GPUs each, one process per GPU; every other Stage and each Endpoint stays on one node. The machines must be identical. Users only see the totals, e.g. `2 nodes · 4 GPUs` in the Web UI. Every GPU workload (GPU steps, Endpoints, TrainJobs) waits in one Kueue queue of `gpu_count` GPUs, first come first served and never evicted, so a TrainJob starts only once all its GPUs are free.
 
 Running `install.sh` again is the upgrade path. If Pipelines or Endpoints are running, it lists them and asks once `Continue? [y/N]` before changing anything (`MLP_YES=1` skips the prompt). It then cancels the Pipelines (`cancelled`), stops the Endpoints (`stopped`) and replaces our pods and Deployments; all data is kept (Postgres, SeaweedFS, MLflow, Model Cache). At the end it removes outdated images (ours from older builds, and upstream ones a newer tag replaced) and prunes the BuildKit cache to `buildCacheGb`.

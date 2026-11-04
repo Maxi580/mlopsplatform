@@ -42,7 +42,7 @@ test("each Pipeline shows its Owner, status, Stages and links", async () => {
   const links = within(row).getAllByRole("link");
   expect(links.map((link) => link.getAttribute("href"))).toEqual([
     running.kubeflow_run_url,
-    running.mlflow_run_url,
+    "/mlflow/#/runs/abc",
   ]);
 });
 

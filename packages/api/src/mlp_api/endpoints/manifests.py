@@ -127,13 +127,13 @@ def endpoint_manifests(
                 # Feedback goes to the API, behind the same key; the longer rule wins.
                 {
                     "kind": "Rule",
-                    "match": f"Host(`{environment.domain}`) && Path(`{feedback_path}`)",
+                    "match": f"Path(`{feedback_path}`)",
                     "middlewares": [{"name": config.ENDPOINT_ROUTE_MIDDLEWARES[0]}],
                     "services": [config.ENDPOINT_FEEDBACK_SERVICE],
                 },
                 {
                     "kind": "Rule",
-                    "match": f"Host(`{environment.domain}`) && PathPrefix(`{path}`)",
+                    "match": f"PathPrefix(`{path}`)",
                     "middlewares": [{"name": m} for m in config.ENDPOINT_ROUTE_MIDDLEWARES],
                     "services": [config.ENDPOINT_PROXY_SERVICE],
                 },

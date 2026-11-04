@@ -27,7 +27,6 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database}")
     monkeypatch.setenv("JWT_SECRET", JWT_SECRET)
     monkeypatch.setenv("S3_ENDPOINT_URL", "http://seaweedfs.test:8333")
-    monkeypatch.setenv("S3_PUBLIC_URL", "https://platform.test")
     monkeypatch.setenv("S3_BUCKET", "platform")
     monkeypatch.setenv("MLFLOW_URL", "http://mlflow.test")
     monkeypatch.setenv("MLFLOW_BUCKET", "mlflow")
@@ -140,17 +139,17 @@ class FakeObjectStore:
     def delete(self, key, bucket="platform"):
         self.buckets[bucket].pop(key, None)
 
-    def download_url(self, key, bucket="platform"):
-        return f"https://objects.test/{bucket}/{key}?signature=x"
+    def download_url(self, key, address, bucket="platform"):
+        return f"https://{address}/{bucket}/{key}?signature=x"
 
     def start_multipart_upload(self, bucket, key):
         upload_id = f"multipart-{len(self.multipart_uploads) + 1}"
         self.multipart_uploads[upload_id] = []
         return upload_id
 
-    def part_upload_urls(self, bucket, key, upload_id, parts):
+    def part_upload_urls(self, bucket, key, upload_id, parts, address):
         urls = [
-            f"https://objects.test/{bucket}/{key}?uploadId={upload_id}&partNumber={number}"
+            f"https://{address}/{bucket}/{key}?uploadId={upload_id}&partNumber={number}"
             for number in range(1, parts + 1)
         ]
         self.multipart_uploads[upload_id] = urls

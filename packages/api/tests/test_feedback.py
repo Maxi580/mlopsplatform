@@ -107,6 +107,6 @@ def test_the_route_sends_feedback_to_the_api_behind_the_endpoint_key(logged_in_a
 
     feedback, _ = cluster.endpoints["chat"]["route"]["spec"]["routes"]
 
-    assert feedback["match"] == f"Host(`platform.test`) && Path(`/serving/{uuid}/v1/feedback`)"
+    assert feedback["match"] == f"Path(`/serving/{uuid}/v1/feedback`)"
     assert feedback["middlewares"] == [{"name": "endpoint-key"}]
     assert feedback["services"] == [{"name": "api", "port": "http"}]

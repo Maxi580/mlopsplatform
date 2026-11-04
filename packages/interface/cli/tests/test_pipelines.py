@@ -108,9 +108,10 @@ def test_ls_shows_owner_status_stages_and_links(logged_in, home, fake_api, platf
         "stages": ["finetune"],
         "created_at": "2026-10-02T12:00:00+00:00",
         "kubeflow_run_url": "/pipeline/#/runs/details/run-1",
-        "mlflow_run_url": "https://mlflow.test/#/runs/abc",
+        "mlflow_run_url": "/mlflow/#/runs/abc",
     }
-    fake_api.answers[api_paths.PIPELINES] = (200, [pipeline])
+    older = {**pipeline, "id": 6, "mlflow_run_url": "https://mlflow.test/#/runs/old"}
+    fake_api.answers[api_paths.PIPELINES] = (200, [pipeline, older])
 
     result = mlp("ls")
 
@@ -119,7 +120,8 @@ def test_ls_shows_owner_status_stages_and_links(logged_in, home, fake_api, platf
     for value in ("7", "qwen-sft", "shared", "waiting for GPU", "finetune"):
         assert value in row
     assert f"{fake_api.url}/pipeline/#/runs/details/run-1" in result.output
-    assert "https://mlflow.test/#/runs/abc" in result.output
+    assert f"{fake_api.url}/mlflow/#/runs/abc" in result.output
+    assert "https://mlflow.test/#/runs/old" in result.output
 
 
 def test_ls_shows_the_best_parameters_a_sweep_found(logged_in, home, fake_api, platform_ca):

@@ -91,7 +91,7 @@ test("a Model Version links the MLflow Run of the Pipeline that made it", async 
 
   const made = (await screen.findByText("qwen-sft@3")).closest("tr")!;
   const link = within(made).getByRole("link", { name: "MLflow" });
-  expect(link).toHaveAttribute("href", "https://platform.test/mlflow/#/runs/abc");
+  expect(link).toHaveAttribute("href", "/mlflow/#/runs/abc");
   const uploaded = screen.getByText("uploaded@1").closest("tr")!;
   expect(within(uploaded).queryByRole("link")).not.toBeInTheDocument();
 });

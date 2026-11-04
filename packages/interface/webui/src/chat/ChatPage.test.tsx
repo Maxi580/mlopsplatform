@@ -3,13 +3,14 @@ import userEvent from "@testing-library/user-event";
 import type { Endpoint } from "../serving/endpoint";
 import { renderApp } from "../testApi";
 
-const URL = "https://platform.test/serving/0123456789abcdef0123456789abcdef/v1";
+const ENDPOINT_PATH = "/serving/0123456789abcdef0123456789abcdef/v1";
+const ENDPOINT_URL = `https://platform.test${ENDPOINT_PATH}`;
 const endpoint = (name: string, status = "running", judge = false): Endpoint => ({
   name,
   owner: "shared",
   model: "hf:Qwen/Qwen3-0.6B@abc",
   status,
-  url: URL,
+  url: ENDPOINT_URL,
   key: `key-of-${name}`,
   created_at: "2026-10-02T08:30:00+00:00",
   stats: null,
@@ -32,7 +33,7 @@ function fakeEndpoint(parts: string[]) {
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     calls.push({ url, init });
     if (url === "/endpoints") return new Response(JSON.stringify(ENDPOINTS));
-    if (url === `${URL}/chat/completions`) {
+    if (url === `${ENDPOINT_PATH}/chat/completions`) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         start(controller) {
@@ -42,7 +43,7 @@ function fakeEndpoint(parts: string[]) {
       });
       return new Response(stream, { headers: { "x-mlp-trace-id": "tr-1" } });
     }
-    if (url === `${URL}/feedback`) return new Response(init.body as string);
+    if (url === `${ENDPOINT_PATH}/feedback`) return new Response(init.body as string);
     return new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
   });
   return calls;
@@ -81,7 +82,7 @@ test("an answer streams into its message, with its reasoning folded above it", a
   expect(await within(chat).findByText("Hello!")).toBeInTheDocument();
   expect(within(chat).getByText("Reasoning")).toBeInTheDocument();
   expect(within(chat).getByText("Greet back.")).toBeInTheDocument();
-  const sent = calls.find((call) => call.url === `${URL}/chat/completions`)!;
+  const sent = calls.find((call) => call.url === `${ENDPOINT_PATH}/chat/completions`)!;
   const headers = sent.init.headers as Record<string, string>;
   expect(headers.authorization).toBe("Bearer key-of-chat");
   expect(headers["x-mlp-source"]).toBe("chat");
@@ -94,6 +95,34 @@ test("an answer streams into its message, with its reasoning folded above it", a
   });
 });
 
+test("a failed send puts the message back, so the next send leaves no empty answer", async () => {
+  const user = userEvent.setup();
+  const calls = fakeEndpoint([chunk({ content: "Hi!" })]);
+  const answering = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    if (url !== `${ENDPOINT_PATH}/chat/completions`) return answering(url, init);
+    vi.stubGlobal("fetch", answering);
+    throw new TypeError("Failed to fetch");
+  });
+  renderApp("/chat");
+  await pick(user, "chat");
+  const message = screen.getByRole("textbox", { name: "Message" });
+  await user.type(message, "Say hi.");
+  await user.click(screen.getByRole("button", { name: /Send/ }));
+
+  expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+  expect(message).toHaveValue("Say hi.");
+  const chat = screen.getByRole("region", { name: "Chat" });
+  expect(within(chat).queryByText("assistant")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /Send/ }));
+  await within(chat).findByText("Hi!");
+  const sent = calls.find((call) => call.url === `${ENDPOINT_PATH}/chat/completions`)!;
+  expect(JSON.parse(sent.init.body as string).messages).toEqual([
+    { role: "user", content: "Say hi." },
+  ]);
+});
+
 test("a thumb posts Feedback for the answer's trace and shows the choice", async () => {
   const user = userEvent.setup();
   const calls = fakeEndpoint([chunk({ content: "Hi!" })]);
@@ -102,19 +131,43 @@ test("a thumb posts Feedback for the answer's trace and shows the choice", async
   await user.type(screen.getByRole("textbox", { name: "Message" }), "Say hi.");
   await user.click(screen.getByRole("button", { name: /Send/ }));
 
-  await user.click(await screen.findByRole("button", { name: "Good answer" }));
+  const good = await screen.findByRole("button", { name: "Good answer" });
+  await waitFor(() => expect(good).toBeEnabled());
+  await user.click(good);
 
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Good answer" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    ),
-  );
-  const feedback = calls.find((call) => call.url === `${URL}/feedback`)!;
+  await waitFor(() => expect(good).toHaveAttribute("aria-pressed", "true"));
+  const feedback = calls.find((call) => call.url === `${ENDPOINT_PATH}/feedback`)!;
   expect(JSON.parse(feedback.init.body as string)).toEqual({ trace_id: "tr-1", rating: "up" });
   expect((feedback.init.headers as Record<string, string>).authorization).toBe(
     "Bearer key-of-chat",
   );
+});
+
+test("a thumb can be changed, and a Feedback that can't be sent says so", async () => {
+  const user = userEvent.setup();
+  const calls = fakeEndpoint([chunk({ content: "Hi!" })]);
+  renderApp("/chat");
+  await pick(user, "chat");
+  await user.type(screen.getByRole("textbox", { name: "Message" }), "Say hi.");
+  await user.click(screen.getByRole("button", { name: /Send/ }));
+  const good = await screen.findByRole("button", { name: "Good answer" });
+  const bad = screen.getByRole("button", { name: "Bad answer" });
+  await waitFor(() => expect(good).toBeEnabled());
+
+  await user.click(good);
+  await waitFor(() => expect(good).toHaveAttribute("aria-pressed", "true"));
+  await user.click(bad);
+  await waitFor(() => expect(bad).toHaveAttribute("aria-pressed", "true"));
+  expect(good).toHaveAttribute("aria-pressed", "false");
+  const sent = calls.filter((call) => call.url === `${ENDPOINT_PATH}/feedback`);
+  expect(JSON.parse(sent[1].init.body as string).rating).toBe("down");
+
+  vi.stubGlobal("fetch", async () => {
+    throw new TypeError("Failed to fetch");
+  });
+  await user.click(good);
+  expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+  expect(good).toHaveAttribute("aria-pressed", "false");
 });
 
 test("a new chat or another Endpoint clears the history", async () => {

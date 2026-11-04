@@ -39,8 +39,20 @@ metadata:
   name: mlp-tls
 spec:
   secretName: mlp-tls
+  # Traefik serves it at every address, so each one a browser should trust is named here.
+  {{- $addresses := concat (list (required "domain is set in values-<env>.yaml" .Values.domain) "localhost" "127.0.0.1") .Values.extraAddresses | uniq }}
   dnsNames:
-    - {{ required "domain is set in values-<env>.yaml" .Values.domain }}
+    {{- range $addresses }}
+    {{- if not (regexMatch "^[0-9.]+$|:" .) }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- end }}
+  ipAddresses:
+    {{- range $addresses }}
+    {{- if regexMatch "^[0-9.]+$|:" . }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- end }}
   privateKey:
     algorithm: ECDSA
     size: 256

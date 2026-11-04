@@ -100,14 +100,17 @@ def test_dataset_names_are_checked(logged_in_api, name):
     assert upload(logged_in_api, name, jsonl(CHAT)).status_code in (404, 422)
 
 
-def test_download_returns_a_presigned_url_for_the_version(logged_in_api):
+def test_download_returns_a_url_presigned_for_the_address_the_client_used(logged_in_api):
     upload(logged_in_api, "chat", jsonl(CHAT))
 
-    response = logged_in_api.get(api_paths.DATASET_DOWNLOAD.format(name="chat", version=1))
+    response = logged_in_api.get(
+        api_paths.DATASET_DOWNLOAD.format(name="chat", version=1),
+        headers={"host": "localhost:8443"},
+    )
 
     assert response.status_code == 200
     assert response.json() == {
-        "url": "https://objects.test/platform/datasets/chat/1/data.jsonl?signature=x"
+        "url": "https://localhost:8443/platform/datasets/chat/1/data.jsonl?signature=x"
     }
 
 

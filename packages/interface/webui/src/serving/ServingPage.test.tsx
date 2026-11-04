@@ -57,13 +57,15 @@ const schema = {
   },
 };
 const DEFAULTS = { prefix_caching: true, gpu_memory_utilization: 0.9 };
-const URL = "https://platform.test/serving/0123456789abcdef0123456789abcdef/v1";
+const ENDPOINT_PATH = "/serving/0123456789abcdef0123456789abcdef/v1";
+// Where the page shows and copies it: the address the page was reached at, not the domain.
+const URL_HERE = `${window.location.origin}${ENDPOINT_PATH}`;
 const chat: Endpoint = {
   name: "chat",
   owner: "shared",
   model: "model:qwen-sft@2",
   status: "running",
-  url: URL,
+  url: `https://platform.test${ENDPOINT_PATH}`,
   key: "key-of-chat",
   created_at: "2026-10-02T08:30:00+00:00",
   stats: null,
@@ -106,7 +108,7 @@ test("Endpoints are listed with model, status and URL", async () => {
   renderApp("/serving");
 
   const row = (await screen.findByText("chat")).closest("tr")!;
-  for (const text of ["model:qwen-sft@2", "running", URL]) {
+  for (const text of ["model:qwen-sft@2", "running", URL_HERE]) {
     expect(within(row).getByText(text)).toBeInTheDocument();
   }
   const stopped = screen.getByText("old").closest("tr")!;
@@ -127,7 +129,7 @@ test("an Endpoint's URL is copied from its row", async () => {
   const row = (await screen.findByText("chat")).closest("tr")!;
   await user.click(within(row).getByRole("button", { name: "Copy URL" }));
 
-  expect(await navigator.clipboard.readText()).toBe(URL);
+  expect(await navigator.clipboard.readText()).toBe(URL_HERE);
 });
 
 test("an Endpoint's model is copied from its row, also once stopped", async () => {
@@ -146,7 +148,7 @@ test("a long name, model and URL are cut off, and hovering shows them in full", 
   renderApp("/serving");
 
   const row = (await screen.findByText("chat")).closest("tr")!;
-  for (const value of ["model:qwen-sft@2", URL]) {
+  for (const value of ["model:qwen-sft@2", URL_HERE]) {
     expect(within(row).getByText(value)).toHaveAttribute("title", value);
     expect(within(row).getByText(value).closest("td")).toHaveClass("cut-off");
   }

@@ -1,5 +1,6 @@
 import { ChartLine, CircleAlert, Download, HardDrive, History, Upload } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
+import { pathOnThisOrigin } from "../address";
 import { callApi, errorMessage, useApi } from "../api";
 import {
   CHECKPOINTS,
@@ -167,7 +168,7 @@ export default function StoragePage() {
                   {v.pipeline_mlflow_run_url && (
                     <a
                       className="link-button"
-                      href={v.pipeline_mlflow_run_url}
+                      href={pathOnThisOrigin(v.pipeline_mlflow_run_url)}
                       target="_blank"
                       rel="noreferrer"
                     >

@@ -179,9 +179,10 @@ test("the stats page shows the running Endpoint's URL and key to copy", async ()
   fakeApi({ ...routes, "GET /endpoints": [200, [chat, stopped]] });
   renderApp("/serving/chat");
 
-  expect(await screen.findByText(url)).toBeInTheDocument();
+  const here = `${window.location.origin}/serving/0123456789abcdef0123456789abcdef/v1`;
+  expect(await screen.findByText(here)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Copy URL" }));
-  expect(await navigator.clipboard.readText()).toBe(url);
+  expect(await navigator.clipboard.readText()).toBe(here);
   expect(screen.getByText("key-of-chat")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Copy Endpoint Key" }));
   expect(await navigator.clipboard.readText()).toBe("key-of-chat");

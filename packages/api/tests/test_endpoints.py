@@ -304,7 +304,7 @@ def test_the_route_serves_the_endpoint_url_under_its_uuid(logged_in_api, qwen_on
     pattern = r"https://platform\.test/serving/([0-9a-f]{32})/v1"
     [uuid] = re.fullmatch(pattern, started["url"]).groups()
     _, route = cluster.endpoints["chat"]["route"]["spec"]["routes"]
-    assert route["match"] == f"Host(`platform.test`) && PathPrefix(`/serving/{uuid}/`)"
+    assert route["match"] == f"PathPrefix(`/serving/{uuid}/`)"
     assert route["services"] == [{"name": "proxy", "port": "http"}]
 
 

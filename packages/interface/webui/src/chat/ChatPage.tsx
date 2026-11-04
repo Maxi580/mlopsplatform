@@ -1,5 +1,6 @@
 import { CircleAlert, LoaderCircle, Plus, Send, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
+import { pathOnThisOrigin } from "../address";
 import { errorMessage, useApi } from "../api";
 import { ENDPOINTS } from "../apiPaths";
 import {
@@ -45,6 +46,9 @@ export default function ChatPage() {
     try {
       await streamAnswer(endpoint, settings, history, (answer) => setTurns([...history, answer]));
     } catch (failure) {
+      // Undone, so sending again repeats it instead of sending an empty answer as history.
+      setTurns(turns);
+      setDraft(draft);
       setError(errorMessage(failure));
     }
     setBusy(false);
@@ -53,13 +57,18 @@ export default function ChatPage() {
   async function rate(index: number, rating: Rating) {
     const turn = turns[index];
     if (!endpoint || !turn.traceId) return;
-    const response = await fetch(`${endpoint.url}/feedback`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${endpoint.key}`, "content-type": "application/json" },
-      body: JSON.stringify({ trace_id: turn.traceId, rating }),
-    });
-    if (!response.ok) return setError(`The Feedback was refused (${response.status})`);
-    setTurns(turns.map((found, at) => (at === index ? { ...found, rating } : found)));
+    setError(undefined);
+    try {
+      const response = await fetch(`${pathOnThisOrigin(endpoint.url)}/feedback`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${endpoint.key}`, "content-type": "application/json" },
+        body: JSON.stringify({ trace_id: turn.traceId, rating }),
+      });
+      if (!response.ok) throw new Error(`The Feedback was refused (${response.status})`);
+      setTurns(turns.map((found, at) => (at === index ? { ...found, rating } : found)));
+    } catch (failure) {
+      setError(errorMessage(failure));
+    }
   }
 
   return (
@@ -142,18 +151,26 @@ export default function ChatPage() {
             <ChatText text={turn.content} />
             {turn.traceId && (
               <span className="chat-rating">
-                {(["up", "down"] as const).map((rating) => (
-                  <button
-                    key={rating}
-                    type="button"
-                    className={`icon-button ${turn.rating === rating ? "chosen" : ""}`}
-                    aria-label={rating === "up" ? "Good answer" : "Bad answer"}
-                    aria-pressed={turn.rating === rating}
-                    onClick={() => rate(index, rating)}
-                  >
-                    {rating === "up" ? <ThumbsUp size={14} /> : <ThumbsDown size={14} />}
-                  </button>
-                ))}
+                {(["up", "down"] as const).map((rating) => {
+                  const Thumb = rating === "up" ? ThumbsUp : ThumbsDown;
+                  const label = rating === "up" ? "Good answer" : "Bad answer";
+                  const chosen = turn.rating === rating;
+                  return (
+                    <button
+                      key={rating}
+                      type="button"
+                      className={`icon-button ${chosen ? "chosen" : ""}`}
+                      aria-label={label}
+                      aria-pressed={chosen}
+                      title={label}
+                      // A rating sent while the next answer streams would be lost to its updates.
+                      disabled={busy}
+                      onClick={() => rate(index, rating)}
+                    >
+                      <Thumb size={14} fill={chosen ? "currentColor" : "none"} />
+                    </button>
+                  );
+                })}
               </span>
             )}
           </div>
@@ -195,7 +212,7 @@ async function streamAnswer(
 ) {
   // 1. The request, with the settings that are set.
   const system = settings.system.trim() ? [{ role: "system", content: settings.system }] : [];
-  const response = await fetch(`${endpoint.url}/chat/completions`, {
+  const response = await fetch(`${pathOnThisOrigin(endpoint.url)}/chat/completions`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${endpoint.key}`,

@@ -66,8 +66,6 @@ spec:
                   key: s3SecretKey
             - name: S3_ENDPOINT_URL
               value: http://seaweedfs.{{ .Values.namespaces.kubeflow }}.svc.cluster.local:{{ .Values.ports.seaweedfs }}
-            - name: S3_PUBLIC_URL
-              value: https://{{ .Values.domain }}
             - name: S3_BUCKET
               value: {{ .Values.platformBucket }}
             - name: MLFLOW_URL
@@ -100,8 +98,7 @@ spec:
             # Where the Smoke Test sends its chat requests, traced like every user's.
             - name: PROXY_URL
               value: http://proxy.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.proxy }}
-            # Endpoints run in this namespace, mount the Model Cache from the node and are routed
-            # under the domain.
+            # Endpoints run in this namespace, mount the Model Cache and have URLs under the domain.
             - name: PLATFORM_NAMESPACE
               valueFrom:
                 fieldRef:

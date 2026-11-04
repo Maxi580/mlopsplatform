@@ -59,6 +59,7 @@ def start_upload(upload: ModelUpload, request: Request) -> dict:
             files,
             upload.base,
             upload.tool_parser,
+            request.headers["host"],
         )
     except ValueError as error:
         raise HTTPException(422, f"Rejected {upload.name}: {error}") from None
@@ -80,7 +81,9 @@ def files(name: ModelName, version: int, request: Request) -> dict:
     state = request.app.state
     try:
         return {
-            "files": model_version_files(state.model_registry, state.object_store, name, version)
+            "files": model_version_files(
+                state.model_registry, state.object_store, name, version, request.headers["host"]
+            )
         }
     except LookupError as error:
         raise HTTPException(404, str(error)) from None

@@ -1562,7 +1562,19 @@ legend .switch-button {
   margin-top: 4px;
 }
 
+.chat-rating .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.chat-rating .icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .chat-rating .chosen {
+  border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 

@@ -239,13 +239,16 @@ def test_completing_an_unknown_upload_is_not_found(logged_in_api):
 def test_a_model_version_downloads_as_one_url_per_file(logged_in_api, object_store, model_registry):
     upload(logged_in_api, object_store, FULL_WEIGHTS)
 
-    response = logged_in_api.get(api_paths.MODEL_VERSION_FILES.format(name="my-model", version=1))
+    response = logged_in_api.get(
+        api_paths.MODEL_VERSION_FILES.format(name="my-model", version=1),
+        headers={"host": "localhost:8443"},
+    )
 
     assert response.status_code == 200, response.text
     files = {file["path"]: file for file in response.json()["files"]}
     assert set(files) == set(FULL_WEIGHTS)
     url = files["config.json"]["url"]
-    assert url.startswith("https://objects.test/mlflow/") and url.endswith(
+    assert url.startswith("https://localhost:8443/mlflow/") and url.endswith(
         "/config.json?signature=x"
     )
     assert files["config.json"]["size_bytes"] == len(FULL_WEIGHTS["config.json"])

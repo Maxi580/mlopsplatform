@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { urlOnThisOrigin } from "../address";
 import { ApiError, callApi, errorMessage, useApi } from "../api";
 import {
   ENDPOINTS,
@@ -273,7 +274,7 @@ function EndpointRow({
       <td>{stats && tokensPerSecond != null ? tokensPerSecond.toFixed(1) : "—"}</td>
       <td>{stats ? formatSeconds(stats.time_to_first_token_p50) : "—"}</td>
       <td className="cut-off">
-        {!stopped && !managed && <CopyValue label="URL" value={endpoint.url} />}
+        {!stopped && !managed && <CopyValue label="URL" value={urlOnThisOrigin(endpoint.url)} />}
       </td>
       <td>
         {!stopped && !managed && (

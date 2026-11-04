@@ -76,7 +76,8 @@ async def received_file(request: Request, directory: Path) -> Path:
 def download(name: DatasetName, version: int, request: Request) -> dict:
     if find_dataset_version(request.app.state.engine, name, version) is None:
         raise HTTPException(404, f"Dataset {name} has no version {version}")
-    return {"url": request.app.state.object_store.download_url(dataset_key(name, version))}
+    address = request.headers["host"]
+    return {"url": request.app.state.object_store.download_url(dataset_key(name, version), address)}
 
 
 @router.delete(api_paths.DATASET_VERSION, status_code=204)

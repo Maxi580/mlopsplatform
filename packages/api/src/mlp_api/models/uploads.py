@@ -34,6 +34,7 @@ def start_model_upload(
     files: dict[str, int],
     base: str | None,
     tool_parser: str | None,
+    address: str,
 ) -> dict:
     """The upload's ID and each file's part URLs; ValueError if the files can't make a version."""
     # 1. What can be checked before gigabytes travel: the file names and the base.
@@ -53,7 +54,7 @@ def start_model_upload(
         multipart_id = object_store.start_multipart_upload(bucket, prefix + path)
         multipart_uploads[path] = [multipart_id, size]
         parts = max(1, math.ceil(size / config.MODEL_UPLOAD_PART_SIZE))
-        urls = object_store.part_upload_urls(bucket, prefix + path, multipart_id, parts)
+        urls = object_store.part_upload_urls(bucket, prefix + path, multipart_id, parts, address)
         answer.append({"path": path, "part_urls": urls})
 
     # 3. Remembered until the client completes it.

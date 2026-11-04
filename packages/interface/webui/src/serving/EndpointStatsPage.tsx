@@ -1,6 +1,7 @@
 import { ArrowLeft, CircleAlert, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { urlOnThisOrigin } from "../address";
 import { useApi } from "../api";
 import { ENDPOINTS, endpointHistory, endpointStats } from "../apiPaths";
 import {
@@ -164,7 +165,7 @@ export default function EndpointStatsPage() {
             <dl className="endpoint-access">
               <dt>URL</dt>
               <dd>
-                <CopyValue label="URL" value={endpoint.url} />
+                <CopyValue label="URL" value={urlOnThisOrigin(endpoint.url)} />
               </dd>
               <dt>Endpoint Key</dt>
               <dd>

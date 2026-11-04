@@ -2,6 +2,8 @@
 # values-<env>.yaml override only what differs per environment.
 
 domain: ""
+# Names or IPs for the certificate to cover, beside the domain, localhost and 127.0.0.1.
+extraAddresses: []
 
 namespaces:
   platform: mlp

@@ -1,5 +1,6 @@
 import json
 from typing import Annotated
+from urllib.parse import urljoin
 
 import typer
 import yaml
@@ -102,12 +103,12 @@ def ls() -> None:
     for row in rows:
         typer.echo("  ".join(value.ljust(width) for value, width in zip(row, widths, strict=True)))
     typer.echo()
-    # The KFP UI link is relative to the platform; MLflow's comes from KFP whole.
+    # Both links are relative to the platform; MLflow's is whole for Pipelines of older installs.
     for p in pipelines:
         if p["kubeflow_run_url"]:
             typer.echo(f"{p['id']} Kubeflow: {profile['url']}{p['kubeflow_run_url']}")
         if p["mlflow_run_url"]:
-            typer.echo(f"{p['id']} MLflow:   {p['mlflow_run_url']}")
+            typer.echo(f"{p['id']} MLflow:   {urljoin(profile['url'], p['mlflow_run_url'])}")
         if p.get("sweep"):
             values = [
                 f"{k}={v}" for block in p["sweep"]["parameters"].values() for k, v in block.items()

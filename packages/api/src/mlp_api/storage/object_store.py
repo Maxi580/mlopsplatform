@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import boto3
@@ -13,14 +14,7 @@ class ObjectStore:
 
     def __init__(self):
         self.bucket = os.environ["S3_BUCKET"]
-        s3_config = Config(signature_version="s3v4", s3={"addressing_style": "path"})
-        self.client = boto3.client(
-            "s3", endpoint_url=os.environ["S3_ENDPOINT_URL"], config=s3_config
-        )
-        # Download URLs are signed for the public host, where Traefik forwards them to SeaweedFS.
-        self.public_client = boto3.client(
-            "s3", endpoint_url=os.environ["S3_PUBLIC_URL"], config=s3_config
-        )
+        self.client = s3_client(os.environ["S3_ENDPOINT_URL"])
 
     def upload_file(self, path: Path, key: str, bucket: str | None = None) -> None:
         self.client.upload_file(str(path), bucket or self.bucket, key)
@@ -31,8 +25,8 @@ class ObjectStore:
     def delete(self, key: str, bucket: str | None = None) -> None:
         self.client.delete_object(Bucket=bucket or self.bucket, Key=key)
 
-    def download_url(self, key: str, bucket: str | None = None) -> str:
-        return self.public_client.generate_presigned_url(
+    def download_url(self, key: str, address: str, bucket: str | None = None) -> str:
+        return public_client(address).generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket or self.bucket, "Key": key},
             ExpiresIn=int(config.DOWNLOAD_URL_LIFETIME.total_seconds()),
@@ -45,9 +39,11 @@ class ObjectStore:
     def start_multipart_upload(self, bucket: str, key: str) -> str:
         return self.client.create_multipart_upload(Bucket=bucket, Key=key)["UploadId"]
 
-    def part_upload_urls(self, bucket: str, key: str, upload_id: str, parts: int) -> list[str]:
+    def part_upload_urls(
+        self, bucket: str, key: str, upload_id: str, parts: int, address: str
+    ) -> list[str]:
         return [
-            self.public_client.generate_presigned_url(
+            public_client(address).generate_presigned_url(
                 "upload_part",
                 Params={"Bucket": bucket, "Key": key, "UploadId": upload_id, "PartNumber": number},
                 ExpiresIn=int(config.UPLOAD_URL_LIFETIME.total_seconds()),
@@ -91,3 +87,15 @@ class ObjectStore:
         pages = self.client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
         for page in pages:
             yield from page.get("Contents", [])
+
+
+# A signature covers the host, so URLs are signed for the address the client called the API at.
+@lru_cache(maxsize=config.PUBLIC_S3_CLIENTS_KEPT)
+def public_client(address: str):
+    return s3_client(f"https://{address}")
+
+
+def s3_client(url: str):
+    s3_config = Config(signature_version="s3v4", s3={"addressing_style": "path"})
+    # A session of its own: routes create clients in threads, and the default isn't thread-safe.
+    return boto3.session.Session().client("s3", endpoint_url=url, config=s3_config)
