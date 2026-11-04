@@ -14,14 +14,14 @@ judge = Table(
     Column("enabled", Boolean, nullable=False),
     # What the Judge serves, as the Endpoint start form sends it, unpinned.
     Column("spec", JSON),
-    Column("rubric", Text, nullable=False),
+    Column("system_prompt", Text, nullable=False, info={"renamed_from": "rubric"}),
 )
 
 
 class JudgeSettings(Strict):
     enabled: bool = False
     spec: EndpointSpec | None = None
-    rubric: str = Field(config.JUDGE_RUBRIC, min_length=1)
+    system_prompt: str = Field(config.JUDGE_SYSTEM_PROMPT, min_length=1)
 
     @model_validator(mode="after")
     def check_spec(self) -> "JudgeSettings":
@@ -31,13 +31,13 @@ class JudgeSettings(Strict):
 
 
 def judge_settings(engine: Engine) -> JudgeSettings:
-    """The stored settings; judging is off with the default rubric until they are saved."""
+    """The stored settings; judging is off with the default system prompt until they are saved."""
     with engine.connect() as connection:
         row = connection.execute(select(judge)).first()
     if row is None:
         return JudgeSettings()
     spec = row.spec and without_stored_quantization(row.spec)
-    return JudgeSettings(enabled=row.enabled, spec=spec, rubric=row.rubric)
+    return JudgeSettings(enabled=row.enabled, spec=spec, system_prompt=row.system_prompt)
 
 
 def store_judge_settings(engine: Engine, settings: JudgeSettings) -> None:
@@ -45,5 +45,7 @@ def store_judge_settings(engine: Engine, settings: JudgeSettings) -> None:
     with engine.begin() as connection:
         connection.execute(delete(judge))
         connection.execute(
-            insert(judge).values(enabled=settings.enabled, spec=spec, rubric=settings.rubric)
+            insert(judge).values(
+                enabled=settings.enabled, spec=spec, system_prompt=settings.system_prompt
+            )
         )

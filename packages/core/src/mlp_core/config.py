@@ -557,10 +557,8 @@ JUDGE_MAX_PER_HOUR = 60
 JUDGING_INTERVAL = timedelta(seconds=10)
 JUDGING_BATCH = 50
 JUDGING_TIMEOUT = timedelta(minutes=2)
-# What the Judge reads: the rubric, then the conversation, the reasoning labelled apart, and the
-# answer with its tool calls; it answers in JUDGE_RESPONSE_FORMAT.
-JUDGE_PROMPT = """{rubric}
-
+# Fixed, so editing the Judge's system prompt can't remove the scoring instruction.
+JUDGE_USER_MESSAGE = """\
 Score the assistant's answer from 1 to 5 and give your reason in one or two sentences.
 
 ## Conversation
@@ -595,7 +593,7 @@ JUDGE_STATUS_TAG = "judge_status"
 # The judging loop goes through traces oldest first, and the Judge answers deterministically.
 JUDGING_ORDER = "timestamp_ms ASC"
 JUDGE_SAMPLING = {"temperature": 0}
-JUDGE_RUBRIC = (
+JUDGE_SYSTEM_PROMPT = (
     "Rate how well the assistant's answer serves the user's last message: 5 is correct, complete"
     " and helpful; 3 is partly right or partly helpful; 1 is wrong, harmful or off-topic. Judge"
     " the answer and its tool calls, not the reasoning's style."

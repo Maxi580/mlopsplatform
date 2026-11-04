@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { fakeApi, renderApp } from "../testApi";
@@ -98,7 +98,7 @@ const routes: Parameters<typeof fakeApi>[0] = {
     [{ name: "Qwen/Qwen3-8B", reference: "hf:Qwen/Qwen3-8B", parameters: 8.2e9, gated: false }],
   ],
   "GET /settings": [200, { gpu_count: 1 }],
-  "GET /judge": [200, { enabled: false, spec: null, rubric: "Rate it.", status: null }],
+  "GET /judge": [200, { enabled: false, spec: null, system_prompt: "Rate it.", status: null }],
 };
 
 test("Endpoints are listed with model, status and URL", async () => {
@@ -503,37 +503,138 @@ test("the Judge is labelled in the list, without a URL, key or buttons", async (
   expect(within(row).getByRole("button", { name: "Copy model" })).toBeInTheDocument();
 });
 
-test("the Judge's settings are saved with its model, options and rubric", async () => {
+test("Save stores the Judge's model, options and system prompt, and leaves it off", async () => {
   const user = userEvent.setup();
-  const saved = { enabled: true, spec: { model: "hf:Qwen/Qwen3-8B" }, rubric: "Be strict." };
-  const calls = fakeApi({ ...routes, "PUT /judge": [200, { ...saved, status: "pending" }] });
+  const calls = fakeApi({ ...routes, "PUT /judge": [200, {}] });
   renderApp("/serving");
 
-  await user.click(await screen.findByRole("checkbox", { name: "Judging enabled" }));
-  await user.type(screen.getByRole("combobox", { name: "Judge model" }), "hf:Qwen/Qwen3-8B");
+  await user.type(await screen.findByRole("combobox", { name: "Judge model" }), "hf:Qwen/Qwen3-8B");
   await user.click(screen.getByText("+ advanced"));
-  const rubric = screen.getByRole("textbox", { name: /Rubric/ });
-  expect(rubric).toHaveValue("Rate it.");
-  await user.clear(rubric);
-  await user.type(rubric, "Be strict.");
+  const systemPrompt = screen.getByRole("textbox", { name: /System prompt/ });
+  expect(systemPrompt).toHaveValue("Rate it.");
+  await user.clear(systemPrompt);
+  await user.type(systemPrompt, "Be strict.");
   await user.click(screen.getByRole("button", { name: "Save" }));
 
   await waitFor(() => expect(calls.some((call) => call.route === "PUT /judge")).toBe(true));
   const put = calls.find((call) => call.route === "PUT /judge")!;
   expect(put.body).toEqual({
+    enabled: false,
+    spec: { model: "hf:Qwen/Qwen3-8B", ...DEFAULTS },
+    system_prompt: "Be strict.",
+  });
+  expect(await screen.findByText("Judging is off")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Judge is deactivated" })).toBeInTheDocument();
+});
+
+const JUDGE_ON = {
+  enabled: true,
+  spec: { model: "hf:Qwen/Qwen3-8B", max_model_len: 4096 },
+  system_prompt: "Rate it.",
+  status: "running",
+};
+const JUDGE_OFF = { ...JUDGE_ON, enabled: false, status: null };
+
+// The Judge's routes, which store what's saved.
+function judgeRoutes(judge: object) {
+  let stored = judge;
+  return {
+    "GET /judge": (): [number, unknown] => [200, stored],
+    "PUT /judge": (body: object): [number, unknown] => {
+      stored = body;
+      return [200, stored];
+    },
+  };
+}
+
+test("the button activates the Judge at once, with the form's model and system prompt", async () => {
+  const user = userEvent.setup();
+  const calls = fakeApi({ ...routes, ...judgeRoutes({ ...JUDGE_OFF, spec: null }) });
+  renderApp("/serving");
+
+  const off = await screen.findByRole("button", { name: "Judge is deactivated" });
+  expect(off).toHaveClass("danger");
+  await user.type(screen.getByRole("combobox", { name: "Judge model" }), "hf:Qwen/Qwen3-8B");
+  await user.click(off);
+
+  const on = await screen.findByRole("button", { name: "Judge is activated" });
+  expect(on).toHaveClass("success");
+  expect(calls.find((call) => call.route === "PUT /judge")?.body).toEqual({
     enabled: true,
     spec: { model: "hf:Qwen/Qwen3-8B", ...DEFAULTS },
-    rubric: "Be strict.",
+    system_prompt: "Rate it.",
   });
-  expect(await screen.findByText("Judging is on; the Judge starts")).toBeInTheDocument();
+});
+
+test("the button deactivates the Judge at once, keeping its model", async () => {
+  const user = userEvent.setup();
+  const calls = fakeApi({ ...routes, ...judgeRoutes(JUDGE_ON) });
+  renderApp("/serving");
+
+  await user.click(await screen.findByRole("button", { name: "Judge is activated" }));
+
+  expect(await screen.findByRole("button", { name: "Judge is deactivated" })).toHaveClass("danger");
+  const put = calls.find((call) => call.route === "PUT /judge")!;
+  expect(put.body).toMatchObject({ enabled: false, spec: { model: "hf:Qwen/Qwen3-8B" } });
+});
+
+test("activating the Judge without a model shows the API's error, and the button stays red", async () => {
+  const user = userEvent.setup();
+  // As FastAPI answers a failed body validation.
+  const msg = "Value error, The Judge needs a `spec` naming the model it serves";
+  const detail = [{ type: "value_error", loc: ["body"], msg }];
+  fakeApi({ ...routes, "PUT /judge": [422, { detail }] });
+  renderApp("/serving");
+
+  await user.click(await screen.findByRole("button", { name: "Judge is deactivated" }));
+
+  expect(
+    await screen.findByText("The Judge needs a `spec` naming the model it serves"),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Judge is deactivated" })).toHaveClass("danger");
+});
+
+test("a save the API refuses but stores otherwise shows the stored state", async () => {
+  const user = userEvent.setup();
+  const detail = "Can't serve the Judge's model: not found";
+  let stored: object = JUDGE_ON;
+  fakeApi({
+    ...routes,
+    "GET /judge": () => [200, stored],
+    "PUT /judge": () => {
+      stored = JUDGE_OFF;
+      return [422, { detail }];
+    },
+  });
+  renderApp("/serving");
+  await screen.findByRole("button", { name: "Judge is activated" });
+
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  expect(await screen.findByText(detail)).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Judge is deactivated" })).toHaveClass("danger");
+});
+
+test("the button follows judging switched on elsewhere, keeping the form's edits", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const answers = [JUDGE_OFF];
+  fakeApi({ ...routes, "GET /judge": () => [200, answers.shift() ?? JUDGE_ON] });
+  renderApp("/serving");
+  const systemPrompt = await screen.findByRole("textbox", { name: /System prompt/ });
+  fireEvent.change(systemPrompt, { target: { value: "Being edited." } });
+
+  await act(() => vi.advanceTimersByTimeAsync(ENDPOINT_LIST_REFRESH_MS));
+
+  expect(screen.getByRole("button", { name: "Judge is activated" })).toBeInTheDocument();
+  expect(systemPrompt).toHaveValue("Being edited.");
+  vi.useRealTimers();
 });
 
 test("the Judge's stored settings fill its form", async () => {
-  const stored = { enabled: true, spec: { model: "hf:Qwen/Qwen3-8B", max_model_len: 4096 } };
-  fakeApi({ ...routes, "GET /judge": [200, { ...stored, rubric: "Rate it.", status: "running" }] });
+  fakeApi({ ...routes, "GET /judge": [200, JUDGE_ON] });
   renderApp("/serving");
 
-  expect(await screen.findByRole("checkbox", { name: "Judging enabled" })).toBeChecked();
+  expect(await screen.findByRole("button", { name: "Judge is activated" })).toBeInTheDocument();
   expect(screen.getByRole("combobox", { name: "Judge model" })).toHaveValue("hf:Qwen/Qwen3-8B");
   await userEvent.click(screen.getByText("+ advanced"));
   // The Judge section comes before the start form.

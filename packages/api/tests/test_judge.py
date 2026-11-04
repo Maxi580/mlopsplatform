@@ -20,7 +20,7 @@ from .test_endpoints import (
     start,
 )
 
-ON = {"enabled": True, "spec": {"model": f"hf:{QWEN}"}, "rubric": "Be strict."}
+ON = {"enabled": True, "spec": {"model": f"hf:{QWEN}"}, "system_prompt": "Be strict."}
 
 
 def save(api, **settings):
@@ -39,11 +39,11 @@ def rounds(api):
     reconcile_judge(api.app.state)
 
 
-def test_judging_is_off_with_the_default_rubric_until_saved(logged_in_api):
+def test_judging_is_off_with_the_default_system_prompt_until_saved(logged_in_api):
     assert judge(logged_in_api) == {
         "enabled": False,
         "spec": None,
-        "rubric": config.JUDGE_RUBRIC,
+        "system_prompt": config.JUDGE_SYSTEM_PROMPT,
         "status": None,
         "model": None,
     }
@@ -71,12 +71,26 @@ def test_a_smoke_test_restores_judge_settings_saved_with_quantization(
     model = f"hf:{QWEN}"
     assert save(logged_in_api, spec={"model": model}).status_code == 200
     spec = {"model": model, "quantization": None}
-    restore = {"enabled": False, "spec": spec, "rubric": "Be kind."}
+    restore = {"enabled": False, "spec": spec, "system_prompt": "Be kind."}
 
     restore_judging(logged_in_api.app.state, {"model": model, "restore": restore})
 
     restored = judge(logged_in_api)
     assert (restored["enabled"], restored["spec"]) == (False, {"model": model})
+
+
+def test_a_smoke_test_started_before_the_rename_restores_its_rubric_as_the_system_prompt(
+    logged_in_api,
+    qwen_on_the_hub,  # noqa: F811
+    cluster,
+):
+    model = f"hf:{QWEN}"
+    save(logged_in_api, spec={"model": model})
+    restore = {"enabled": False, "spec": {"model": model}, "rubric": "Be kind."}
+
+    restore_judging(logged_in_api.app.state, {"model": model, "restore": restore})
+
+    assert judge(logged_in_api)["system_prompt"] == "Be kind."
 
 
 def test_switching_judging_on_starts_the_judge_as_an_endpoint_without_route_or_tracing(
@@ -88,7 +102,11 @@ def test_switching_judging_on_starts_the_judge_as_an_endpoint_without_route_or_t
 
     assert response.status_code == 200, response.text
     found = response.json()
-    assert (found["enabled"], found["rubric"], found["status"]) == (True, "Be strict.", "pending")
+    assert (found["enabled"], found["system_prompt"], found["status"]) == (
+        True,
+        "Be strict.",
+        "pending",
+    )
     assert found["model"] == PINNED_QWEN
     manifests = cluster.endpoints["judge"]
     assert "route" not in manifests
@@ -113,13 +131,13 @@ def test_a_judge_gone_after_a_crash_or_upgrade_is_started_again(
     assert judge(logged_in_api)["status"] == "pending"
 
 
-def test_a_new_spec_replaces_the_judge_and_a_new_rubric_alone_keeps_it(
+def test_a_new_spec_replaces_the_judge_and_a_new_system_prompt_alone_keeps_it(
     logged_in_api,
     qwen_on_the_hub,  # noqa: F811
     cluster,
 ):
     save(logged_in_api)
-    save(logged_in_api, rubric="Be kind.")
+    save(logged_in_api, system_prompt="Be kind.")
     kept = cluster.deleted_endpoints.copy()
 
     save(logged_in_api, spec={"model": f"hf:{QWEN}", "max_model_len": 2048})

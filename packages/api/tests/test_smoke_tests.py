@@ -959,7 +959,7 @@ def test_the_judge_case_runs_the_judge_on_the_base_model_then_switches_judging_b
 def test_the_judge_case_fails_unless_the_judge_answers_and_keeps_the_users_judging(
     logged_in_api, qwen_on_the_hub, cluster
 ):
-    users = {"enabled": False, "spec": {"model": f"hf:{QWEN}"}, "rubric": "Mine."}
+    users = {"enabled": False, "spec": {"model": f"hf:{QWEN}"}, "system_prompt": "Mine."}
     logged_in_api.put(api_paths.JUDGE, json=users)
     start(logged_in_api, {"serving": True})
     reconcile(logged_in_api)

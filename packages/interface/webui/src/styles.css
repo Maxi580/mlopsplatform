@@ -1391,11 +1391,22 @@ legend .switch-button {
 /* Judge settings */
 
 .judge-switch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin-bottom: 12px;
-  font-weight: 600;
+}
+
+/* The surface colour reads on each theme's green and red; white doesn't on the dark theme's. */
+.judge-switch.success,
+.judge-switch.danger {
+  color: var(--surface);
+}
+
+.judge-switch.success {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.judge-system-prompt {
+  margin-top: 14px;
 }
 
 .judge-advanced {
@@ -1494,7 +1505,6 @@ legend .switch-button {
 
 .judging-menu {
   display: inline-block;
-  position: relative;
 }
 
 .judging-menu summary {
@@ -1505,9 +1515,12 @@ legend .switch-button {
   color: var(--accent);
 }
 
+/* Fixed, so the table's overflow neither clips it nor scrolls to fit it. */
 .judging-popover {
-  position: absolute;
-  right: 0;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
   z-index: 10;
   display: grid;
   gap: 8px;

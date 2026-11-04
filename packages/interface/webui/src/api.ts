@@ -9,8 +9,17 @@ export class ApiError extends Error {
     readonly status: number,
     readonly detail: unknown,
   ) {
-    super(typeof detail === "string" ? detail : `The API answered ${status}`);
+    super(refusalMessage(status, detail));
   }
+}
+
+function refusalMessage(status: number, detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  // FastAPI's failed validations; Pydantic prefixes a validator's own message.
+  if (Array.isArray(detail)) {
+    return detail.map((failed) => failed.msg.replace(/^Value error, /, "")).join("; ");
+  }
+  return `The API answered ${status}`;
 }
 
 /** The API's JSON answer; ApiError with FastAPI's `detail` when it refused. A file is sent as

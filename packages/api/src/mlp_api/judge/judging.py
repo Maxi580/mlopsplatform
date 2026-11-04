@@ -55,17 +55,17 @@ def judge_once(state, now: datetime) -> None:
     judge = find_endpoint(state.engine, config.JUDGE_ENDPOINT_NAME)
     if judge is None or judge.status != "running":
         return
-    rubric = judge_settings(state.engine).rubric
+    system_prompt = judge_settings(state.engine).system_prompt
     with state.engine.connect() as connection:
         rows = connection.execute(select(endpoint).where(endpoint.c.judged)).all()
     for row in rows:
         try:
-            judge_endpoint(state, row, rubric, now)
+            judge_endpoint(state, row, system_prompt, now)
         except Exception:
             logger.exception("Judging Endpoint %s's answers failed", row.name)
 
 
-def judge_endpoint(state, row, rubric: str, now: datetime) -> None:
+def judge_endpoint(state, row, system_prompt: str, now: datetime) -> None:
     """Scores every Nth of the Endpoint's new traces, oldest first, up to the hour's cap."""
     # The rest are tagged, so none is looked at twice.
     # 1. The traces not looked at yet, whose answer the Endpoint Proxy recorded.
@@ -95,7 +95,7 @@ def judge_endpoint(state, row, rubric: str, now: datetime) -> None:
         elif info.get("tags", {}).get("status") == "error":
             registry.set_trace_tag(info["trace_id"], config.JUDGE_STATUS_TAG, "skipped")
         else:
-            judge_trace(state, row.name, info, rubric)
+            judge_trace(state, row.name, info, system_prompt)
             hour, judged = state.judgments[row.name]
             state.judgments[row.name] = (hour, judged + 1)
 
@@ -115,13 +115,16 @@ def judged_this_hour(state, name: str, now: datetime) -> int:
     return judged
 
 
-def judge_trace(state, name: str, info: dict, rubric: str) -> None:
+def judge_trace(state, name: str, info: dict, system_prompt: str) -> None:
     """Stores the Judge's score of the trace's answer; a failed one marks it, never retried."""
-    # 1. The Judge's answer to the rubric and the trace's content.
+    # 1. The Judge's answer to its system prompt and the trace's content.
     registry = state.model_registry
     [trace] = registry.batch_get_traces([info["trace_id"]])
     request = {
-        "messages": [{"role": "user", "content": judge_prompt(rubric, request_content(trace))}],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": judge_user_message(request_content(trace))},
+        ],
         "response_format": config.JUDGE_RESPONSE_FORMAT,
         **config.JUDGE_SAMPLING,
     }
@@ -147,7 +150,7 @@ def judge_trace(state, name: str, info: dict, rubric: str) -> None:
     registry.log_metrics(run_id, metric, int(arrived.timestamp()), round_ms(arrived))
 
 
-def judge_prompt(rubric: str, content: dict) -> str:
+def judge_user_message(content: dict) -> str:
     conversation = "\n\n".join(
         f"{message.get('role')}: {text_of(message.get('content'))}"
         for message in content["messages"]
@@ -157,8 +160,7 @@ def judge_prompt(rubric: str, content: dict) -> str:
     answer = content["answer"] or ""
     if content["tool_calls"]:
         answer += f"\n\nTool calls: {json.dumps(content['tool_calls'])}"
-    return config.JUDGE_PROMPT.format(
-        rubric=rubric,
+    return config.JUDGE_USER_MESSAGE.format(
         conversation=conversation,
         reasoning=content["reasoning"] or "(none)",
         answer=answer or "(empty)",

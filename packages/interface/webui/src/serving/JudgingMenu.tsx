@@ -30,8 +30,12 @@ export default function JudgingMenu({
   }
 
   return (
-    // Built only while open, so the row's buttons stay its own.
-    <details className="judging-menu" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    // Built only while open, so the row's buttons stay its own; named, as only one fits the spot.
+    <details
+      name="judging-menu"
+      className="judging-menu"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary className={`button ghost small ${endpoint.judging.judged ? "judged" : ""}`}>
         <Gavel size={14} /> Judge
       </summary>

@@ -107,4 +107,8 @@ def restore_judging(state, case: dict) -> None:
 
 
 def settings_to_restore(case: dict) -> JudgeSettings:
-    return JudgeSettings.model_validate(without_stored_quantization(case["restore"]))
+    stored = without_stored_quantization(case["restore"])
+    # A Smoke Test running across the upgrade stored the system prompt under its old name.
+    if "rubric" in stored:
+        stored["system_prompt"] = stored.pop("rubric")
+    return JudgeSettings.model_validate(stored)

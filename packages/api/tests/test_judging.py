@@ -86,7 +86,7 @@ def test_the_judge_itself_and_unknown_endpoints_cant_opt_in(logged_in_api, judge
     assert opt_in(logged_in_api, name="nope").status_code == 404
 
 
-def test_the_judge_scores_an_answer_with_the_rubric_conversation_reasoning_and_tool_calls(
+def test_the_judge_scores_an_answer_with_its_system_prompt_and_a_fixed_scoring_message(
     logged_in_api, judge_running, cluster, model_registry
 ):
     opt_in(logged_in_api)
@@ -98,9 +98,12 @@ def test_the_judge_scores_an_answer_with_the_rubric_conversation_reasoning_and_t
     [(name, request)] = cluster.asked
     assert name == "judge"
     assert request["response_format"] == config.JUDGE_RESPONSE_FORMAT
-    [prompt] = request["messages"]
-    text = prompt["content"]
-    assert text.startswith("Be strict.")
+    [system, user] = request["messages"]
+    assert system == {"role": "system", "content": "Be strict."}
+    assert user["role"] == "user"
+    text = user["content"]
+    assert text.startswith("Score the assistant's answer from 1 to 5")
+    assert "Be strict." not in text
     assert "user: Say hi." in text and '"wave"' in text
     assert "Greet back." in text.split("reasoning")[1]
     assert "Hi!" in text and "Tool calls" in text

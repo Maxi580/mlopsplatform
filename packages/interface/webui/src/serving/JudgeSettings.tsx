@@ -2,6 +2,7 @@ import { LoaderCircle, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { callApi, errorMessage, useApi } from "../api";
 import { JUDGE, MODELS, SCHEMA } from "../apiPaths";
+import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { NO_CATALOG } from "../fields/catalog";
 import ModelPicker from "../fields/ModelPicker";
 import FormSectionView from "../pipelines/FormSectionView";
@@ -13,18 +14,20 @@ import { type PublishedSchema, servingOptionsForm } from "./endpoint";
 type Judge = {
   enabled: boolean;
   spec: Record<string, unknown> | null;
-  rubric: string;
+  system_prompt: string;
   status: string | null;
 };
-type Draft = { enabled: boolean; model: string; rubric: string; values: FormValues };
+type Draft = { model: string; systemPrompt: string; values: FormValues };
 
-/** Judging on or off, the model the Judge serves with the start form's options, and its rubric. */
+/** Judging on or off, the model the Judge serves with the start form's options, its system prompt. */
 export default function JudgeSettings({
   onSaved,
 }: {
   onSaved: (text: string, failed: boolean) => void;
 }) {
-  const judge = useApi<Judge>(JUDGE).data;
+  // Reloaded, as the button shows what's stored, which a Smoke Test or a failed save can change.
+  const stored = useApi<Judge>(JUDGE, ENDPOINT_LIST_REFRESH_MS);
+  const judge = stored.data;
   const schema = useApi<PublishedSchema>(SCHEMA).data;
   const models = useApi<RegisteredModel[]>(MODELS).data;
   const form = useMemo(() => schema && servingOptionsForm(schema), [schema]);
@@ -35,19 +38,20 @@ export default function JudgeSettings({
     if (judge && !draft) setDraft(draftOf(judge));
   }, [judge, draft]);
 
-  if (!form || !draft) return <LoaderCircle className="spin" size={16} />;
+  if (!form || !draft || !judge) return <LoaderCircle className="spin" size={16} />;
 
-  async function save() {
+  async function save(enabled: boolean) {
     if (!form || !draft) return;
     setBusy(true);
     const model = draft.model.trim();
     const spec = model ? { model, ...pipelineRequestFromForm(form, draft.values) } : null;
     try {
-      await callApi(JUDGE, { enabled: draft.enabled, spec, rubric: draft.rubric }, "PUT");
-      onSaved(draft.enabled ? "Judging is on; the Judge starts" : "Judging is off", false);
+      await callApi(JUDGE, { enabled, spec, system_prompt: draft.systemPrompt }, "PUT");
+      onSaved(enabled ? "Judging is on; the Judge starts" : "Judging is off", false);
     } catch (failure) {
       onSaved(errorMessage(failure), true);
     }
+    await stored.reload();
     setBusy(false);
   }
 
@@ -56,17 +60,17 @@ export default function JudgeSettings({
       className="card serve-form"
       onSubmit={(event) => {
         event.preventDefault();
-        save();
+        save(judge.enabled);
       }}
     >
-      <label className="judge-switch">
-        <input
-          type="checkbox"
-          checked={draft.enabled}
-          onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
-        />
-        Judging enabled
-      </label>
+      <button
+        type="button"
+        className={`button judge-switch ${judge.enabled ? "success" : "danger"}`}
+        disabled={busy}
+        onClick={() => save(!judge.enabled)}
+      >
+        {judge.enabled ? "Judge is activated" : "Judge is deactivated"}
+      </button>
       <div className="field-grid">
         <div className="field">
           <label className="field-label" htmlFor="judge-model">
@@ -81,6 +85,17 @@ export default function JudgeSettings({
             onChange={(model) => setDraft({ ...draft, model })}
           />
         </div>
+      </div>
+      <div className="field judge-system-prompt">
+        <label className="field-label" htmlFor="judge-system-prompt">
+          System prompt <code>system_prompt</code>
+        </label>
+        <textarea
+          id="judge-system-prompt"
+          rows={4}
+          value={draft.systemPrompt}
+          onChange={(event) => setDraft({ ...draft, systemPrompt: event.target.value })}
+        />
       </div>
       {/* The start form's other options, built only while open, as the start form shows them too. */}
       <details
@@ -98,17 +113,6 @@ export default function JudgeSettings({
           />
         )}
       </details>
-      <div className="field">
-        <label className="field-label" htmlFor="judge-rubric">
-          Rubric <code>rubric</code>
-        </label>
-        <textarea
-          id="judge-rubric"
-          rows={4}
-          value={draft.rubric}
-          onChange={(event) => setDraft({ ...draft, rubric: event.target.value })}
-        />
-      </div>
       <div className="serve-actions">
         <button type="submit" className="button primary" disabled={busy}>
           {busy ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}
@@ -126,9 +130,8 @@ function draftOf(judge: Judge): Draft {
     Object.entries(options).map(([key, value]) => [key, String(value)]),
   );
   return {
-    enabled: judge.enabled,
     model: String(model),
-    rubric: judge.rubric,
+    systemPrompt: judge.system_prompt,
     values: { fields, more: {} },
   };
 }

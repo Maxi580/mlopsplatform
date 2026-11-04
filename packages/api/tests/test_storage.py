@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, select
 
 from mlp_api.endpoints.table import endpoint
+from mlp_api.judge.settings import JudgeSettings, judge_settings, store_judge_settings
 from mlp_api.storage.database import create_tables
 from mlp_core import api_paths
 
@@ -48,3 +49,20 @@ def test_an_earlier_versions_endpoint_table_gets_the_judging_columns(tmp_path):
         [row] = connection.execute(select(endpoint)).all()
     assert (row.judged, row.judge_every, row.judge_max_per_hour) == (False, 10, 60)
     assert (row.judging_since, row.judge_count) == (None, 0)
+
+
+def test_an_earlier_versions_customised_rubric_survives_as_the_system_prompt(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'platform.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE judge (id INTEGER PRIMARY KEY, enabled BOOLEAN NOT NULL, spec JSON,"
+            " rubric TEXT NOT NULL)"
+        )
+        connection.exec_driver_sql("INSERT INTO judge VALUES (1, 0, NULL, 'Be strict.')")
+
+    create_tables(engine)
+    create_tables(engine)
+
+    assert judge_settings(engine).system_prompt == "Be strict."
+    store_judge_settings(engine, JudgeSettings(system_prompt="Be kind."))
+    assert judge_settings(engine).system_prompt == "Be kind."
