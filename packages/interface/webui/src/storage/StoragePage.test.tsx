@@ -1,7 +1,16 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { GPU_READINGS_REFRESH_MS } from "../config";
 import { fakeApi, renderApp } from "../testApi";
-import type { Checkpoint, Dataset, ModelCache, RegisteredModel, Storage } from "./storage";
+import type {
+  Checkpoint,
+  Dataset,
+  GpuMachines,
+  GpuReading,
+  ModelCache,
+  RegisteredModel,
+  Storage,
+} from "./storage";
 
 const datasets: Dataset[] = [
   { name: "chat", versions: [{ version: 1, size_bytes: 2048, row_format: "messages" }] },
@@ -57,6 +66,7 @@ const routes: Parameters<typeof fakeApi>[0] = {
   "GET /datasets": [200, datasets],
   "GET /models": [200, models],
   "GET /storage": [200, storage],
+  "GET /storage/gpus": [200, { machines: [] }],
   "GET /cache": [200, modelCache],
   "GET /settings": [200, { gpu_count: 1 }],
 };
@@ -69,6 +79,70 @@ test("the page shows object store usage per bucket", async () => {
   const usage = screen.getByRole("meter");
   expect(usage).toHaveAttribute("value", "40");
   expect(screen.getByText("mlflow").closest("li")).toHaveTextContent("30.0 GB");
+});
+
+const gpu: GpuReading = {
+  index: 0,
+  name: "NVIDIA GeForce RTX 4090",
+  memory_total_bytes: 24 * 2 ** 30,
+  memory_used_bytes: 2 ** 30,
+  memory_free_bytes: 23 * 2 ** 30,
+  shared_with_system: false,
+  utilization_percent: 37,
+};
+
+function gpuMachines(reading: GpuReading): GpuMachines {
+  return { machines: [{ name: "host", reserved_percent: 60, gpus: [reading] }] };
+}
+
+test("a GPU shows its memory, the shares reserved on its machine and its utilisation", async () => {
+  fakeApi({ ...routes, "GET /storage/gpus": [200, gpuMachines(gpu)] });
+  renderApp("/storage");
+
+  const row = (await screen.findByText("NVIDIA GeForce RTX 4090")).closest("tr")!;
+  for (const text of ["host", "1.0 GB used, 23.0 GB free", "60% reserved", "37%"]) {
+    expect(within(row).getByText(text)).toBeInTheDocument();
+  }
+  expect(row).not.toHaveTextContent("shared with the system");
+});
+
+test("a shared-memory GPU says so, and leaves out utilisation it doesn't report", async () => {
+  const gb10 = {
+    ...gpu,
+    name: "NVIDIA GB10",
+    memory_total_bytes: 128 * 2 ** 30,
+    memory_used_bytes: 32 * 2 ** 30,
+    memory_free_bytes: 96 * 2 ** 30,
+    shared_with_system: true,
+    utilization_percent: null,
+  };
+  fakeApi({ ...routes, "GET /storage/gpus": [200, gpuMachines(gb10)] });
+  renderApp("/storage");
+
+  const row = (await screen.findByText("NVIDIA GB10")).closest("tr")!;
+  expect(within(row).getByText("32.0 GB used, 96.0 GB free")).toBeInTheDocument();
+  expect(within(row).getByText("shared with the system")).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Utilisation" })).not.toBeInTheDocument();
+});
+
+test("the page says when no machine answers about its GPUs", async () => {
+  fakeApi({ ...routes });
+  renderApp("/storage");
+
+  expect(await screen.findByText(/No machine reported its GPUs/)).toBeInTheDocument();
+});
+
+test("GPU readings stay live", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const calls = fakeApi({ ...routes });
+  renderApp("/storage");
+  const readings = () => calls.filter((call) => call.route === "GET /storage/gpus").length;
+
+  await vi.waitFor(() => expect(readings()).toBe(1));
+  await vi.advanceTimersByTimeAsync(GPU_READINGS_REFRESH_MS);
+
+  expect(readings()).toBe(2);
+  vi.useRealTimers();
 });
 
 test("Datasets and Registered Models are listed with versions, sizes and lineage", async () => {

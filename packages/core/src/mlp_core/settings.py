@@ -62,6 +62,10 @@ class Settings(BaseSettings):
         # Rounded first, as 0.15 / 0.05 is a hair above 3 and must not become 4 slices.
         return math.ceil(round(share / self.gpu_slice, 6)) * gpus
 
+    def gpus_of_request(self, request: int) -> float:
+        """The GPUs a `nvidia.com/gpu` request adds up to: slices of one, or whole ones."""
+        return request * self.gpu_slice if self.gpu_sharing else request
+
     def gpu_share_problem(self, share: float) -> str | None:
         """Why the GPU Share can never fit, if it can't."""
         if self.gpu_sharing and share > self.gpu_budget:

@@ -24,6 +24,7 @@ export const modelVersionFiles = (name: string, version: number) =>
 export const MODEL_UPLOADS = "/models/uploads";
 export const modelUploadComplete = (id: string) => `/models/uploads/${id}/complete`;
 export const STORAGE = "/storage";
+export const STORAGE_GPUS = "/storage/gpus";
 export const MODEL_CACHE = "/cache";
 export const CHECKPOINTS = "/checkpoints";
 export const checkpoint = (pipelineId: number, phaseIndex: number) =>

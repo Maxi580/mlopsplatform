@@ -46,6 +46,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("GPU_QUEUE", "gpu")
     monkeypatch.setenv("LAUNCHER_IMAGE", "mlp-launcher:real")
     monkeypatch.setenv("FINETUNE_RUNTIME", "mlp-finetune")
+    monkeypatch.setenv("GPU_REPORTER_PORT", "8020")
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
     monkeypatch.setattr(config, "EVICTION_INTERVAL", timedelta(days=1))
@@ -469,6 +470,15 @@ class FakeCluster:
         # Each request sent to an Endpoint's Service directly, and what an Endpoint answers it.
         self.asked = []
         self.answers = {}
+        # Machine -> what its reporter answers, and the slices its pods hold.
+        self.gpu_readings = {}
+        self.gpu_slices = {}
+
+    def machine_gpu_readings(self):
+        return self.gpu_readings
+
+    def machine_gpu_slices(self):
+        return self.gpu_slices
 
     def create_secret(self, name, values):
         self.secrets[name] = values

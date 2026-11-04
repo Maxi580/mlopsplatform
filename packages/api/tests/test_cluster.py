@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 from urllib.parse import urlencode
 
+import httpx2 as httpx
 import pytest
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
@@ -19,7 +20,7 @@ def kubernetes_requests(cluster_call) -> list[tuple[str, str]]:
     def request(method, url, query_params=None, **_):
         query = f"?{urlencode(query_params)}" if query_params else ""
         requests.append((method, url.removeprefix("http://kubernetes.test") + query))
-        return SimpleNamespace(status=200, data=b"{}", getheaders=lambda: {})
+        return SimpleNamespace(status=200, data=b'{"items": []}', getheaders=lambda: {})
 
     cluster = Cluster.__new__(Cluster)
     cluster.namespace = "kubeflow"
@@ -69,6 +70,91 @@ def cluster_listing(conditions: list[dict] = (), trainjobs: list[dict] = ()) -> 
     )
     cluster.kubernetes_client.request = request
     return cluster
+
+
+def pod(node: str | None, phase: str = "Running", ip: str = "10.0.0.1", limits=None) -> dict:
+    container = {"name": "main", "resources": {"limits": limits or {}}}
+    return {
+        "spec": {"nodeName": node, "containers": [container]},
+        "status": {"phase": phase, "podIP": ip},
+    }
+
+
+def cluster_with_pods(pods_by_namespace: dict[str, list[dict]]) -> Cluster:
+    def request(method, url, **_):
+        namespace = url.split("/namespaces/")[1].split("/")[0]
+        found = {"items": pods_by_namespace.get(namespace, [])}
+        return SimpleNamespace(status=200, data=json.dumps(found).encode(), getheaders=lambda: {})
+
+    cluster = Cluster.__new__(Cluster)
+    cluster.namespace = "kubeflow"
+    cluster.endpoint_environment = FakeCluster.endpoint_environment
+    cluster.gpu_reporter_port = "8020"
+    cluster.kubernetes_client = client.ApiClient(
+        client.Configuration(host="http://kubernetes.test")
+    )
+    cluster.kubernetes_client.request = request
+    return cluster
+
+
+def test_a_machines_slices_add_up_from_the_steps_and_endpoints_scheduled_on_it():
+    gpu = {"nvidia.com/gpu": "6"}
+    cluster = cluster_with_pods(
+        {
+            "kubeflow": [pod("host", limits=gpu), pod("joined", limits=gpu), pod("host")],
+            # Still downloading its model, it holds its slices already.
+            "mlp": [pod("host", "Pending", limits=gpu), pod(None, "Pending", limits=gpu)],
+        }
+    )
+
+    assert cluster.machine_gpu_slices() == {"host": 12, "joined": 6}
+
+
+def test_only_pods_still_holding_slices_are_asked_for():
+    requests = kubernetes_requests(lambda cluster: cluster.machine_gpu_slices())
+
+    selector = "fieldSelector=status.phase%21%3DSucceeded%2Cstatus.phase%21%3DFailed"
+    assert requests == [
+        ("GET", f"/api/v1/namespaces/kubeflow/pods?{selector}"),
+        ("GET", f"/api/v1/namespaces/mlp/pods?{selector}"),
+    ]
+
+
+def test_a_machine_whose_reporter_does_not_answer_is_skipped(monkeypatch):
+    cluster = cluster_with_pods(
+        {
+            "mlp": [
+                pod("host", ip="10.0.0.1"),
+                pod("joined", ip="10.0.0.2"),
+                pod("broken", ip="10.0.0.3"),
+            ]
+        }
+    )
+    readings = [{"index": 0}]
+
+    def get(url, timeout):
+        request = httpx.Request("GET", url)
+        if "10.0.0.1:8020" in url:
+            return httpx.Response(200, json=readings, request=request)
+        if "10.0.0.3:8020" in url:
+            return httpx.Response(500, request=request)
+        raise httpx.ConnectTimeout("no route to host")
+
+    monkeypatch.setattr(httpx, "get", get)
+
+    assert cluster.machine_gpu_readings() == {"host": readings}
+
+
+def test_only_running_reporters_are_read():
+    requests = kubernetes_requests(lambda cluster: cluster.machine_gpu_readings())
+
+    assert requests == [
+        (
+            "GET",
+            "/api/v1/namespaces/mlp/pods?"
+            "fieldSelector=status.phase%3DRunning&labelSelector=app%3Dgpu-reporter",
+        )
+    ]
 
 
 def test_a_step_kueue_holds_back_until_a_gpu_is_free_waits_for_a_gpu():

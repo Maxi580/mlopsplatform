@@ -13,7 +13,8 @@ rules:
   - apiGroups: [traefik.io]
     resources: [ingressroutes]
     verbs: [create, delete]
-  # An Endpoint's pod shows whether vLLM is ready or keeps failing.
+  # An Endpoint's pod shows whether vLLM is ready or keeps failing; the reporters' pods are where
+  # each machine's GPU readings come from.
   - apiGroups: [""]
     resources: [pods]
     verbs: [list]

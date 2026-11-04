@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import cached_property
@@ -29,6 +30,7 @@ class Cluster:
         self.steps = StepEnvironment.from_environment()
         self.endpoint_environment = EndpointEnvironment.from_environment()
         self.kubeflow = httpx.Client(base_url=f"{os.environ['KUBEFLOW_URL']}/apis/v2beta1")
+        self.gpu_reporter_port = os.environ["GPU_REPORTER_PORT"]
 
     # Loaded on first use, so the API also starts outside a cluster.
     @cached_property
@@ -275,6 +277,42 @@ class Cluster:
         )
         response.raise_for_status()
         return response.headers[config.TRACE_ID_HEADER]
+
+    def machine_gpu_readings(self) -> dict[str, list[dict]]:
+        """Machine -> its reporter's GPU readings; a machine that doesn't answer is left out."""
+        reporters = self.kubernetes.list_namespaced_pod(
+            self.endpoint_environment.namespace,
+            label_selector=config.GPU_REPORTER_SELECTOR,
+            field_selector="status.phase=Running",
+        )
+        readings = {}
+        for pod in reporters.items:
+            try:
+                response = httpx.get(
+                    f"http://{pod.status.pod_ip}:{self.gpu_reporter_port}",
+                    timeout=config.GPU_REPORTER_TIMEOUT.total_seconds(),
+                )
+                response.raise_for_status()
+            except httpx.HTTPError:
+                continue
+            readings[pod.spec.node_name] = response.json()
+        return readings
+
+    def machine_gpu_slices(self) -> dict[str, int]:
+        """Machine -> the `nvidia.com/gpu` its pods hold, in the namespaces that run GPU work."""
+        slices = Counter()
+        for namespace in (self.namespace, self.endpoint_environment.namespace):
+            # A scheduled pod holds its slices from before it runs, while it downloads its model.
+            pods = self.kubernetes.list_namespaced_pod(
+                namespace, field_selector="status.phase!=Succeeded,status.phase!=Failed"
+            )
+            for pod in pods.items:
+                if pod.spec.node_name:
+                    slices[pod.spec.node_name] += sum(
+                        int((container.resources.limits or {}).get(config.GPU_RESOURCE, 0))
+                        for container in pod.spec.containers
+                    )
+        return dict(slices)
 
 
 def is_held_back_for_gpu(pod) -> bool:

@@ -902,6 +902,20 @@ DISTILLATION_ROW_FORMAT = "prompt_completion"
 # Storage
 # Suffixes of the Kubernetes sizes the settings use, e.g. `object_store_size: 100Gi`.
 QUANTITY_SUFFIXES = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "Pi": 2**50}
+# The pods that report each machine's GPUs, by the label the chart gives them.
+GPU_REPORTER_SELECTOR = "app=gpu-reporter"
+# What a reporter asks about each GPU; values come in MiB and percent, the name last.
+NVIDIA_SMI_COMMAND = (
+    "nvidia-smi",
+    "--query-gpu=index,memory.total,memory.used,memory.free,utilization.gpu,name",
+    "--format=csv,noheader,nounits",
+)
+# What nvidia-smi prints for a value the GPU doesn't report; any other text is an error.
+NVIDIA_SMI_NOT_REPORTED = ("[Not Supported]", "[N/A]")
+# Where a GPU without memory of its own reads it, as NVIDIA's docs for the GB10 say.
+MEMINFO_FILE = "/proc/meminfo"
+# How long nvidia-smi may take, and the API waits for a reporter before skipping its machine.
+GPU_REPORTER_TIMEOUT = timedelta(seconds=5)
 
 # Base Models
 # Popular open models a Base Model picker offers before anything is typed, with their parameters

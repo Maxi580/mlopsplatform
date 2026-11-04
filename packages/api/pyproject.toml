@@ -26,6 +26,7 @@ set-password = "mlp_api.auth.account:set_password"
 running-work = "mlp_api.upgrade.running_work:print_running_work"
 stop-running-work = "mlp_api.upgrade.running_work:stop_running_work"
 register-calibration-dataset = "mlp_api.datasets.calibration:register_default_calibration_dataset"
+gpu-reporter = "mlp_api.gpu_usage.reporter:serve_gpu_readings"
 
 [tool.uv.sources]
 mlp-core = { workspace = true }

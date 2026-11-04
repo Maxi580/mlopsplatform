@@ -1,0 +1,60 @@
+# Answers what each machine's GPUs report, for the Storage tab. It holds no slices, so it never waits
+# in the GPU queue and its GPU access takes nothing from any job.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-reporter
+spec:
+  selector:
+    matchLabels:
+      app: gpu-reporter
+  # A machine that is down must not stop the install, and a reporter may be gone for a moment.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 100%
+  template:
+    metadata:
+      labels:
+        app: gpu-reporter
+    spec:
+      automountServiceAccountToken: false
+      # Joined GPU machines too.
+      tolerations:
+        - key: {{ .Values.trainingNodeTaint }}
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: gpu-reporter
+          image: {{ .Values.images.api }}:{{ required "images.tag is set by install.sh" .Values.images.tag }}
+          imagePullPolicy: IfNotPresent
+          command: [gpu-reporter]
+          env:
+            - name: GPU_REPORTER_PORT
+              value: {{ .Values.ports.gpuReporter | quote }}
+            # Tells the default `nvidia` runtime to give the container nvidia-smi and every GPU.
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+          ports:
+            - containerPort: {{ .Values.ports.gpuReporter }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.ports.gpuReporter }}
+---
+# Only the API reads the reporters.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gpu-reporter
+spec:
+  podSelector:
+    matchLabels:
+      app: gpu-reporter
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api
+      ports:
+        - port: {{ .Values.ports.gpuReporter }}

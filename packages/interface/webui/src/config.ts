@@ -3,6 +3,7 @@ export const KUBEFLOW_UI_URL = "/pipeline/";
 export const MLFLOW_UI_URL = "/mlflow/";
 export const PIPELINE_LIST_REFRESH_MS = 5000;
 export const ENDPOINT_LIST_REFRESH_MS = 5000;
+export const GPU_READINGS_REFRESH_MS = 5000;
 // Where the New Pipeline form keeps its draft across reloads; Secrets are never stored.
 export const DRAFT_KEY = "mlp:new-pipeline";
 export const FINISHED_STATUSES = ["succeeded", "failed", "cancelled"];

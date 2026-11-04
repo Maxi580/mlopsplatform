@@ -14,14 +14,21 @@ import {
   modelVersion,
   modelVersionFiles,
   STORAGE,
+  STORAGE_GPUS,
 } from "../apiPaths";
-import { BUCKET_CONTENTS, CACHE_ENTRY_KINDS, STORAGE_WARNING_PERCENT } from "../config";
+import {
+  BUCKET_CONTENTS,
+  CACHE_ENTRY_KINDS,
+  GPU_READINGS_REFRESH_MS,
+  STORAGE_WARNING_PERCENT,
+} from "../config";
 import { formatBytes } from "../formatBytes";
 import DatasetUploadDialog from "./DatasetUploadDialog";
 import ModelUploadForm from "./ModelUploadForm";
 import type {
   Checkpoint,
   Dataset,
+  GpuMachines,
   ModelCache,
   ModelVersionFile,
   RegisteredModel,
@@ -32,12 +39,19 @@ export default function StoragePage() {
   const datasets = useApi<Dataset[]>(DATASETS);
   const models = useApi<RegisteredModel[]>(MODELS);
   const storage = useApi<Storage>(STORAGE);
+  const gpus = useApi<GpuMachines>(STORAGE_GPUS, GPU_READINGS_REFRESH_MS);
   const cache = useApi<ModelCache>(MODEL_CACHE);
   const checkpoints = useApi<Checkpoint[]>(CHECKPOINTS);
   const [notice, setNotice] = useState<{ text: string; failed: boolean }>();
   const [modelFiles, setModelFiles] = useState<{ label: string; files: ModelVersionFile[] }>();
   const [uploadingDataset, setUploadingDataset] = useState(false);
-  const error = datasets.error ?? models.error ?? storage.error ?? cache.error ?? checkpoints.error;
+  const error =
+    datasets.error ??
+    models.error ??
+    storage.error ??
+    gpus.error ??
+    cache.error ??
+    checkpoints.error;
 
   function reload() {
     datasets.reload();
@@ -98,7 +112,7 @@ export default function StoragePage() {
           <h1>Storage</h1>
           <p className="muted">
             Datasets, Registered Models, model uploads, Checkpoints, the Model Cache and how full
-            they are.
+            they and the GPUs are.
           </p>
         </div>
       </header>
@@ -115,6 +129,7 @@ export default function StoragePage() {
       )}
 
       {storage.data && <UsageCard storage={storage.data} />}
+      {gpus.data && <GpuSection machines={gpus.data.machines} />}
 
       <VersionTable
         title="Datasets"
@@ -278,6 +293,53 @@ function UsageCard({ storage }: { storage: Storage }) {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+function GpuSection({ machines }: GpuMachines) {
+  const rows = machines.flatMap((machine) => machine.gpus.map((gpu) => ({ machine, gpu })));
+  const showsUtilisation = rows.some(({ gpu }) => gpu.utilization_percent !== null);
+
+  return (
+    <section className="storage-section">
+      <h2>GPU</h2>
+      <p className="muted">
+        Reserved adds up the GPU Shares held on a machine, whether or not they are used yet, so a
+        Pipeline or Endpoint can wait while memory looks free.
+      </p>
+      {rows.length === 0 && <p className="muted">No machine reported its GPUs.</p>}
+      {rows.length > 0 && (
+        <div className="card table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>GPU</th>
+                <th>Machine</th>
+                <th>Memory</th>
+                <th>Reserved</th>
+                {showsUtilisation && <th>Utilisation</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ machine, gpu }) => (
+                <tr key={`${machine.name}/${gpu.index}`}>
+                  <td className="pipeline-name">{gpu.name}</td>
+                  <td className="mono">{machine.name}</td>
+                  <td>
+                    <span>{`${formatBytes(gpu.memory_used_bytes)} used, ${formatBytes(gpu.memory_free_bytes)} free`}</span>
+                    {gpu.shared_with_system && <p className="muted">shared with the system</p>}
+                  </td>
+                  <td>{`${machine.reserved_percent}% reserved`}</td>
+                  {showsUtilisation && (
+                    <td>{gpu.utilization_percent !== null && `${gpu.utilization_percent}%`}</td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }

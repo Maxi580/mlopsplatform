@@ -15,7 +15,8 @@ rules:
     resources: [secrets]
     verbs: [create, delete, list]
   # Pending step pods and queued TrainJobs show as "waiting for GPU"; the TrainJobs of finished
-  # Pipelines are deleted.
+  # Pipelines are deleted. The GPU Shares a machine has reserved add up from pods here and in the
+  # platform namespace, the only ones with a GPU queue.
   - apiGroups: [""]
     resources: [pods]
     verbs: [list]

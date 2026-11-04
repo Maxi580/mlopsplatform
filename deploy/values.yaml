@@ -65,6 +65,7 @@ ports:
   api: 8000
   sandbox: 8090
   proxy: 8010
+  gpuReporter: 8020
   webui: 8080
   postgres: 5432
   kfpUi: 80
