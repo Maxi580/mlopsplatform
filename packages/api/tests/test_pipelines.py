@@ -56,8 +56,6 @@ def test_schema_publishes_the_acceleration_benchmarks_results_by_option(logged_i
     }
     assert set(results["kv_cache_dtype"]) == {"fp8"}
     assert set(results["speculative.method"]) == {"eagle3"}
-    # On-the-fly `quantization` was not measured with any option.
-    assert results["quantization"] == {}
 
 
 def test_schema_publishes_each_algorithms_defaults(logged_in_api):
@@ -732,6 +730,7 @@ def test_schema_publishes_the_serving_options_and_speculative_decoding(logged_in
     serving = defs["ServingOptions"]["properties"]
     assert serving["gpu_memory_utilization"]["default"] == 0.9
     assert "description" in serving["max_model_len"]
+    assert "quantization" not in serving
     speculative = defs["Speculative"]["properties"]
     assert speculative["num_speculative_tokens"]["default"] == 3
     assert speculative["num_speculative_tokens"]["exclusiveMinimum"] == 0

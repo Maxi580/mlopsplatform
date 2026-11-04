@@ -3,7 +3,7 @@ from sqlalchemy import JSON, Boolean, Column, Engine, Integer, Table, Text, dele
 
 from mlp_api.storage.database import metadata
 from mlp_core import config
-from mlp_core.endpoint_spec import EndpointSpec
+from mlp_core.endpoint_spec import EndpointSpec, without_stored_quantization
 from mlp_core.pipeline_request.schema import Strict
 
 # One row at most: the platform has one Judge.
@@ -36,7 +36,8 @@ def judge_settings(engine: Engine) -> JudgeSettings:
         row = connection.execute(select(judge)).first()
     if row is None:
         return JudgeSettings()
-    return JudgeSettings(enabled=row.enabled, spec=row.spec, rubric=row.rubric)
+    spec = row.spec and without_stored_quantization(row.spec)
+    return JudgeSettings(enabled=row.enabled, spec=spec, rubric=row.rubric)
 
 
 def store_judge_settings(engine: Engine, settings: JudgeSettings) -> None:

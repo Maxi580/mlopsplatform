@@ -23,6 +23,7 @@ from mlp_api.pipelines.mlflow_run import delete_pipeline_request
 from mlp_api.smoke_tests.cases import case_results
 from mlp_api.storage.database import metadata
 from mlp_core import config
+from mlp_core.endpoint_spec import without_stored_quantization
 from mlp_core.pipeline_request.schema import PipelineRequest
 
 pipeline = Table(
@@ -140,7 +141,8 @@ def list_pipelines(engine: Engine) -> list[dict]:
 def get_pipeline(engine: Engine, pipeline_id: int) -> dict:
     """The Pipeline as listed, plus its resolved request; LookupError if unknown."""
     row = find_pipeline(engine, pipeline_id)
-    return {**pipeline_summary(row), "request": row.request}
+    # `mlp rerun` and a resume submit this request again, and a new one can't hold `quantization`.
+    return {**pipeline_summary(row), "request": without_stored_quantization(row.request)}
 
 
 def mlflow_run_urls(engine: Engine) -> dict[str, str]:
@@ -201,9 +203,8 @@ def find_running_request(engine: Engine, pipeline_id: int, smoke_test_case: str)
         raise ValueError(f"Pipeline {pipeline_id} already {row.status}")
     # A Smoke Test keeps each case's request under the case's name.
     is_smoke_test = row.cases is not None
-    return PipelineRequest.model_validate(
-        row.request[smoke_test_case] if is_smoke_test else row.request
-    )
+    stored = row.request[smoke_test_case] if is_smoke_test else row.request
+    return PipelineRequest.model_validate(without_stored_quantization(stored))
 
 
 def find_pipeline(engine: Engine, pipeline_id: int):

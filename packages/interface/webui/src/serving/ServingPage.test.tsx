@@ -390,7 +390,9 @@ test("the benchmark's results show for an FP8 KV cache and a Speculator's method
   });
   renderApp("/serving");
 
-  expect(await screen.findByText(/We benchmarked these methods/)).toBeInTheDocument();
+  await screen.findByLabelText(/^Kv Cache Dtype/);
+  expect(screen.queryByText(/We benchmarked these methods/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Ranges are across the models/)).not.toBeInTheDocument();
   // `auto` is no choice the benchmark judged.
   expect(screen.queryByText("Not measured in the benchmark")).not.toBeInTheDocument();
   await userEvent.selectOptions(screen.getByLabelText(/^Kv Cache Dtype/), "fp8");

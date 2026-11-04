@@ -1,9 +1,12 @@
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import update
 
 from mlp_api.endpoints.stats_history import sample_endpoint_stats
 from mlp_api.judge.lifecycle import reconcile_judge
+from mlp_api.judge.settings import judge as judge_table
+from mlp_api.smoke_tests.judge_case import restore_judging
 from mlp_core import api_paths, config
 
 from .test_endpoint_stats import SERVED
@@ -44,6 +47,36 @@ def test_judging_is_off_with_the_default_rubric_until_saved(logged_in_api):
         "status": None,
         "model": None,
     }
+
+
+def test_a_judge_stored_with_quantization_still_loads_without_it(
+    logged_in_api,
+    qwen_on_the_hub,  # noqa: F811
+    cluster,
+):
+    assert save(logged_in_api).status_code == 200
+    stored = {"model": f"hf:{QWEN}", "max_model_len": 4096, "quantization": "fp8"}
+    with logged_in_api.app.state.engine.begin() as connection:
+        connection.execute(update(judge_table).values(spec=stored))
+
+    assert judge(logged_in_api)["spec"] == {"model": f"hf:{QWEN}", "max_model_len": 4096}
+    rounds(logged_in_api)
+
+
+def test_a_smoke_test_restores_judge_settings_saved_with_quantization(
+    logged_in_api,
+    qwen_on_the_hub,  # noqa: F811
+    cluster,
+):
+    model = f"hf:{QWEN}"
+    assert save(logged_in_api, spec={"model": model}).status_code == 200
+    spec = {"model": model, "quantization": None}
+    restore = {"enabled": False, "spec": spec, "rubric": "Be kind."}
+
+    restore_judging(logged_in_api.app.state, {"model": model, "restore": restore})
+
+    restored = judge(logged_in_api)
+    assert (restored["enabled"], restored["spec"]) == (False, {"model": model})
 
 
 def test_switching_judging_on_starts_the_judge_as_an_endpoint_without_route_or_tracing(

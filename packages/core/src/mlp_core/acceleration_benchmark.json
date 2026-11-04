@@ -76,7 +76,6 @@
         ]
       }
     },
-    "quantization": {},
     "speculative.method": {
       "eagle3": {
         "note": "k = 3, our default; measured on Qwen3-4B, Qwen3-8B and Llama 3.1 8B.",

@@ -136,7 +136,13 @@ export type PublishedSchema = {
 // The serving options of `evaluate` and Teachers are an Endpoint's, so the schema publishes them.
 export function servingOptionsForm(schema: PublishedSchema): FormSection {
   const { $defs, acceleration_benchmark } = schema;
-  return pipelineForm({ ...$defs.ServingOptions, $defs, acceleration_benchmark });
+  // Each option keeps its results; the benchmark's intro and terms are for the Quantize section.
+  const { benchmark: _, ...form } = pipelineForm({
+    ...$defs.ServingOptions,
+    $defs,
+    acceleration_benchmark,
+  });
+  return form;
 }
 
 export function formatSeconds(seconds: number | null | undefined): string {

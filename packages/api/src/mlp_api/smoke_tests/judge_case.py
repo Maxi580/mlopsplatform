@@ -12,7 +12,7 @@ from mlp_api.judge.lifecycle import save_judge_settings
 from mlp_api.judge.settings import JudgeSettings, judge_settings
 from mlp_api.smoke_tests.traces import is_traced_in_full
 from mlp_core import config
-from mlp_core.endpoint_spec import EndpointSpec
+from mlp_core.endpoint_spec import EndpointSpec, without_stored_quantization
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def judge_case_result(state, smoke_test: str, case: dict) -> str:
 
     # 4. Judging as it was; switched off, the Judge is gone.
     restore_judging(state, case)
-    restored = JudgeSettings.model_validate(case["restore"])
+    restored = settings_to_restore(case)
     gone = find_endpoint(state.engine, config.JUDGE_ENDPOINT_NAME) is None
     return "passed" if passed and (restored.enabled or gone) else "failed"
 
@@ -103,4 +103,8 @@ def restore_judging(state, case: dict) -> None:
     """Judging as it was before the case, unless it was changed since the case switched it on."""
     settings = judge_settings(state.engine)
     if settings.enabled and settings.spec == EndpointSpec(model=case["model"]):
-        save_judge_settings(state, JudgeSettings.model_validate(case["restore"]))
+        save_judge_settings(state, settings_to_restore(case))
+
+
+def settings_to_restore(case: dict) -> JudgeSettings:
+    return JudgeSettings.model_validate(without_stored_quantization(case["restore"]))

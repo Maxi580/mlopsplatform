@@ -44,10 +44,18 @@ class ServingOptions(BaseModel):
     """Plans the next step while the GPU computes, for lower latency."""
     kv_cache_dtype: Literal["auto", "fp8", "fp8_e4m3", "fp8_e5m2"] | None = "auto"
     """The number format of the KV cache; `fp8` fits twice the requests at a small quality cost."""
-    quantization: Literal["fp8", "bitsandbytes"] | None = None
-    """Quantizes the weights on the fly, at load time, to fit a larger model."""
     tool_parser: Literal[VLLM_TOOL_PARSERS] | None = None
     """How tool calls are read from replies; vLLM reads it from the model when left empty."""
+
+
+def without_stored_quantization(stored: dict) -> dict:
+    """A stored spec or Pipeline Request without the since removed `quantization` serving option."""
+    # Stops at lists: they hold Phases and Tools, whose free-form settings aren't serving options.
+    return {
+        key: without_stored_quantization(value) if isinstance(value, dict) else value
+        for key, value in stored.items()
+        if key != "quantization"
+    }
 
 
 class Speculative(BaseModel):

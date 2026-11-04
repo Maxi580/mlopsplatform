@@ -1,6 +1,8 @@
 import pytest
+from sqlalchemy import update
 
 from mlp_api.pipelines.cluster import KubeflowRun
+from mlp_api.pipelines.lifecycle import pipeline as pipeline_table
 from mlp_api.pipelines.reconciler import reconcile_pipelines
 from mlp_core import api_paths
 
@@ -105,6 +107,47 @@ def test_resume_skips_finished_phases_and_continues_the_failed_one_from_its_chec
     stored = pipeline(logged_in_api, resumed).json()
     assert stored["resumed_from"] == failed
     assert stored["request"] == pipeline(logged_in_api, failed).json()["request"]
+
+
+def store_request_with_quantization(api, pipeline_id):
+    """Rewrites the Pipeline's request as stored before `quantization` left the serving options."""
+    stored = pipeline(api, pipeline_id).json()["request"]
+    stored["evaluate"]["serving"]["quantization"] = None
+    with api.app.state.engine.begin() as connection:
+        connection.execute(
+            update(pipeline_table).where(pipeline_table.c.id == pipeline_id).values(request=stored)
+        )
+
+
+def evaluating_with_serving() -> dict:
+    evaluate = {"benchmarks": ["lm_eval:gsm8k"], "serving": {"max_model_len": 4096}}
+    return {**pipeline_request(), "evaluate": evaluate}
+
+
+def test_a_pipeline_stored_with_quantization_resumes(logged_in_api):
+    failed = failed_pipeline(logged_in_api, evaluating_with_serving())
+    store_request_with_quantization(logged_in_api, failed)
+
+    response = resume(logged_in_api, failed)
+
+    assert response.status_code == 202, response.text
+
+
+def test_a_pipeline_stored_with_quantization_can_be_submitted_again(logged_in_api):
+    failed = failed_pipeline(logged_in_api, evaluating_with_serving())
+    store_request_with_quantization(logged_in_api, failed)
+
+    # What `mlp rerun` does.
+    response = submit(logged_in_api, pipeline(logged_in_api, failed).json()["request"])
+
+    assert response.status_code == 202, response.text
+
+
+def test_a_new_pipeline_request_with_quantization_is_rejected(logged_in_api):
+    request = evaluating_with_serving()
+    request["evaluate"]["serving"]["quantization"] = "fp8"
+
+    assert submit(logged_in_api, request).status_code == 422
 
 
 def test_a_phase_that_saved_no_checkpoint_starts_afresh(logged_in_api, pairs, cluster):

@@ -2,8 +2,10 @@ import json
 import re
 
 import pytest
+from sqlalchemy import update
 
 from mlp_api.endpoints.lifecycle import reconcile_endpoints
+from mlp_api.endpoints.table import endpoint
 from mlp_api.models.mlflow import ModelVersion
 from mlp_api.pipelines.hugging_face import HubModel
 from mlp_core import api_paths, config
@@ -184,7 +186,6 @@ def test_an_adapter_on_full_weights_downloads_both(
         ({"max_num_batched_tokens": 8192}, ["--max-num-batched-tokens", "8192"]),
         ({"async_scheduling": True}, ["--async-scheduling"]),
         ({"kv_cache_dtype": "fp8"}, ["--kv-cache-dtype", "fp8"]),
-        ({"quantization": "bitsandbytes"}, ["--quantization", "bitsandbytes"]),
         (
             {"tool_parser": "llama3_json"},
             ["--enable-auto-tool-choice", "--tool-call-parser", "llama3_json"],
@@ -254,7 +255,7 @@ def test_the_gpu_count_comes_from_platform_settings(logged_in_api, qwen_on_the_h
         {"tensor_parallel_size": 2},
         {"enforce_eager": True},
         {"tool_parser": "my_plugin"},
-        {"quantization": "awq"},
+        {"quantization": "fp8"},
         {"gpu_memory_utilization": 1.5},
         {"name": "Not_A_DNS_Label"},
     ],
@@ -477,6 +478,21 @@ def test_a_restart_brings_back_the_same_endpoint(logged_in_api, qwen_on_the_hub,
     _, route = cluster.endpoints["chat"]["route"]["spec"]["routes"]
     assert f"PathPrefix(`/serving/{uuid}/`)" in route["match"]
     assert [e["status"] for e in endpoints(logged_in_api)] == ["pending"]
+
+
+def test_an_endpoint_stored_with_quantization_restarts_without_it(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    started = start(logged_in_api).json()
+    stop(logged_in_api)
+    stored = {**started["spec"], "quantization": "bitsandbytes"}
+    with logged_in_api.app.state.engine.begin() as connection:
+        connection.execute(update(endpoint).values(spec=stored))
+
+    response = restart(logged_in_api)
+
+    assert response.status_code == 200, response.text
+    assert "--quantization" not in vllm_args(cluster)
 
 
 def test_a_restart_takes_the_gpu_count_from_platform_settings(

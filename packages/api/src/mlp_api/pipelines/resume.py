@@ -2,6 +2,7 @@ from mlp_api.datasets.pipeline_output import find_distillation_dataset
 from mlp_api.pipelines.compiler import Resume
 from mlp_api.pipelines.lifecycle import find_pipeline
 from mlp_core import config
+from mlp_core.endpoint_spec import without_stored_quantization
 from mlp_core.pipeline_request.references import checkpoint_prefix, model_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 
@@ -15,7 +16,7 @@ def plan_resume(state, pipeline_id: int) -> Resume:
     if row.status not in config.RESUMABLE_STATUSES:
         raise ValueError(f"Pipeline {pipeline_id} is {row.status}; only failed or cancelled resume")
     earlier = Resume(**(row.resume or {}))
-    request = PipelineRequest.model_validate(row.request)
+    request = PipelineRequest.model_validate(without_stored_quantization(row.request))
 
     # 2. The Model Versions of the Phases finished so far, by this Pipeline or the ones before it,
     # unless deleted since.

@@ -11,7 +11,13 @@ from .test_evaluate_stage import PINNED_BASE_MODEL, container, errors, tasks, va
 from .test_pipeline_request import BASE_MODEL, pipeline_request, then
 from .test_pipelines import pipeline, pipelines, submit, submittable  # noqa: F401
 from .test_quantize_stage import resolved
-from .test_resume import end, parameters, resume
+from .test_resume import (
+    end,
+    evaluating_with_serving,
+    parameters,
+    resume,
+    store_request_with_quantization,
+)
 
 # Every test submits or validates a request for the Base Model and the `chat` Dataset.
 pytestmark = pytest.mark.usefixtures("submittable")
@@ -237,6 +243,15 @@ def test_a_sweep_alone_is_listed_as_a_stage_and_fetches_its_model(logged_in_api,
     assert parameters(tasks(cluster)["fetch"])["references"] == PINNED_BASE_MODEL
     [listed] = pipelines(logged_in_api)
     assert listed["stages"] == ["sweep"]
+
+
+def test_a_running_pipeline_stored_with_quantization_takes_its_sweep_report(logged_in_api):
+    pipeline_id = submit(logged_in_api, sweeping(evaluating_with_serving())).json()["id"]
+    store_request_with_quantization(logged_in_api, pipeline_id)
+
+    response = report(logged_in_api, pipeline_id)
+
+    assert response.status_code == 201, response.text
 
 
 def test_the_sweep_step_stores_its_best_parameters_on_the_pipeline(logged_in_api):

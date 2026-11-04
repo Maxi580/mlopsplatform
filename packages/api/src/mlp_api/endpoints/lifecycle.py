@@ -14,7 +14,7 @@ from mlp_api.model_cache.downloads import preview_downloads
 from mlp_api.model_cache.janitor import make_room_for_downloads
 from mlp_api.pipelines.cluster import Cluster
 from mlp_core import config
-from mlp_core.endpoint_spec import EndpointSpec
+from mlp_core.endpoint_spec import EndpointSpec, without_stored_quantization
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,8 @@ def restart_endpoint(state, name: str) -> dict:
             raise EndpointConflict(f"Endpoint {name} is {found.status}; stop it first")
 
         # 2. What vLLM loads from the pinned spec, so a moving Reference stays where it was.
-        spec, model = pin_endpoint_model(state, EndpointSpec.model_validate(found.spec))
+        stored = EndpointSpec.model_validate(without_stored_quantization(found.spec))
+        spec, model = pin_endpoint_model(state, stored)
 
         # 3. Without a failed Endpoint's leftover Deployment, pending again on today's GPU count.
         state.cluster.delete_endpoint(name)

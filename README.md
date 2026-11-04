@@ -135,7 +135,6 @@ Serving options, all optional (`POST /endpoints` takes `name`, `model` and these
 | `gpu_memory_utilization` (default 0.9), `max_num_seqs` (default 256), `max_num_batched_tokens` | the same names |
 | `async_scheduling` | `--[no-]async-scheduling` |
 | `kv_cache_dtype` (default `auto`): `auto`, `fp8`, `fp8_e4m3`, `fp8_e5m2` | `--kv-cache-dtype` |
-| `quantization`: `fp8` or `bitsandbytes`, on the fly | `--quantization` |
 | `tool_parser`: one of vLLM's built-in parsers | `--tool-call-parser` |
 | `speculative`: `method`, `model`, `num_speculative_tokens` (default 3), `prompt_lookup_min`/`max` | `--speculative-config` |
 
