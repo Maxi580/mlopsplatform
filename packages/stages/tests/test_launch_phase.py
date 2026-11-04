@@ -10,7 +10,13 @@ from mlp_stages.main import main
 
 TRAINJOB = {
     "metadata": {"generateName": "pipeline-7-phase-0-", "labels": {"mlp/pipeline-id": "7"}},
-    "spec": {"runtimeRef": {"name": "mlp-finetune"}, "trainer": {"image": "mlp-trainer-hf:test"}},
+    "spec": {
+        "runtimeRef": {"name": "mlp-finetune"},
+        "trainer": {
+            "image": "mlp-trainer-hf:test",
+            "env": [{"name": "GPU_SHARE", "value": "0.5"}],
+        },
+    },
 }
 PHASE_ARGUMENTS = ["7", "0", '{"name": "qwen-sft"}', "", "", "", "30", "", ""]
 
@@ -86,6 +92,7 @@ def test_a_phase_runs_as_its_trainjob_in_the_steps_mlflow_run(launch):
     assert trainer["args"][:-1] == PHASE_ARGUMENTS
     assert {"name": "MLFLOW_RUN_ID", "value": "run-1"} in trainer["env"]
     assert {"name": "MLFLOW_TRACKING_URI", "value": "http://mlflow.test"} in trainer["env"]
+    assert {"name": "GPU_SHARE", "value": "0.5"} in trainer["env"]
     assert created["metadata"]["labels"] == {"mlp/pipeline-id": "7"}
 
 

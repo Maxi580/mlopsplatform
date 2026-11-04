@@ -28,6 +28,8 @@ def build_pipeline_request(
             "The CLI Profile's `serve:` is gone; start an Endpoint with `mlp endpoints start`"
         )
     request = {"name": name or profile.get("name")}
+    if "gpu_share" in profile:
+        request["gpu_share"] = profile["gpu_share"]
     if distill:
         request["distill"] = profile.get("distill") or {}
     if sweep:

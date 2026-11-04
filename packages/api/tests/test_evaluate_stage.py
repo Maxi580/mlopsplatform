@@ -206,7 +206,7 @@ def test_evaluate_serves_the_model_with_vllm_on_the_platforms_gpus_offline(logge
     step = container(cluster, "evaluate")
     assert step["image"] == "mlp-stages:test"
     assert step["command"] == ["mlp-stage", "evaluate"]
-    assert step["resources"]["accelerator"]["resourceCount"] == "1"
+    assert step["resources"]["accelerator"]["resourceCount"] == "6"
     assert inputs(tasks(cluster)["evaluate"])["gpus"] == "1"
     for variable in ("HF_HUB_OFFLINE", "HF_DATASETS_OFFLINE"):
         assert {"name": variable, "value": "1"} in step["env"]
@@ -307,3 +307,33 @@ def test_bfcl_on_an_endpoint_uses_the_endpoints_own_tool_parser(
 
     assert response.status_code == 200, response.text
     assert response.json()["request"]["evaluate"]["serving"] is None
+
+
+def test_evaluates_vllm_requests_its_serving_share_and_gets_it_as_the_step_env(
+    logged_in_api, cluster
+):
+    submit(logged_in_api, evaluating(serving={"gpu_memory_utilization": 0.33}))
+
+    step = container(cluster, "evaluate")
+    assert step["resources"]["accelerator"]["resourceCount"] == "7"
+    assert {"name": "GPU_SHARE", "value": "0.33"} in step["env"]
+
+
+def test_a_serving_share_above_the_budget_is_refused(logged_in_api):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpu_budget": 0.2})
+
+    found = errors(logged_in_api, evaluating(serving={"gpu_memory_utilization": 0.3}))
+
+    assert ["evaluate", "serving", "gpu_memory_utilization"] in [e["loc"] for e in found]
+
+
+def test_a_step_takes_whole_gpus_and_no_share_while_sharing_is_off(logged_in_api, cluster):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpu_sharing": False})
+
+    submit(logged_in_api, evaluating(serving={"gpu_memory_utilization": 0.33}))
+
+    step = container(cluster, "evaluate")
+    assert step["resources"]["accelerator"]["resourceCount"] == "1"
+    assert "GPU_SHARE" not in [variable["name"] for variable in step["env"]]

@@ -1,5 +1,6 @@
-# Every GPU workload waits in one queue for the platform's GPUs, first come first served: a
-# multi-pod TrainJob starts only once all its GPUs are free, and nothing running is ever evicted.
+# Every GPU workload waits in one queue for its GPU Share, counted in the device plugin's slices of
+# all GPUs: oldest first, but a newer one goes ahead if the older one doesn't fit. A multi-pod
+# TrainJob starts only once all its slices are free, and nothing running is ever evicted.
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
@@ -11,7 +12,7 @@ metadata:
   name: {{ .Values.gpuQueue }}
 spec:
   namespaceSelector: {}
-  queueingStrategy: StrictFIFO
+  queueingStrategy: BestEffortFIFO
   preemption:
     withinClusterQueue: Never
     reclaimWithinCohort: Never
@@ -21,7 +22,7 @@ spec:
         - name: {{ .Values.gpuQueue }}
           resources:
             - name: nvidia.com/gpu
-              nominalQuota: {{ .Values.settings.gpu_count }}
+              nominalQuota: {{ .Values.gpuQuota }}
 {{- range list .Values.namespaces.kubeflow .Release.Namespace }}
 ---
 apiVersion: kueue.x-k8s.io/v1beta2

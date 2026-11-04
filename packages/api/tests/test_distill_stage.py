@@ -191,7 +191,7 @@ def test_distill_runs_on_the_teachers_gpus_and_hands_its_dataset_to_finetune(
     assert inputs(distill)["teacher_url"] == ""
     step = container(cluster, "distill")
     assert step["command"] == ["mlp-stage", "distill"]
-    assert step["resources"]["accelerator"]["resourceCount"] == "1"
+    assert step["resources"]["accelerator"]["resourceCount"] == "6"
     assert {"name": "HF_HUB_OFFLINE", "value": "1"} in step["env"]
     handoff = finetune["inputs"]["parameters"]["distilled_dataset"]["taskOutputParameter"]
     assert handoff == {"producerTask": "distill", "outputParameterKey": "dataset"}

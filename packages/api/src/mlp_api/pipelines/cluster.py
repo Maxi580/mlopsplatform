@@ -94,7 +94,7 @@ class Cluster:
             response.raise_for_status()
 
     def is_waiting_for_gpu(self, run_id: str, pipeline_id: int) -> bool:
-        # Kueue suspends a Phase's TrainJob until all its nodes' GPUs are free.
+        # Kueue suspends a Phase's TrainJob until its GPU Share fits on all its nodes.
         if any(job["spec"].get("suspend") for job in self.trainjobs(pipeline_id)):
             return True
         pods = self.kubernetes.list_namespaced_pod(
@@ -102,7 +102,7 @@ class Cluster:
             label_selector=f"pipeline/runid={run_id}",
             field_selector="status.phase=Pending",
         )
-        # Kueue holds a GPU step back until its GPUs are free; the scheduler may still find none.
+        # Kueue holds a GPU step back until its GPU Share fits; the scheduler may still find none.
         return any(
             condition.reason == "SchedulingGated"
             or (

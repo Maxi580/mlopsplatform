@@ -12,6 +12,7 @@ from mlp_core.pipeline_request.references import checkpoint_prefix
 from mlp_core.pipeline_request.schema import PipelineRequest
 from mlp_stages.dataset_versions import download_dataset_version
 from mlp_stages.finetune.model_version import phase_tags
+from mlp_stages.gpu_share import cap_gpu_memory
 from mlp_stages.model_versions import model_with_adapter, register_model_version
 
 
@@ -56,6 +57,7 @@ def finetune(
     # `accelerate launch` starts one process per GPU; this pins each to its own GPU before a model
     # loads, and only the main one uploads, registers and writes the output.
     main_process = PartialState().is_main_process
+    cap_gpu_memory(phase)
 
     with tempfile.TemporaryDirectory() as output_directory:
         # 3. What the Phase starts from (#19), and the Teacher a `distillation` Phase loads too.

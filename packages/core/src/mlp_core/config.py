@@ -437,9 +437,14 @@ SPECULATIVE_METHODS = {
     "peagle": {"method": "eagle3", "parallel_drafting": True},
 }
 SPECULATIVE_TOKENS = 3
-# vLLM's own defaults for the serving options that don't depend on the model, so forms start there.
-SERVING_GPU_MEMORY_UTILIZATION = 0.9
+# Where forms start for the serving options that don't depend on the model: vLLM's own default, but
+# for its share of GPU memory, as its 0.9 would leave a shared GPU no room.
+SERVING_GPU_MEMORY_UTILIZATION = 0.3
 SERVING_MAX_NUM_SEQS = 256
+# The GPU Share of a Pipeline's training, `sweep`, `quantize` and `speculate` steps.
+GPU_SHARE = 0.5
+# Tells a step and a Phase's TrainJob their GPU Share; unset while GPU sharing is off.
+GPU_SHARE_ENV = "GPU_SHARE"
 # Secret slot -> the environment variable of the steps that receive it. The API adds
 # `step_token` itself, for the `distill` and `sweep` steps to call the API with.
 SECRET_ENV_VARS = {
@@ -451,9 +456,9 @@ SECRET_ENV_VARS = {
 STEP_REQUEST_TIMEOUT = timedelta(minutes=5)
 # Where steps mount the Model Cache; the Hugging Face cache lives inside it.
 MODEL_CACHE_PATH = "/model-cache"
-# The Kubernetes resource the NVIDIA device plugin offers GPUs as.
+# The Kubernetes resource the NVIDIA device plugin offers GPUs, or their slices, as.
 GPU_RESOURCE = "nvidia.com/gpu"
-# Kueue admits a pod, Deployment or TrainJob with this label once the queue's GPUs are free.
+# Kueue admits a pod, Deployment or TrainJob with this label once it fits the queue's quota.
 QUEUE_NAME_LABEL = "kueue.x-k8s.io/queue-name"
 # KFP's own object store keys in its namespace, which install.sh fills with the platform's keys.
 OBJECT_STORE_SECRET = "mlpipeline-minio-artifact"

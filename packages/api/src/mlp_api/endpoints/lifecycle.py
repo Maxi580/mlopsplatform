@@ -34,7 +34,8 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
         if find_endpoint(state.engine, name) is not None:
             raise EndpointConflict(f"Endpoint {name} already exists; restart it or delete it first")
 
-        # 2. What vLLM loads, pinned.
+        # 2. What vLLM loads, pinned, on a GPU Share that can fit.
+        refuse_gpu_share_over_budget(state, spec)
         spec, model = pin_endpoint_model(state, spec)
 
         # 3. Its row first, so in-use checks and the reconciler know every Deployment.
@@ -68,8 +69,9 @@ def restart_endpoint(state, name: str) -> dict:
         if found.status in ("pending", "running"):
             raise EndpointConflict(f"Endpoint {name} is {found.status}; stop it first")
 
-        # 2. What vLLM loads from the pinned spec, so a moving Reference stays where it was.
+        # 2. What vLLM loads from the pinned spec, on a GPU Share that fits today's budget.
         stored = EndpointSpec.model_validate(without_stored_quantization(found.spec))
+        refuse_gpu_share_over_budget(state, stored)
         spec, model = pin_endpoint_model(state, stored)
 
         # 3. Without a failed Endpoint's leftover Deployment, pending again on today's GPU count.
@@ -84,6 +86,12 @@ def restart_endpoint(state, name: str) -> dict:
 
         # 4. Its Kubernetes objects under the same UUID.
         return create_endpoint_objects(state, name, found.uuid, spec, model, gpus)
+
+
+def refuse_gpu_share_over_budget(state, spec: EndpointSpec) -> None:
+    problem = state.settings.gpu_share_problem(spec.gpu_memory_utilization)
+    if problem:
+        raise ValueError(problem)
 
 
 def pin_endpoint_model(state, spec: EndpointSpec) -> tuple[EndpointSpec, EndpointModel]:
@@ -119,6 +127,7 @@ def create_endpoint_objects(
         spec,
         model,
         gpus,
+        state.settings.gpu_request(spec.gpu_memory_utilization, gpus),
         state.settings.model_cache_size,
         cluster.endpoint_environment,
         None if judge else traces_experiment_id(state, name),

@@ -249,3 +249,12 @@ def test_request_prints_the_pipelines_resolved_request_as_json(
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == request
+
+
+def test_run_passes_the_profiles_gpu_share(logged_in, home, fake_api, platform_ca):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE, gpu_share=0.4)
+
+    assert mlp("run", "--finetune", "sft").exit_code == 0
+
+    [(_, submission)] = fake_api.received
+    assert submission["request"]["gpu_share"] == 0.4

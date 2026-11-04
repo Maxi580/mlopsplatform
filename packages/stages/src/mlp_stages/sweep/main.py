@@ -13,6 +13,7 @@ from datasets import Dataset
 from mlp_core import api_paths, config
 from mlp_core.pipeline_request.schema import PipelineRequest, Sweep, SweepParameters
 from mlp_stages.dataset_versions import download_dataset_version
+from mlp_stages.gpu_share import cap_gpu_memory
 from mlp_stages.model_versions import model_files, model_with_adapter
 from mlp_stages.platform_api import call_step_route
 
@@ -46,6 +47,8 @@ def sweep(pipeline_id: str, request: str, distilled_dataset: str, best_parameter
             parameters = suggested_parameters(trial, sweep.parameters)
             trial.set_user_attr("parameters", parameters)
             phase = sweep.trial_phase(parameters)
+            # Each Trial, as it may vary the memory colocated vLLM takes.
+            cap_gpu_memory(phase)
             experiment_id = mlflow.MlflowClient().get_run(run_id).info.experiment_id
             run = mlflow.start_run(
                 parent_run_id=run_id, experiment_id=experiment_id, run_name=f"trial-{trial.number}"

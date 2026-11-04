@@ -102,6 +102,10 @@ _Avoid_: Job, task, script (when meaning what the Sandbox runs)
 An MLflow run: the tracked record of params, metrics and artifacts. Used for nothing else.
 _Avoid_: Execution, experiment (when meaning a single run)
 
+**GPU Share**:
+The share of a GPU's memory, not its compute, that a GPU workload holds while it runs; whatever fits runs, the rest waits, and nothing is evicted. An Endpoint's, the Judge's and the vLLM of a `distill` or `evaluate` step's is its `gpu_memory_utilization`; every other GPU step's and Phase's is its Pipeline's `gpu_share`.
+_Avoid_: Fraction, reservation
+
 ### Models and data
 
 **Base Model**:

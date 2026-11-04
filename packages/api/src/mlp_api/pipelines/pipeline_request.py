@@ -15,7 +15,7 @@ from mlp_api.pipelines.chat_template import assistant_mask_problem
 from mlp_api.pipelines.hugging_face import HuggingFace, find_base_model, pin_base_model
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core import config
-from mlp_core.endpoint_spec import ServingOptions
+from mlp_core.endpoint_spec import ServingOptions, serving_share
 from mlp_core.pipeline_request.references import (
     dataset_reference,
     model_reference,
@@ -43,10 +43,11 @@ def validate_pipeline_request(
     except ValidationError as validation_error:
         return None, [error(e["loc"], e["msg"]) for e in validation_error.errors()]
 
-    # 2. Phases and Sweeps the backend can train, on the GPUs a Phase gets, the settings TRL/PEFT
-    # would receive, rewards that can run, parameters Trials can set and Phases can take, and no
-    # Secret value anywhere.
+    # 2. Phases and Sweeps the backend can train, on the GPUs a Phase gets, GPU Shares that can fit,
+    # the settings TRL/PEFT would receive, rewards that can run, parameters Trials can set and
+    # Phases can take, and no Secret value anywhere.
     errors = backend_errors(request) + multi_process_errors(request, settings)
+    errors += gpu_budget_errors(request, settings)
     errors += trainer_config_errors(request)
     errors += sweep_parameter_errors(request.sweep) + params_from_errors(request)
     errors += reward_errors(request)
@@ -220,6 +221,26 @@ def multi_process_errors(request: PipelineRequest, settings: Settings) -> list[d
             )
             errors.append(error(["finetune", "phases", index, "algorithm"], msg))
     return errors
+
+
+def gpu_budget_errors(request: PipelineRequest, settings: Settings) -> list[dict]:
+    """An error for each GPU Share a step of this request holds that can never fit."""
+    # 1. The Pipeline's, unless only `distill` and `evaluate` run, each on its own vLLM's.
+    shares = []
+    if request.sweep or request.finetune or request.quantize or request.speculate:
+        shares.append((["gpu_share"], request.gpu_share))
+
+    # 2. Those of a Teacher or evaluated model served in the step; a running Endpoint holds its own.
+    distill, evaluate = request.distill, request.evaluate
+    option = ["serving", "gpu_memory_utilization"]
+    if distill and not (distill.api_url or distill.teacher.startswith("endpoint:")):
+        shares.append((["distill", *option], serving_share(distill.serving)))
+    if evaluate and not (evaluate.model or "").startswith("endpoint:"):
+        shares.append((["evaluate", *option], serving_share(evaluate.serving)))
+
+    # 3. The ones that can't fit.
+    problems = [(loc, settings.gpu_share_problem(share)) for loc, share in shares]
+    return [error(loc, problem) for loc, problem in problems if problem]
 
 
 def trainer_config_errors(request: PipelineRequest) -> list[dict]:

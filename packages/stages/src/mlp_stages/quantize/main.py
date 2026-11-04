@@ -6,6 +6,7 @@ from pathlib import Path
 from mlp_core import config
 from mlp_core.pipeline_request.schema import Calibration, PipelineRequest, Quantize
 from mlp_stages.dataset_versions import download_dataset_version
+from mlp_stages.gpu_share import cap_gpu_memory
 from mlp_stages.model_versions import (
     model_with_adapter,
     register_model_version,
@@ -21,6 +22,7 @@ def quantize(pipeline_id: str, request: str, finetuned: str, model_version: str)
     block = resolved.quantize
     model = finetuned if block.model == config.FINETUNE_OUTPUT else block.model
     run_id = os.environ["MLFLOW_RUN_ID"]
+    cap_gpu_memory()
     from llmcompressor import oneshot
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer

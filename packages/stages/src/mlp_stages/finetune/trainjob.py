@@ -40,7 +40,8 @@ def launch_phase(
         os.devnull,
     ]
     mlflow_run = {name: value for name, value in os.environ.items() if name.startswith("MLFLOW_")}
-    trainer["env"] = [{"name": name, "value": value} for name, value in mlflow_run.items()]
+    run_env = [{"name": name, "value": value} for name, value in mlflow_run.items()]
+    trainer["env"] = [*trainer.get("env", []), *run_env]
     jobs = TrainJobs()
     name = jobs.create(spec)
 

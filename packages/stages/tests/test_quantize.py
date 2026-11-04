@@ -194,3 +194,12 @@ def test_the_output_of_finetune_is_the_model_version_kfp_hands_over(step):
     assert step.oneshot["model"].path == step.mlflow.downloads["models:/qwen-sft/2"]
     [(_, tags)] = step.mlflow.registered
     assert (tags["parent"], tags["tool_parser"]) == ("model:qwen-sft@2", "none")
+
+
+def test_quantize_caps_gpu_memory(step, monkeypatch):
+    capped = []
+    monkeypatch.setattr(quantize_main, "cap_gpu_memory", lambda: capped.append(True))
+
+    step.run(BASE_MODEL)
+
+    assert capped == [True]

@@ -32,6 +32,7 @@ helm uninstall kubeflow-trainer --namespace "$trainer" --ignore-not-found --wait
 kubectl delete -k "$(kfp_manifests cluster-scoped-resources)" --ignore-not-found
 helm uninstall cert-manager --namespace "$cert_manager" --ignore-not-found --wait
 kubectl delete -f "$(device_plugin_manifest)" --ignore-not-found
+kubectl -n kube-system delete configmap nvidia-device-plugin-config --ignore-not-found
 
 log "Removing namespaces and volumes"
 namespaces=("$platform" "$kubeflow" "$mlflow" "$cert_manager" "$kueue" "$trainer")

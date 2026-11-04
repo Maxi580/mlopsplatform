@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mlp_core.config import (
     ENDPOINT_NAME_MAX_LENGTH,
@@ -35,7 +35,7 @@ class ServingOptions(BaseModel):
     dtype: Literal["auto", "half", "float16", "bfloat16", "float32"] | None = "auto"
     """The number format of weights and activations; `auto` takes the model's."""
     gpu_memory_utilization: float | None = Field(SERVING_GPU_MEMORY_UTILIZATION, gt=0, le=1)
-    """The share of GPU memory vLLM may take, for the weights and the KV cache."""
+    """The share of GPU memory vLLM may take, for the weights and the KV cache: its GPU Share."""
     max_num_seqs: int | None = Field(SERVING_MAX_NUM_SEQS, gt=0)
     """Requests generated at once; more wait."""
     max_num_batched_tokens: int | None = Field(None, gt=0)
@@ -46,6 +46,17 @@ class ServingOptions(BaseModel):
     """The number format of the KV cache; `fp8` fits twice the requests at a small quality cost."""
     tool_parser: Literal[VLLM_TOOL_PARSERS] | None = None
     """How tool calls are read from replies; vLLM reads it from the model when left empty."""
+
+    # Leaving out the flag would give vLLM's 0.9, far more than the GPU Share it requests.
+    @field_validator("gpu_memory_utilization")
+    @classmethod
+    def with_default_gpu_memory_utilization(cls, value: float | None) -> float:
+        return SERVING_GPU_MEMORY_UTILIZATION if value is None else value
+
+
+def serving_share(serving: ServingOptions | None) -> float:
+    """The GPU Share of a step's own vLLM: the memory its serving options let it take."""
+    return (serving or ServingOptions()).gpu_memory_utilization
 
 
 def without_stored_quantization(stored: dict) -> dict:

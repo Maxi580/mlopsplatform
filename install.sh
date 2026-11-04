@@ -212,11 +212,35 @@ install_cert_manager() {
     --set crds.enabled=true --set crds.keep=false --wait
 }
 
-# Also on joined machines, which only finetune Phases' TrainJobs tolerate.
+# Also on joined machines, which only finetune Phases' TrainJobs tolerate. Offers each GPU as $1
+# slices by time-slicing; the plugin refuses 1, which is simply no time-slicing. The annotation
+# restarts the plugin when the number changes, and tells the next run how to read what it reports.
 apply_device_plugin() {
+  local slices=$1 config="$WORK/device-plugin.yaml"
+  echo 'version: v1' > "$config"
+  if (( slices > 1 )); then
+    SLICES=$slices yq -i '.sharing.timeSlicing = {"failRequestsGreaterThanOne": false, "resources": [{"name": "nvidia.com/gpu", "replicas": env(SLICES)}]}' "$config"
+  fi
+  kubectl -n kube-system create configmap nvidia-device-plugin-config --from-file=config.yaml="$config" \
+    --dry-run=client -o yaml | kubectl apply -f -
   curl -fsSL "$(device_plugin_manifest)" \
-    | TAINT=$(value .trainingNodeTaint) yq '.spec.template.spec.tolerations += [{"key": strenv(TAINT), "operator": "Exists", "effect": "NoSchedule"}]' \
+    | TAINT=$(value .trainingNodeTaint) SLICES=$slices yq '
+        .spec.template.spec.tolerations += [{"key": strenv(TAINT), "operator": "Exists", "effect": "NoSchedule"}]
+        | .spec.template.metadata.annotations["mlp/gpu-slices"] = strenv(SLICES)
+        | .spec.template.spec.containers[0].env += [{"name": "CONFIG_FILE", "value": "/etc/nvidia-device-plugin/config.yaml"}]
+        | .spec.template.spec.containers[0].volumeMounts += [{"name": "config", "mountPath": "/etc/nvidia-device-plugin"}]
+        | .spec.template.spec.volumes += [{"name": "config", "configMap": {"name": "nvidia-device-plugin-config"}}]' \
     | kubectl apply -f -
+  # A machine that is down must not stop the install; the counts below only read what is reported.
+  kubectl -n kube-system rollout status daemonset nvidia-device-plugin-daemonset --timeout=5m || true
+}
+
+# The slices the installed device plugin offers each GPU; 1 without any, or from before time-slicing.
+installed_gpu_slices() {
+  local slices
+  slices=$(kubectl -n kube-system get daemonset nvidia-device-plugin-daemonset --ignore-not-found -o json \
+    | yq -p json '.spec.template.metadata.annotations["mlp/gpu-slices"] // 1')
+  echo "${slices:-1}"
 }
 
 # On a new GPU machine: a k3s agent of the host's cluster that runs only finetune Phases' TrainJobs.
@@ -245,17 +269,59 @@ EOF
   echo "Joined. Run ./install.sh on the host to use this machine's GPUs."
 }
 
-# The cluster's GPU machines and all their GPUs, once the device plugin reports them.
+# What the device plugin offers on each GPU machine, one line per machine.
+offered_gpus() {
+  kubectl get nodes -o json | yq -p json '.items[].status.allocatable["nvidia.com/gpu"]
+    | select(. != null) | to_number | select(. > 0)'
+}
+
+# The cluster's GPU machines and physical GPUs, from what a plugin offering $1 slices per GPU reports:
+# until it divides evenly, as an older plugin may still be reporting.
 count_gpus() {
   log "Counting the cluster's GPUs"
-  local counts
-  until counts=$(kubectl get nodes -o json | yq -p json '[.items[].status.allocatable["nvidia.com/gpu"]
-      | select(. != null) | to_number | select(. > 0)] | (length | tostring) + " " + (.[] as $n ireduce (0; . + $n) | tostring)') \
-      && [[ ${counts%% *} -gt 0 ]]; do
+  local slices=$1 offered gpus even
+  while true; do
+    offered=$(offered_gpus) || offered=
+    NODE_COUNT=0 GPU_COUNT=0 MOST_GPUS=0 even=true
+    for gpus in $offered; do
+      (( gpus % slices == 0 )) || even=false
+      gpus=$(( gpus / slices ))
+      NODE_COUNT=$(( NODE_COUNT + 1 )) GPU_COUNT=$(( GPU_COUNT + gpus )) MOST_GPUS=$(( gpus > MOST_GPUS ? gpus : MOST_GPUS ))
+    done
+    [[ $NODE_COUNT -gt 0 && $even == true ]] && break
     sleep 5
   done
-  read -r NODE_COUNT GPU_COUNT <<< "$counts"
   echo "$NODE_COUNT nodes with $GPU_COUNT GPUs"
+}
+
+# The slices per GPU the budget allows, or whole GPUs if a machine has several (#117).
+choose_gpu_slices() {
+  local budget slice
+  budget=$(value .settings.gpu_budget)
+  slice=$(value .settings.gpu_slice)
+  GPU_SLICES=$(awk -v budget="$budget" -v slice="$slice" 'BEGIN {
+    slices = budget / slice; whole = int(slices + 0.5); off = slices - whole
+    if (budget > 1 || whole < 1 || off > 1e-6 || off < -1e-6) exit 1
+    print whole
+  }') || die "settings.gpu_budget ($budget) must be at most 1 and a whole number of slices of $slice"
+  GPU_SHARING=true
+  if (( MOST_GPUS > 1 )); then
+    echo "GPU sharing is off: a machine has $MOST_GPUS GPUs, and the device plugin could spread one job's slices across them, which breaks the accounting. Jobs take whole GPUs and GPU Shares are ignored."
+    GPU_SHARING=false GPU_SLICES=1
+  fi
+}
+
+# So the first jobs find what Kueue counts; a machine that is down keeps reporting its old offer.
+wait_for_gpu_slices() {
+  log "Waiting until the device plugin offers each GPU as $GPU_SLICES slices"
+  local offered gpus attempt
+  for attempt in {1..60}; do
+    offered=0
+    for gpus in $(offered_gpus || true); do offered=$(( offered + gpus )); done
+    (( offered == GPU_COUNT * GPU_SLICES )) && return
+    (( attempt == 60 )) || sleep 5
+  done
+  echo "warning: the device plugin offers $offered, not $(( GPU_COUNT * GPU_SLICES )); is a machine down?"
 }
 
 # Asked on every run, as a joined machine adds a node; the current setting is the default.
@@ -289,7 +355,8 @@ install_platform_chart() {
   log "Installing the platform chart (API, Sandbox, Endpoint Proxy, Web UI, Postgres, TLS, routes)"
   helm upgrade --install mlp "$ROOT/deploy/chart" --namespace "$(value .namespaces.platform)" \
     -f "$VALUES" --set images.tag="$TAG" --set settings.node_count="$NODE_COUNT" \
-    --set settings.gpu_count="$GPU_COUNT" --set settings.nodes_per_stage="$NODES_PER_STAGE" --wait --timeout 10m
+    --set settings.gpu_count="$GPU_COUNT" --set settings.gpu_sharing="$GPU_SHARING" \
+    --set gpuQuota="$(( GPU_COUNT * GPU_SLICES ))" --set settings.nodes_per_stage="$NODES_PER_STAGE" --wait --timeout 10m
 }
 
 # On the new API: Endpoint Deployments and Kubeflow runs outlive the chart upgrade.
@@ -471,8 +538,13 @@ load_values "$ROOT/deploy/values-$ENVIRONMENT.yaml"
 log "Found a $ARCH host: installing $ARCH host tools and building images for linux/$ARCH"
 confirm_upgrade
 prepare_host
-apply_device_plugin
-count_gpus
+# Counted under the installed plugin's slices, as the sharing decision needs the physical GPUs.
+INSTALLED_GPU_SLICES=$(installed_gpu_slices)
+apply_device_plugin "$INSTALLED_GPU_SLICES"
+count_gpus "$INSTALLED_GPU_SLICES"
+choose_gpu_slices
+apply_device_plugin "$GPU_SLICES"
+wait_for_gpu_slices
 ask_nodes_per_stage
 build_images
 create_credentials

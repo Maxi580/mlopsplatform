@@ -129,6 +129,24 @@ def test_the_best_epoch_registers_as_a_speculator_for_the_verifier(step):
     assert step.params["samples"] == 50
 
 
+def test_vllm_holds_the_gpu_share_if_the_step_has_one(step, monkeypatch):
+    monkeypatch.setenv("GPU_SHARE", "0.4")
+
+    step.run()
+
+    [args] = step.vllm
+    assert flag(args, "--gpu-memory-utilization") == "0.4"
+
+
+def test_vllm_takes_the_serving_default_while_sharing_is_off(step, monkeypatch):
+    monkeypatch.delenv("GPU_SHARE", raising=False)
+
+    step.run()
+
+    [args] = step.vllm
+    assert flag(args, "--gpu-memory-utilization") == "0.3"
+
+
 def test_vllm_hands_out_four_verifier_layers_until_training_starts(step):
     step.run()
 

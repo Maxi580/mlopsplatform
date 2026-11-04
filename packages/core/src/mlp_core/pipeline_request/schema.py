@@ -24,6 +24,7 @@ from mlp_core.config import (
     DISTILL_OUTPUT,
     DISTILL_TEMPERATURE,
     FINETUNE_OUTPUT,
+    GPU_SHARE,
     PERFORMANCE_CONCURRENCY,
     PERFORMANCE_OUTPUT_TOKENS,
     PERFORMANCE_PROMPT_TOKENS,
@@ -532,6 +533,9 @@ class PipelineRequest(Strict):
     """The version of this schema."""
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
     """Names the Pipeline, and the Registered Model and Dataset it makes."""
+    gpu_share: float = Field(GPU_SHARE, gt=0, le=1, title="GPU Share")
+    """The share of a GPU's memory each training, `sweep`, `quantize` and `speculate` step holds
+    while it runs; whatever fits runs, the rest waits. Too small fails, too large waits longer."""
     distill: Distill | None = None
     """Asks a Teacher about prompts and keeps its replies as a Distillation Dataset."""
     sweep: Sweep | None = None

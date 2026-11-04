@@ -231,7 +231,7 @@ def test_the_sweep_trains_offline_on_its_backends_trainer_image(logged_in_api, c
     step = container(cluster, "sweep")
     assert step["image"] == "mlp-trainer-unsloth:test"
     assert step["command"] == ["mlp-stage", "sweep"]
-    assert step["resources"]["accelerator"]["resourceCount"] == "1"
+    assert step["resources"]["accelerator"]["resourceCount"] == "10"
     assert {"name": "HF_HUB_OFFLINE", "value": "1"} in step["env"]
     assert {"name": "S3_BUCKET", "value": "platform"} in step["env"]
 

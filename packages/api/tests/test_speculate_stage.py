@@ -142,7 +142,7 @@ def test_speculate_trains_offline_on_the_platforms_gpus(logged_in_api, cluster):
     step = container(cluster, "speculate")
     assert step["image"] == "mlp-stages:test"
     assert step["command"] == ["mlp-stage", "speculate"]
-    assert step["resources"]["accelerator"]["resourceCount"] == "1"
+    assert step["resources"]["accelerator"]["resourceCount"] == "10"
     assert {"name": "HF_HUB_OFFLINE", "value": "1"} in step["env"]
     assert {"name": "S3_BUCKET", "value": "platform"} in step["env"]
 

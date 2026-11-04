@@ -1,6 +1,6 @@
 # Every finetune Phase runs as a TrainJob of this runtime, based on upstream's torch-distributed:
 # one pod per node, each running `accelerate launch` with one process per GPU. The launcher step
-# sets the trainer image, command, node count and GPUs; Kueue admits it once all its GPUs are free.
+# sets the trainer image, command, node count and GPUs; Kueue admits it once its GPU Share fits.
 apiVersion: trainer.kubeflow.org/v1alpha1
 kind: ClusterTrainingRuntime
 metadata:

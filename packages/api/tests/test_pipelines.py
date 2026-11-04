@@ -24,6 +24,8 @@ def test_schema_publishes_the_pipeline_request_and_its_basic_values(logged_in_ap
     schema = response.json()
     assert set(schema["properties"]) >= {"name", "finetune"}
     assert schema["$defs"]["Sweep"]["properties"]["trials"]["default"] == 10
+    assert schema["properties"]["gpu_share"]["title"] == "GPU Share"
+    assert schema["properties"]["gpu_share"]["default"] == 0.5
 
 
 def test_schema_publishes_when_each_field_applies(logged_in_api):
@@ -548,7 +550,7 @@ def test_finetune_launches_after_fetch_a_trainjob_on_the_backends_trainer_image(
     trainer = job["spec"]["trainer"]
     assert trainer["image"] == "mlp-trainer-hf:test"
     assert trainer["numNodes"] == 1
-    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 1}}
+    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 10}}
     parameters = finetune["inputs"]["parameters"]
     inputs = {name: p["runtimeValue"]["constant"] for name, p in parameters.items()}
     assert inputs["pipeline_id"] == str(pipeline_id)
@@ -603,7 +605,7 @@ def test_a_phase_launches_one_process_per_gpu_of_each_node_with_its_weight_metho
         "finetune",
     ]
     assert trainer["numNodes"] == nodes
-    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": gpus}}
+    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 10 * gpus}}
 
 
 def test_an_unsloth_phase_trains_on_its_trainer_image_on_one_gpu_of_one_node(
@@ -620,7 +622,7 @@ def test_an_unsloth_phase_trains_on_its_trainer_image_on_one_gpu_of_one_node(
     assert trainer["image"] == "mlp-trainer-unsloth:test"
     assert (trainer["numNodes"], trainer["resourcesPerNode"]) == (
         1,
-        {"limits": {"nvidia.com/gpu": 1}},
+        {"limits": {"nvidia.com/gpu": 10}},
     )
 
 
@@ -728,7 +730,7 @@ def test_schema_publishes_the_serving_options_and_speculative_decoding(logged_in
     defs = logged_in_api.get(api_paths.SCHEMA).json()["$defs"]
 
     serving = defs["ServingOptions"]["properties"]
-    assert serving["gpu_memory_utilization"]["default"] == 0.9
+    assert serving["gpu_memory_utilization"]["default"] == 0.3
     assert "description" in serving["max_model_len"]
     assert "quantization" not in serving
     speculative = defs["Speculative"]["properties"]
@@ -751,3 +753,48 @@ def test_only_gpu_steps_wait_in_the_gpu_queue(logged_in_api, submittable, cluste
     }
     # finetune's TrainJob waits in the queue instead.
     assert queued == {"exec-evaluate"}
+
+
+def test_a_phases_trainjob_requests_the_pipelines_gpu_share_and_is_told_it(
+    logged_in_api, submittable, cluster
+):
+    submit(logged_in_api, {**pipeline_request(), "gpu_share": 0.33})
+
+    pipeline, _ = submitted_pipeline(cluster)
+    trainer = trainjob(pipeline)["spec"]["trainer"]
+    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 7}}
+    assert {"name": "GPU_SHARE", "value": "0.33"} in trainer["env"]
+
+
+def test_a_phase_takes_whole_gpus_and_no_share_while_sharing_is_off(
+    logged_in_api, submittable, cluster
+):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpu_sharing": False})
+
+    submit(logged_in_api)
+
+    pipeline, _ = submitted_pipeline(cluster)
+    trainer = trainjob(pipeline)["spec"]["trainer"]
+    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 1}}
+    assert "env" not in trainer
+
+
+def test_a_gpu_share_above_the_budget_is_refused(logged_in_api, submittable):
+    app = logged_in_api.app
+    app.state.settings = app.state.settings.model_copy(update={"gpu_budget": 0.4})
+
+    response = validate(logged_in_api, pipeline_request())
+
+    assert response.status_code == 422
+    [problem] = response.json()["detail"]
+    assert problem["loc"] == ["gpu_share"]
+    assert "can never fit" in problem["msg"]
+
+
+def test_a_gpu_share_above_the_budget_passes_while_sharing_is_off(logged_in_api, submittable):
+    app = logged_in_api.app
+    update = {"gpu_budget": 0.4, "gpu_sharing": False}
+    app.state.settings = app.state.settings.model_copy(update=update)
+
+    assert validate(logged_in_api, pipeline_request()).status_code == 200

@@ -35,7 +35,7 @@ After a change to routes, links or the certificate, check by hand on the host, t
 - A copied Endpoint URL answers from the same machine.
 - The links to the MLflow and Kubeflow UIs, in the sidebar, on a Pipeline, and from the KFP UI to its MLflow Run.
 
-`install.sh` counts the cluster's GPU machines (`node_count`) and all their GPUs (`gpu_count`) from the nodes, and asks once per run `How many nodes should a finetune Phase use?` (`nodes_per_stage`, default the current setting or 1; `MLP_NODES_PER_STAGE` answers it). A finetune Phase then trains as one Kubeflow Trainer TrainJob on `nodes_per_stage` nodes with `gpus_per_stage` GPUs each, one process per GPU; every other Stage and each Endpoint stays on one node. The machines must be identical. Users only see the totals, e.g. `2 nodes · 4 GPUs` in the Web UI. Every GPU workload (GPU steps, Endpoints, TrainJobs) waits in one Kueue queue of `gpu_count` GPUs, first come first served and never evicted, so a TrainJob starts only once all its GPUs are free.
+`install.sh` counts the cluster's GPU machines (`node_count`) and all their GPUs (`gpu_count`) from the nodes, and asks once per run `How many nodes should a finetune Phase use?` (`nodes_per_stage`, default the current setting or 1; `MLP_NODES_PER_STAGE` answers it). A finetune Phase then trains as one Kubeflow Trainer TrainJob on `nodes_per_stage` nodes with `gpus_per_stage` GPUs each, one process per GPU; every other Stage and each Endpoint stays on one node. The machines must be identical. Users only see the totals, e.g. `2 nodes · 4 GPUs` in the Web UI. Every GPU workload (GPU steps, Endpoints, TrainJobs) waits in one Kueue queue for its [GPU Share](#gpu-sharing) and is never evicted, so a TrainJob starts only once its share is free on all its nodes.
 
 Running `install.sh` again is the upgrade path. If Pipelines or Endpoints are running, it lists them and asks once `Continue? [y/N]` before changing anything (`MLP_YES=1` skips the prompt). It then cancels the Pipelines (`cancelled`), stops the Endpoints (`stopped`) and replaces our pods and Deployments; all data is kept (Postgres, SeaweedFS, MLflow, Model Cache). At the end it removes outdated images (ours from older builds, and upstream ones a newer tag replaced) and prunes the BuildKit cache to `buildCacheGb`.
 
@@ -67,6 +67,25 @@ A second GPU machine only runs finetune Phases, so they train across both. It ne
 It installs only the NVIDIA container toolkit (if missing) and a k3s agent of the host's cluster (`versions.k3s`, `MLP_JOIN_TOKEN` skips the prompt), tainted `mlp/training-only` (`trainingNodeTaint`), which only the finetune runtime and the NVIDIA device plugin tolerate: the API, Sandbox, Endpoints, KFP, MLflow, Postgres and SeaweedFS stay on the host. Its images come from the host's containerd through k3s's embedded registry mirror, which `install.sh` turns on. Once the host's device plugin runs there, it prints `Joined.`; then run `./install.sh` on the host again, which counts the new machine's GPUs into `node_count`, `gpu_count` and the Kueue quota and asks for `nodes_per_stage`.
 
 The machine has its own Model Cache directory, which the janitor doesn't clean (see Model Cache). LoRA Phases train fine across machines over normal Ethernet; `full` Phases (FSDP) want a fast interconnect, or they can be slower than on one machine. `./uninstall.sh` on the machine removes its k3s agent and its Model Cache; then on the host run `kubectl delete node <name>` and `./install.sh` again.
+
+## GPU sharing
+
+Every GPU workload holds a **GPU Share**, a share of a GPU's memory; whatever fits runs, and the rest waits, oldest first, though a newer one goes ahead if the older one doesn't fit. Nothing running is evicted. A share gives no extra compute: time-slicing gives each process equal turns.
+
+| Workload | Set by | Default | Kept to it by |
+|---|---|---|---|
+| Endpoint, Judge | `gpu_memory_utilization` | 0.3 | vLLM's budget |
+| `distill`, `evaluate` with their own vLLM | `serving.gpu_memory_utilization` | 0.3 | vLLM's budget |
+| Training, `sweep`, `quantize` | `gpu_share` | 0.5 | PyTorch's per-process limit |
+| `speculate` | `gpu_share` | 0.5 | vLLM's budget; its training has no cap yet |
+
+`gpu_share` is one optional top-level field of the Pipeline Request, or of the CLI Profile, for the whole Pipeline. A step holds its share only while it runs, so a Pipeline can wait again between steps. A `grpo` or `rloo` Phase's colocated vLLM runs inside the training process, so `gpu_share` covers both, and the step fails with a clear message unless it is larger than `vllm_gpu_memory_utilization`.
+
+The device plugin's time-slicing offers each GPU as slices of `gpu_slice` (5%), a share is rounded up to whole slices and requested as `nvidia.com/gpu`, and Kueue counts them. `gpu_budget` in `deploy/values.yaml` (default 1.0, a whole number of slices) is the share of each GPU the platform may hand out, in case other apps use the machine; a larger share can never fit, so the API refuses it. Anything else is your call: a share that's too small fails, and you raise it. Shares may add up to all of a GPU's memory, which leaves nothing for other processes on the machine.
+
+Several machines share one cluster-wide total, so Kueue may admit a job its machine has no room for; the scheduler then holds it until there is room.
+
+If any machine has more than one GPU, the device plugin could spread one job's slices across its GPUs, so `install.sh` leaves sharing off and prints why: jobs request whole GPUs and shares are ignored. Training across GPUs through Kubeflow Trainer is unchanged.
 
 ## CLI login
 
@@ -152,7 +171,7 @@ Serving options, all optional (`POST /endpoints` takes `name`, `model` and these
 | `max_model_len` | `--max-model-len` |
 | `prefix_caching` (default `true`) | `--[no-]enable-prefix-caching` |
 | `dtype` (default `auto`): `auto`, `half`, `float16`, `bfloat16`, `float32` | `--dtype` |
-| `gpu_memory_utilization` (default 0.9), `max_num_seqs` (default 256), `max_num_batched_tokens` | the same names |
+| `gpu_memory_utilization` (default 0.3, its [GPU Share](#gpu-sharing)), `max_num_seqs` (default 256), `max_num_batched_tokens` | the same names |
 | `async_scheduling` | `--[no-]async-scheduling` |
 | `kv_cache_dtype` (default `auto`): `auto`, `fp8`, `fp8_e4m3`, `fp8_e5m2` | `--kv-cache-dtype` |
 | `tool_parser`: one of vLLM's built-in parsers | `--tool-call-parser` |

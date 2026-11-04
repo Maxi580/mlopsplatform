@@ -166,7 +166,7 @@ def test_quantize_loads_the_model_offline_on_the_platforms_gpus(logged_in_api, c
     step = container(cluster, "quantize")
     assert step["image"] == "mlp-stages:test"
     assert step["command"] == ["mlp-stage", "quantize"]
-    assert step["resources"]["accelerator"]["resourceCount"] == "1"
+    assert step["resources"]["accelerator"]["resourceCount"] == "10"
     assert {"name": "HF_HUB_OFFLINE", "value": "1"} in step["env"]
     assert {"name": "HF_HOME", "value": "/model-cache"} in step["env"]
     assert {"name": "S3_BUCKET", "value": "platform"} in step["env"]

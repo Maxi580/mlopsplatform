@@ -10,6 +10,7 @@ def endpoint_manifests(
     spec: EndpointSpec,
     model: EndpointModel,
     gpus: int,
+    gpu_request: int,
     model_cache_size: str,
     environment: EndpointEnvironment,
     traces_experiment_id: str | None,
@@ -19,7 +20,7 @@ def endpoint_manifests(
     object_name = config.ENDPOINT_OBJECT_NAME.format(name=name)
     labels = {config.ENDPOINT_LABEL: name}
     metadata = {"name": object_name, "namespace": environment.namespace, "labels": labels}
-    # Kueue starts the Deployment's pod once its GPUs are free.
+    # Kueue starts the Deployment's pod once its GPU Share fits.
     queued = {**metadata, "labels": {**labels, config.QUEUE_NAME_LABEL: environment.gpu_queue}}
     model_cache = {"name": "model-cache", "mountPath": config.MODEL_CACHE_PATH}
     models = {"name": "models", "mountPath": config.ENDPOINT_MODEL_DIRECTORY}
@@ -53,7 +54,7 @@ def endpoint_manifests(
             }
         )
 
-    # 2. vLLM, offline, on whole GPUs; it reports ready once the model is loaded.
+    # 2. vLLM, offline, on its GPU Share; it reports ready once the model is loaded.
     args = vllm_args(spec, model.vllm, name, gpus, spec.speculative)
     env = {"HF_HOME": config.MODEL_CACHE_PATH, "HF_HUB_OFFLINE": "1"}
     if traces_experiment_id is not None:
@@ -71,7 +72,7 @@ def endpoint_manifests(
         "args": args,
         "env": [{"name": variable, "value": value} for variable, value in env.items()],
         "ports": [{"containerPort": config.VLLM_PORT}],
-        "resources": {"limits": {config.GPU_RESOURCE: gpus}},
+        "resources": {"limits": {config.GPU_RESOURCE: gpu_request}},
         "readinessProbe": {"httpGet": {"path": "/health", "port": config.VLLM_PORT}},
         "volumeMounts": [model_cache, models, {"name": "shm", "mountPath": "/dev/shm"}],
     }
@@ -81,7 +82,7 @@ def endpoint_manifests(
         "metadata": queued,
         "spec": {
             "replicas": 1,
-            # A new pod would wait for the GPUs the old one holds.
+            # A new pod might wait for the GPU Share the old one holds.
             "strategy": {"type": "Recreate"},
             "selector": {"matchLabels": labels},
             "template": {

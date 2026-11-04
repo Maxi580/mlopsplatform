@@ -92,7 +92,7 @@ def test_an_endpoint_for_a_base_model_fetches_it_and_serves_it_offline_from_the_
     assert contains(vllm_args(cluster), ["--revision", COMMIT])
     [vllm] = pod(cluster)["containers"]
     assert vllm["image"] == "vllm/vllm-openai:test"
-    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 1}
+    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 6}
     assert {"name": "HF_HUB_OFFLINE", "value": "1"} in vllm["env"]
 
 
@@ -120,13 +120,15 @@ def test_an_endpoint_offers_its_tokenizer_so_it_can_be_evaluated(logged_in_api, 
     assert "--enable-tokenizer-info-endpoint" in vllm_args(logged_in_api.app.state.cluster)
 
 
-def test_untouched_serving_options_are_vllms_own_defaults(logged_in_api, qwen_on_the_hub, cluster):
+def test_untouched_serving_options_are_the_defaults_forms_show(
+    logged_in_api, qwen_on_the_hub, cluster
+):
     start(logged_in_api, f"hf:{QWEN}")
 
     args = vllm_args(cluster)
     for option in (
         ["--dtype", "auto"],
-        ["--gpu-memory-utilization", "0.9"],
+        ["--gpu-memory-utilization", "0.3"],
         ["--max-num-seqs", "256"],
         ["--kv-cache-dtype", "auto"],
         ["--enable-prefix-caching"],
@@ -246,7 +248,7 @@ def test_the_gpu_count_comes_from_platform_settings(logged_in_api, qwen_on_the_h
 
     assert contains(vllm_args(cluster), ["--tensor-parallel-size", "2"])
     [vllm] = pod(cluster)["containers"]
-    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 2}
+    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 12}
 
 
 @pytest.mark.parametrize(
@@ -625,3 +627,53 @@ def test_an_endpoint_waits_in_the_gpu_queue(logged_in_api, qwen_on_the_hub, clus
 
     labels = cluster.endpoints["chat"]["deployment"]["metadata"]["labels"]
     assert labels["kueue.x-k8s.io/queue-name"] == "gpu"
+
+
+def test_an_endpoint_requests_the_slices_of_its_share_of_gpu_memory(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, gpu_memory_utilization=0.33)
+
+    [vllm] = pod(cluster)["containers"]
+    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 7}
+    assert contains(vllm_args(cluster), ["--gpu-memory-utilization", "0.33"])
+
+
+def test_a_null_share_means_the_default_rather_than_vllms_own(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, gpu_memory_utilization=None)
+
+    [vllm] = pod(cluster)["containers"]
+    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 6}
+    assert contains(vllm_args(cluster), ["--gpu-memory-utilization", "0.3"])
+
+
+def test_an_endpoint_takes_whole_gpus_while_sharing_is_off(logged_in_api, qwen_on_the_hub, cluster):
+    logged_in_api.app.state.settings.gpu_sharing = False
+
+    start(logged_in_api)
+
+    [vllm] = pod(cluster)["containers"]
+    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 1}
+
+
+def test_an_endpoint_above_the_gpu_budget_is_refused(logged_in_api, qwen_on_the_hub, cluster):
+    logged_in_api.app.state.settings.gpu_budget = 0.5
+
+    response = start(logged_in_api, gpu_memory_utilization=0.6)
+
+    assert response.status_code == 422
+    assert "can never fit" in response.json()["detail"]
+    assert cluster.endpoints == {}
+
+
+def test_a_restart_above_a_lowered_gpu_budget_is_refused(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    stop(logged_in_api)
+    logged_in_api.app.state.settings.gpu_budget = 0.2
+
+    response = restart(logged_in_api)
+
+    assert response.status_code == 422
+    assert "can never fit" in response.json()["detail"]

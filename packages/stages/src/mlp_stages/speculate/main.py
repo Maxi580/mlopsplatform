@@ -49,7 +49,9 @@ def speculate(
 
         # 3. The verifier's hidden states for every conversation, from vLLM serving them instead
         # of answering; under its path, which the tools name in every request.
-        serving = ServingOptions(prefix_caching=False)
+        # vLLM holds the GPU Share, if any; the training after it has no cap yet.
+        share = os.environ.get(config.GPU_SHARE_ENV)
+        serving = ServingOptions(prefix_caching=False, gpu_memory_utilization=share)
         args = vllm_args(serving, VllmModel(str(source)), str(source), int(gpus))
         extracted = scratch / "extracted"
         extracted.mkdir()

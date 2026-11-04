@@ -194,3 +194,12 @@ def test_ranges_sample_floats_and_integers_within_their_bounds(step):
         assert 1e-6 <= trainer.phase.settings.learning_rate <= 1e-4
         assert trainer.phase.lora.r in range(4, 17)
         assert trainer.phase.lora.lora_alpha == 16
+
+
+def test_each_trial_caps_gpu_memory_for_its_own_settings(step, monkeypatch):
+    capped = []
+    monkeypatch.setattr(sweep_main, "cap_gpu_memory", capped.append)
+
+    step.run()
+
+    assert capped == [trainer.phase for trainer in step.trainers]

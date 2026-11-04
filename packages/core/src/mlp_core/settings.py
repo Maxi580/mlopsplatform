@@ -1,3 +1,5 @@
+import math
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,9 +11,13 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="forbid")
 
-    # The cluster's GPU machines and all their GPUs, counted by install.sh; machines are identical.
+    # The cluster's GPU machines and physical GPUs, counted by install.sh; machines are identical.
     node_count: int
     gpu_count: int
+    # Off if a machine has several GPUs, as install.sh decides: jobs then take whole GPUs.
+    gpu_sharing: bool
+    gpu_budget: float
+    gpu_slice: float
     # GPUs per node for a Stage; a finetune Phase trains on nodes_per_stage nodes, the rest on one.
     gpus_per_stage: int
     nodes_per_stage: int
@@ -48,6 +54,19 @@ class Settings(BaseSettings):
     def phase_gpus(self) -> int:
         """The GPUs a finetune Phase trains on, across its nodes."""
         return self.nodes_per_stage * self.gpus_per_stage
+
+    def gpu_request(self, share: float, gpus: int) -> int:
+        """The `nvidia.com/gpu` a job asks for on `gpus` GPUs: the share's slices, or whole GPUs."""
+        if not self.gpu_sharing:
+            return gpus
+        # Rounded first, as 0.15 / 0.05 is a hair above 3 and must not become 4 slices.
+        return math.ceil(round(share / self.gpu_slice, 6)) * gpus
+
+    def gpu_share_problem(self, share: float) -> str | None:
+        """Why the GPU Share can never fit, if it can't."""
+        if self.gpu_sharing and share > self.gpu_budget:
+            return f"a GPU Share of {share} can never fit: the budget is {self.gpu_budget} of a GPU"
+        return None
 
 
 def size_in_bytes(quantity: str) -> int:

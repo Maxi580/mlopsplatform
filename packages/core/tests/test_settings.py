@@ -42,3 +42,30 @@ def test_a_phase_may_use_every_gpu_of_every_node(platform_settings):
     phase = {"node_count": 2, "nodes_per_stage": 2, "gpus_per_stage": 2, "gpu_count": 4}
 
     assert Settings(**{**platform_settings, **phase}).nodes_per_stage == 2
+
+
+@pytest.mark.parametrize(
+    ("share", "gpus", "slices"),
+    [(0.3, 1, 6), (0.33, 1, 7), (0.15, 1, 3), (0.05, 1, 1), (1.0, 1, 20), (0.3, 2, 12)],
+)
+def test_a_gpu_share_is_rounded_up_to_slices_on_each_gpu(platform_settings, share, gpus, slices):
+    assert Settings(**platform_settings).gpu_request(share, gpus) == slices
+
+
+def test_jobs_request_whole_gpus_while_sharing_is_off(platform_settings):
+    settings = Settings(**{**platform_settings, "gpu_sharing": False, "gpu_count": 2})
+
+    assert settings.gpu_request(0.3, 2) == 2
+
+
+def test_a_gpu_share_above_the_budget_can_never_fit(platform_settings):
+    settings = Settings(**{**platform_settings, "gpu_budget": 0.5})
+
+    assert settings.gpu_share_problem(0.5) is None
+    assert "0.6" in settings.gpu_share_problem(0.6)
+
+
+def test_shares_are_ignored_while_sharing_is_off(platform_settings):
+    settings = Settings(**{**platform_settings, "gpu_sharing": False, "gpu_budget": 0.5})
+
+    assert settings.gpu_share_problem(0.6) is None
