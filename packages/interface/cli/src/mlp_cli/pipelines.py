@@ -8,7 +8,7 @@ import yaml
 from mlp_cli.api import api_client, exit_on_error
 from mlp_cli.profile import build_pipeline_request, load_profile
 from mlp_cli.secrets import collect_secrets
-from mlp_core import api_paths
+from mlp_core import api_paths, config
 
 FinetunePhases = Annotated[str, typer.Option(help="Phases from the CLI Profile, e.g. sft,dpo")]
 PipelineName = Annotated[str | None, typer.Option(help="Pipeline name; default: the Profile's")]
@@ -76,9 +76,33 @@ def request(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]
     typer.echo(json.dumps(pipeline["request"], indent=2))
 
 
-def resume(pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")]) -> None:
+def resume(
+    pipeline_id: Annotated[int, typer.Argument(help="ID from `mlp ls`")],
+    gpu_share: Annotated[
+        float | None,
+        typer.Option(help=f"{config.TRAINING_GPU_SHARE_HINT} {config.GPU_SHARE_LEFT_OUT_HINT}"),
+    ] = None,
+    distill_gpu_share: Annotated[
+        float | None,
+        typer.Option(
+            help=f"`distill`: {config.VLLM_GPU_SHARE_HINT} {config.GPU_SHARE_LEFT_OUT_HINT}"
+        ),
+    ] = None,
+    evaluate_gpu_share: Annotated[
+        float | None,
+        typer.Option(
+            help=f"`evaluate`: {config.VLLM_GPU_SHARE_HINT} {config.GPU_SHARE_LEFT_OUT_HINT}"
+        ),
+    ] = None,
+) -> None:
     """Continue a failed or cancelled Pipeline as a new one, reusing what it finished."""
     submission = {"secrets": collect_secrets(load_profile())}
+    if gpu_share is not None:
+        submission["gpu_share"] = gpu_share
+    entered = {"distill": distill_gpu_share, "evaluate": evaluate_gpu_share}
+    serving_shares = {stage: share for stage, share in entered.items() if share is not None}
+    if serving_shares:
+        submission["serving_shares"] = serving_shares
     with api_client() as client:
         response = client.post(api_paths.RESUME_PIPELINE.format(id=pipeline_id), json=submission)
     pipeline = exit_on_error(response).json()

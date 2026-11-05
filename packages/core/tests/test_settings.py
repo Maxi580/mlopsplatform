@@ -58,14 +58,9 @@ def test_jobs_request_whole_gpus_while_sharing_is_off(platform_settings):
     assert settings.gpu_request(0.3, 2) == 2
 
 
-def test_a_gpu_share_above_the_budget_can_never_fit(platform_settings):
-    settings = Settings(**{**platform_settings, "gpu_budget": 0.5})
+def test_only_a_gpu_share_above_1_can_never_fit(platform_settings):
+    settings = Settings(**platform_settings)
 
-    assert settings.gpu_share_problem(0.5) is None
-    assert "0.6" in settings.gpu_share_problem(0.6)
-
-
-def test_shares_are_ignored_while_sharing_is_off(platform_settings):
-    settings = Settings(**{**platform_settings, "gpu_sharing": False, "gpu_budget": 0.5})
-
-    assert settings.gpu_share_problem(0.6) is None
+    assert settings.gpu_share_problem(settings.gpu_max_utilization + 0.1) is None
+    assert settings.gpu_share_problem(1) is None
+    assert "1.1" in settings.gpu_share_problem(1.1)

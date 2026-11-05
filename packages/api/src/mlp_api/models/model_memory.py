@@ -6,7 +6,7 @@ from mlp_api.models.registry import find_referenced_model_version
 from mlp_api.pipelines.hugging_face import HuggingFace
 from mlp_api.storage.object_store import ObjectStore
 from mlp_core import config
-from mlp_core.gpu_share import ModelMemory, model_memory
+from mlp_core.gpu_share import ModelMemory, model_length_limit
 from mlp_core.pipeline_request.references import split_base_model_reference
 
 
@@ -16,11 +16,11 @@ def find_model_memory(
     hugging_face: HuggingFace,
     model_registry: MLflow,
     object_store: ObjectStore,
-) -> ModelMemory | None:
-    """What the pinned model takes on a GPU, from its files; None if they don't say."""
+) -> ModelMemory:
+    """The pinned model's weights' size and length limit, each None if its files don't say."""
     # 1. Only a Base Model or Model Version has files; a running Endpoint holds its own share.
     if not model.startswith(("hf:", "model:")):
-        return None
+        return ModelMemory(None, None)
 
     # 2. An Adapter is its base plus its own file.
     if model.startswith("model:"):
@@ -31,18 +31,14 @@ def find_model_memory(
             )
             adapter = found.artifact_prefix + config.ADAPTER_WEIGHTS_FILE
             size = object_store.size_of(model_registry.artifact_bucket, adapter)
-            return base and replace(base, weights_bytes=base.weights_bytes + size)
+            if base.weights_bytes is None:
+                return base
+            return replace(base, weights_bytes=base.weights_bytes + size)
 
-    # 3. The config.json and the size of the weights.
+    # 3. The size of the weights, and the limit in the config.json.
     read = model_file_reader(model, token, hugging_face, model_registry, object_store)
-    model_config = read("config.json")
     weights_bytes = weights_size(model, read, token, hugging_face, model_registry, object_store)
-    if model_config is None or weights_bytes is None:
-        return None
-    try:
-        return model_memory(json.loads(model_config), weights_bytes)
-    except ValueError:
-        return None
+    return ModelMemory(weights_bytes, length_limit_in(read("config.json")))
 
 
 def model_file_reader(
@@ -90,3 +86,12 @@ def weights_size(
     found = find_referenced_model_version(model_registry, model)
     file = found.artifact_prefix + config.WEIGHTS_FILE
     return object_store.size_of(model_registry.artifact_bucket, file) or None
+
+
+def length_limit_in(model_config: bytes | None) -> int | None:
+    if model_config is None:
+        return None
+    try:
+        return model_length_limit(json.loads(model_config))
+    except ValueError:
+        return None

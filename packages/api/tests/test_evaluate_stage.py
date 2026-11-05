@@ -319,11 +319,8 @@ def test_evaluates_vllm_requests_its_serving_share_and_gets_it_as_the_step_env(
     assert {"name": "GPU_SHARE", "value": "0.33"} in step["env"]
 
 
-def test_a_serving_share_above_the_budget_is_refused(logged_in_api):
-    app = logged_in_api.app
-    app.state.settings = app.state.settings.model_copy(update={"gpu_budget": 0.2})
-
-    found = errors(logged_in_api, evaluating(serving={"gpu_memory_utilization": 0.3}))
+def test_a_serving_share_above_1_is_refused(logged_in_api):
+    found = errors(logged_in_api, evaluating(serving={"gpu_memory_utilization": 1.1}))
 
     assert ["evaluate", "serving", "gpu_memory_utilization"] in [e["loc"] for e in found]
 

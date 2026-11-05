@@ -1,4 +1,4 @@
-// What `GET /datasets`, `GET /models`, `GET /storage`, `GET /storage/gpus`, `GET /cache`,
+// What `GET /datasets`, `GET /models`, `GET /storage`, `GET /cache`,
 // `GET /checkpoints` and the model upload routes answer.
 export type Dataset = {
   name: string;
@@ -19,22 +19,6 @@ export type RegisteredModel = {
 export type Storage = {
   buckets: { name: string; size_bytes: number }[];
   capacity_bytes: number;
-};
-
-export type GpuReading = {
-  index: number;
-  name: string;
-  memory_total_bytes: number;
-  memory_used_bytes: number;
-  memory_free_bytes: number;
-  // The GPU has no memory of its own to report, so these are the machine's.
-  shared_with_system: boolean;
-  // Null if the GPU doesn't report it.
-  utilization_percent: number | null;
-};
-
-export type GpuMachines = {
-  machines: { name: string; reserved_percent: number; gpus: GpuReading[] }[];
 };
 
 // A Phase's newest Checkpoint, kept after its Pipeline failed or was cancelled.

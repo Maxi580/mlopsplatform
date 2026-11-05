@@ -1,5 +1,5 @@
-# Answers what each machine's GPUs report, for the Storage tab. It holds no slices, so it never waits
-# in the GPU queue and its GPU access takes nothing from any job.
+# Answers how large each machine's GPUs are, for calculated GPU Shares. It holds no slices, so it
+# never waits in the GPU queue and its GPU access takes nothing from any job.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:

@@ -135,26 +135,21 @@ settings:
   gpu_count: 1
   # install.sh switches it off if a machine has several GPUs: jobs then take whole GPUs (#117).
   gpu_sharing: true
-  # The share of each GPU the platform may hand out, in case other apps use the machine; a whole
-  # number of slices.
-  gpu_budget: 1.0
   # The device plugin offers each GPU as slices of this share; a GPU Share is rounded up to them.
   gpu_slice: 0.05
-  # What a calculated GPU Share counts in, untested on our hardware (#116): correct from real runs.
-  # vLLM: factor × weights + reserve + the shared-memory reserve + KV cache for this many tokens.
-  gpu_share_weights_factor: 1.1
+  # What a calculated GPU Share counts in, untested on our hardware: correct from real runs.
+  # vLLM: factor × weights + reserve + the shared-memory reserve.
+  gpu_share_weights_factor: 1.5
   gpu_share_vllm_reserve_gib: 2
   gpu_share_shared_memory_reserve_gib: 4
-  gpu_share_kv_cache_tokens: 65536
   # The longest prompt plus reply a model is served with unless the user raises it.
   gpu_share_max_model_len: 32768
   # Training: factor × weights + reserve. Too high only makes a job wait; too low fails late.
   gpu_share_training_factor: 2
   gpu_share_full_training_factor: 6
   gpu_share_training_reserve_gib: 2
-  # The most a calculated share takes; a value the user enters can go up to 1.
-  gpu_share_maximum: 0.95
-  gpu_share_maximum_shared_memory: 0.85
+  # Only a recommendation: forms show it, calculated shares stop there, a user can enter up to 1.
+  gpu_max_utilization: 0.85
   # GPUs per node for a Stage; a finetune Phase trains on nodes_per_stage nodes, asked by install.sh.
   gpus_per_stage: 1
   nodes_per_stage: 1

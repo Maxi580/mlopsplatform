@@ -465,9 +465,8 @@ class FakeCluster:
         self.endpoints = {}
         self.endpoint_states = {}
         self.deleted_endpoints = []
-        # Endpoint name -> what Kubernetes still has of its logs, and those scaled down.
+        # Endpoint name -> what its pod still has of its logs.
         self.logs = {}
-        self.scaled_to_zero = []
         # Endpoint name -> its vLLM's `/metrics` text; any other Endpoint is unreachable.
         self.metrics = {}
         self.chat_requests = []
@@ -528,6 +527,7 @@ class FakeCluster:
 
     def delete_endpoint(self, name):
         self.endpoints.pop(name, None)
+        self.logs.pop(name, None)
         self.deleted_endpoints.append(name)
 
     def endpoint_state(self, name):
@@ -535,10 +535,6 @@ class FakeCluster:
 
     def endpoint_logs(self, name):
         return self.logs.get(name, "")
-
-    def scale_endpoint_to_zero(self, name):
-        self.scaled_to_zero.append(name)
-        self.endpoint_states[name] = "failed"
 
     def endpoint_metrics(self, name):
         if name not in self.metrics:

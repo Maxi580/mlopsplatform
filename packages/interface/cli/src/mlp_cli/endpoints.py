@@ -4,7 +4,7 @@ import typer
 import yaml
 
 from mlp_cli.api import api_client, exit_on_error
-from mlp_core import api_paths
+from mlp_core import api_paths, config
 
 app = typer.Typer()
 
@@ -42,7 +42,10 @@ def start(
     option: Annotated[
         list[str] | None,
         typer.Option(
-            "--option", "-o", help="A serving option as key=value, e.g. max_model_len=8192"
+            "--option",
+            "-o",
+            help="A serving option as key=value, e.g. max_model_len=8192. "
+            f"gpu_memory_utilization: {config.VLLM_GPU_SHARE_HINT}",
         ),
     ] = None,
 ) -> None:
@@ -72,10 +75,19 @@ def stop(name: str) -> None:
 
 
 @app.command()
-def restart(name: str) -> None:
+def restart(
+    name: str,
+    gpu_memory_utilization: Annotated[
+        float | None,
+        typer.Option(help=f"{config.VLLM_GPU_SHARE_HINT} {config.GPU_SHARE_LEFT_OUT_HINT}"),
+    ] = None,
+) -> None:
     """Restart the stopped or failed Endpoint at the same URL and Endpoint Key."""
+    entered = gpu_memory_utilization is not None
+    new = {"gpu_memory_utilization": gpu_memory_utilization} if entered else None
     with api_client() as client:
-        restarted = exit_on_error(client.post(api_paths.RESTART_ENDPOINT.format(name=name))).json()
+        response = client.post(api_paths.RESTART_ENDPOINT.format(name=name), json=new)
+    restarted = exit_on_error(response).json()
     typer.echo(f"Restarted Endpoint {restarted['name']} ({restarted['status']})")
     typer.echo(f"OpenAI base URL: {restarted['url']}")
 

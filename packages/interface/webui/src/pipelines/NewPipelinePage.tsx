@@ -2,8 +2,6 @@ import {
   CircleAlert,
   CircleCheck,
   Cpu,
-  Eye,
-  EyeOff,
   HardDrive,
   KeyRound,
   ListChecks,
@@ -24,6 +22,7 @@ import {
 } from "../apiPaths";
 import { DRAFT_KEY, SECRET_SLOTS } from "../config";
 import type { Catalog } from "../fields/catalog";
+import SecretInput from "../fields/SecretInput";
 import { formatBytes } from "../formatBytes";
 import type { Endpoint } from "../serving/endpoint";
 import type { Dataset, RegisteredModel } from "../storage/storage";
@@ -276,40 +275,6 @@ function PipelineBuilder({
 function downloadSummary(preview: RequestPreview): string {
   const toDownload = formatBytes(preview.download_bytes);
   return `${toDownload} to download, ${formatBytes(preview.cached_bytes)} already cached`;
-}
-
-function SecretInput(props: {
-  slot: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <div className="field">
-      <label className="field-label" htmlFor={props.slot}>
-        {props.label} <code>{props.slot}</code>
-      </label>
-      <div className="input-with-button">
-        <input
-          id={props.slot}
-          type={visible ? "text" : "password"}
-          value={props.value}
-          autoComplete="off"
-          placeholder="optional for public models"
-          onChange={(event) => props.onChange(event.target.value)}
-        />
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={visible ? "Hide" : "Show"}
-          onClick={() => setVisible(!visible)}
-        >
-          {visible ? <EyeOff size={16} /> : <Eye size={16} />}
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function hasField(section: FormSection, name: string): boolean {

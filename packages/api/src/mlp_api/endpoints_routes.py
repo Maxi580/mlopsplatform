@@ -3,14 +3,13 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from mlp_api.endpoints.feedback import record_feedback
 from mlp_api.endpoints.keys import endpoint_opened_by, refresh_endpoint_key
 from mlp_api.endpoints.lifecycle import (
     EndpointConflict,
     delete_endpoint,
-    endpoint_log_key,
     endpoint_summary,
     find_endpoint,
     list_endpoints,
@@ -33,6 +32,13 @@ router = APIRouter()
 
 class EndpointStart(EndpointSpec):
     name: EndpointName
+
+
+class EndpointRestart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Left out, the stored one stays.
+    gpu_memory_utilization: float | None = Field(None, gt=0, le=1)
 
 
 @router.get(api_paths.ENDPOINTS)
@@ -71,14 +77,13 @@ def history(name: str, request: Request, span: str = "live") -> dict:
     return endpoint_history(request.app.state.model_registry, name, span, datetime.now(UTC))
 
 
-# Plain text, so the Web UI can just link it; an Endpoint has one from a crash until a restart.
+# Plain text, so the Web UI can just link it; read from its pod, so with no pod there is no log.
 @router.get(api_paths.ENDPOINT_LOG)
 def log(name: str, request: Request) -> Response:
     state = request.app.state
-    found = find_endpoint(state.engine, name)
-    if found is None or found.failure is None:
-        raise HTTPException(404, f"Endpoint {name} has no saved log")
-    content = state.object_store.read(state.object_store.bucket, endpoint_log_key(name))
+    content = state.cluster.endpoint_logs(name) if find_endpoint(state.engine, name) else ""
+    if not content:
+        raise HTTPException(404, f"Endpoint {name} has no log")
     return Response(content, media_type="text/plain")
 
 
@@ -138,10 +143,11 @@ def stop(name: str, request: Request) -> dict:
 
 
 @router.post(api_paths.RESTART_ENDPOINT)
-def restart(name: str, request: Request) -> dict:
+def restart(name: str, request: Request, options: EndpointRestart | None = None) -> dict:
     refuse_the_judge(name)
     try:
-        return restart_endpoint(request.app.state, name)
+        share = options.gpu_memory_utilization if options else None
+        return restart_endpoint(request.app.state, name, share)
     except LookupError as error:
         raise HTTPException(404, str(error)) from None
     except EndpointConflict as error:

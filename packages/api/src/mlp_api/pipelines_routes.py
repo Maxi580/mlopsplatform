@@ -1,7 +1,7 @@
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from mlp_api.gpu_usage.machines import find_gpu
 from mlp_api.model_cache.downloads import fetched_references, preview_downloads
@@ -16,7 +16,7 @@ from mlp_api.pipelines.lifecycle import (
 )
 from mlp_api.pipelines.pipeline_request import validate_pipeline_request
 from mlp_api.pipelines.published_schema import published_schema
-from mlp_api.pipelines.resume import plan_resume
+from mlp_api.pipelines.resume import plan_resume, with_new_gpu_shares
 from mlp_api.pipelines.sweep_output import record_sweep_output
 from mlp_core import api_paths, config
 from mlp_core.gpu_share import pipeline_gpu_shares
@@ -38,6 +38,9 @@ class ResumeSubmission(BaseModel):
 
     # Read afresh, as a Pipeline's own are never kept.
     secrets: dict[str, str] = {}
+    # New GPU Shares, of the Pipeline and of its Stages' own vLLM; left out, the stored ones stay.
+    gpu_share: float | None = Field(None, gt=0, le=1)
+    serving_shares: dict[Literal["distill", "evaluate"], Annotated[float, Field(gt=0, le=1)]] = {}
 
 
 class SweepOutput(BaseModel):
@@ -84,7 +87,11 @@ def resume(id: int, submission: ResumeSubmission, request: Request) -> dict:
     except ValueError as error:
         raise HTTPException(409, str(error)) from None
     stored = get_pipeline(request.app.state.engine, id)["request"]
-    return start(Submission(request=stored, secrets=submission.secrets), request, id, plan)
+    try:
+        resumed = with_new_gpu_shares(stored, submission.gpu_share, submission.serving_shares)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return start(Submission(request=resumed, secrets=submission.secrets), request, id, plan)
 
 
 def start(

@@ -22,6 +22,8 @@ export type Pipeline = {
   created_at: string;
   kubeflow_run_url: string | null;
   mlflow_run_url: string | null;
+  // A Smoke Test's results; it can't be resumed.
+  cases?: unknown;
   // The best parameters its `sweep` Stage found, once it reported them.
   sweep?: SweepOutput | null;
 };

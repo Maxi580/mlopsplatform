@@ -46,6 +46,7 @@ from mlp_core.config import (
     SWEEP_OUTPUT,
     SWEEP_SAMPLERS,
     SWEEP_TRIALS,
+    TRAINING_GPU_SHARE_HINT,
     UNCALIBRATED_SCHEMES,
     WEIGHT_METHODS,
 )
@@ -532,10 +533,9 @@ class PipelineRequest(Strict):
     """The version of this schema."""
     name: str = Field(pattern=f"^{MODEL_NAME_PATTERN}$", max_length=63)
     """Names the Pipeline, and the Registered Model and Dataset it makes."""
-    gpu_share: float | None = Field(None, gt=0, le=1, title="GPU Share")
-    """The share of a GPU's memory each training, `sweep`, `quantize` and `speculate` step holds
-    while it runs; whatever fits runs, the rest waits. Too small fails, too large waits longer.
-    Calculated from the models and the GPU when left empty."""
+    gpu_share: float | None = Field(
+        None, gt=0, le=1, title="GPU Share", description=TRAINING_GPU_SHARE_HINT
+    )
     distill: Distill | None = None
     """Asks a Teacher about prompts and keeps its replies as a Distillation Dataset."""
     sweep: Sweep | None = None

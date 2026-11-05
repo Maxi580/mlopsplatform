@@ -3,10 +3,14 @@ export const KUBEFLOW_UI_URL = "/pipeline/";
 export const MLFLOW_UI_URL = "/mlflow/";
 export const PIPELINE_LIST_REFRESH_MS = 5000;
 export const ENDPOINT_LIST_REFRESH_MS = 5000;
-export const GPU_READINGS_REFRESH_MS = 5000;
 // Where the New Pipeline form keeps its draft across reloads; Secrets are never stored.
 export const DRAFT_KEY = "mlp:new-pipeline";
 export const FINISHED_STATUSES = ["succeeded", "failed", "cancelled"];
+export const RESUMABLE_STATUSES = ["failed", "cancelled"];
+// The Stages that hold a Pipeline's `gpu_share`.
+export const TRAINING_STAGES = ["sweep", "finetune", "quantize", "speculate"];
+// Fields explained below them, not in an infobox; `vllm_gpu_memory_utilization` reserves nothing.
+export const GPU_SHARE_FIELDS = ["gpu_memory_utilization", "gpu_share"];
 // The last part of the name under which a section's further TRL/PEFT settings are kept.
 export const MORE_SETTINGS = "*";
 // Secret slot -> its label; the values travel beside the Pipeline Request, never inside it.

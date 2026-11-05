@@ -439,14 +439,21 @@ SPECULATIVE_METHODS = {
 SPECULATIVE_TOKENS = 3
 # Where forms start for a serving option that doesn't depend on the model: vLLM's own default.
 SERVING_MAX_NUM_SEQS = 256
-# vLLM's GPU Share if a size is unknown (#116), as its own 0.9 would leave a shared GPU no room.
+# vLLM's GPU Share if a size is unknown, as its own 0.9 would leave a shared GPU no room.
 SERVING_GPU_MEMORY_UTILIZATION = 0.3
 # The same for the Stages that hold the Pipeline's `gpu_share`.
 GPU_SHARE = 0.5
 TRAINING_STAGES = ("sweep", "finetune", "quantize", "speculate")
-# Bytes per value of the KV cache by number format; `auto` takes the model's.
-VLLM_DTYPE_BYTES = {"half": 2, "float16": 2, "bfloat16": 2, "float32": 4}
-VLLM_DEFAULT_DTYPE_BYTES = 2
+# What a GPU Share field says, by what holds the share; the published schema and the CLI show them.
+VLLM_GPU_SHARE_HINT = (
+    "Share of this GPU's memory to reserve, calculated from the model. Too low and it fails at "
+    "start with a message; higher allows more requests at once but leaves less room for other jobs."
+)
+GPU_SHARE_LEFT_OUT_HINT = "Left out, the stored one stays."
+TRAINING_GPU_SHARE_HINT = (
+    "Share of this GPU's memory to reserve, calculated from the model. Too low and it fails with a "
+    "message when it runs out; higher leaves less room for other jobs."
+)
 # The config.json values vLLM takes the model's limit from, the lowest counting.
 VLLM_MAX_LENGTH_KEYS = (
     "max_position_embeddings",
@@ -547,23 +554,43 @@ CHECKPOINT_COMPLETE_FILE = "trainer_state.json"
 WAITING_FOR_GPU = "waiting for GPU"
 # An Endpoint in these hasn't failed or answered yet.
 ENDPOINT_STARTING_STATUSES = ("pending", WAITING_FOR_GPU)
-# What the cluster reports of an Endpoint in CrashLoopBackOff, until the reconciler has freed it.
+# What the cluster reports of an Endpoint in CrashLoopBackOff; never stored, it is then `failed`.
 ENDPOINT_CRASHING = "crashing"
-# An Endpoint's logs as saved when it crashed, kept until it is deleted.
-ENDPOINT_LOG_KEY = "endpoint-logs/{name}.log"
 # The container of a Kubeflow step that runs its command.
 STEP_CONTAINER = "main"
 # How far back a log may hold an out-of-memory error, tracebacks following it, and what is shown.
 FAILURE_SEARCHED_LINES = 200
 FAILURE_SHOWN_LINES = 15
 FAILURE_SHOWN_CHARACTERS = 4000
-# torch's, CUDA's, finetune's and vLLM's; a reward's `ran out of memory` is the Sandbox's.
-OUT_OF_MEMORY_ERROR = re.compile(
-    r"(?<!ran )out[ _]?of[ _]?(gpu[ _]?)?memory|less than desired gpu memory", re.IGNORECASE
-)
-OUT_OF_MEMORY_FAILURE = (
-    "Out of GPU memory. Raise gpu_share or gpu_memory_utilization, stop something else on the GPU, "
-    "or use a smaller model or batch."
+# Log pattern -> message, first match wins; a reward's `ran out of memory` is the Sandbox's.
+GPU_MEMORY_FAILURES = (
+    (
+        re.compile(r"free memory.*less than desired", re.IGNORECASE),
+        "Not enough memory left on the GPU right now, including memory other programs use. Stop "
+        "something, then {retry}.",
+    ),
+    (
+        re.compile(r"no available memory for the cache blocks", re.IGNORECASE),
+        "This GPU Share is too small for the model. {retry} with a larger one.",
+    ),
+    (
+        re.compile(r"to serve at least one request", re.IGNORECASE),
+        "This GPU Share can't hold one request of `max_model_len`. {retry} with a larger one or a "
+        "lower `max_model_len`.",
+    ),
+    (
+        re.compile(
+            r"init_free_memory\s*>=\s*free_gpu_memory|error in memory profiling"
+            r"|releas.*memory.*profiling|memory.*releas.*profiling",
+            re.IGNORECASE,
+        ),
+        "Another job released memory while this one was starting. {retry} it.",
+    ),
+    (
+        re.compile(r"(?<!ran )out[ _]?of[ _]?(gpu[ _]?)?memory", re.IGNORECASE),
+        "Out of GPU memory. Raise the GPU Share, stop something else, or use a smaller model or "
+        "batch.",
+    ),
 )
 NO_LOG_FAILURE = "Failed without a log left to explain why."
 RUN_DELETED_FAILURE = "Its Kubeflow run was deleted."
@@ -923,12 +950,8 @@ DISTILLATION_ROW_FORMAT = "prompt_completion"
 QUANTITY_SUFFIXES = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "Pi": 2**50}
 # The pods that report each machine's GPUs, by the label the chart gives them.
 GPU_REPORTER_SELECTOR = "app=gpu-reporter"
-# What a reporter asks about each GPU; values come in MiB and percent, the name last.
-NVIDIA_SMI_COMMAND = (
-    "nvidia-smi",
-    "--query-gpu=index,memory.total,memory.used,memory.free,utilization.gpu,name",
-    "--format=csv,noheader,nounits",
-)
+# What a reporter asks about each GPU: its memory in MiB.
+NVIDIA_SMI_COMMAND = ("nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits")
 # What nvidia-smi prints for a value the GPU doesn't report; any other text is an error.
 NVIDIA_SMI_NOT_REPORTED = ("[Not Supported]", "[N/A]")
 # Where a GPU without memory of its own reads it, as NVIDIA's docs for the GB10 say.

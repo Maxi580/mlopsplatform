@@ -16,19 +16,16 @@ class Settings(BaseSettings):
     gpu_count: int
     # Off if a machine has several GPUs, as install.sh decides: jobs then take whole GPUs.
     gpu_sharing: bool
-    gpu_budget: float
     gpu_slice: float
-    # What a calculated GPU Share counts in (#116); see deploy/values.yaml.
+    # What a calculated GPU Share counts in; see deploy/values.yaml.
     gpu_share_weights_factor: float
     gpu_share_vllm_reserve_gib: float
     gpu_share_shared_memory_reserve_gib: float
-    gpu_share_kv_cache_tokens: int
     gpu_share_max_model_len: int
     gpu_share_training_factor: float
     gpu_share_full_training_factor: float
     gpu_share_training_reserve_gib: float
-    gpu_share_maximum: float
-    gpu_share_maximum_shared_memory: float
+    gpu_max_utilization: float
     # GPUs per node for a Stage; a finetune Phase trains on nodes_per_stage nodes, the rest on one.
     gpus_per_stage: int
     nodes_per_stage: int
@@ -85,9 +82,7 @@ class Settings(BaseSettings):
 
     def gpu_share_problem(self, share: float) -> str | None:
         """Why the GPU Share can never fit, if it can't."""
-        if self.gpu_sharing and share > self.gpu_budget:
-            return f"a GPU Share of {share} can never fit: the budget is {self.gpu_budget} of a GPU"
-        return None
+        return f"a GPU Share of {share} can never fit: it is above 1" if share > 1 else None
 
 
 def size_in_bytes(quantity: str) -> int:

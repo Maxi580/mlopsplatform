@@ -10,6 +10,7 @@ from mlp_core.config import (
     SERVING_MAX_NUM_SEQS,
     SPECULATIVE_METHODS,
     SPECULATIVE_TOKENS,
+    VLLM_GPU_SHARE_HINT,
     VLLM_LORA_RANKS,
     VLLM_TOOL_PARSERS,
 )
@@ -34,9 +35,9 @@ class ServingOptions(BaseModel):
     """Reuses the work on prompt beginnings seen before, e.g. a shared system prompt."""
     dtype: Literal["auto", "half", "float16", "bfloat16", "float32"] | None = "auto"
     """The number format of weights and activations; `auto` takes the model's."""
-    gpu_memory_utilization: float | None = Field(None, gt=0, le=1)
-    """The share of GPU memory vLLM may take, for the weights and the KV cache: its GPU Share.
-    Calculated from the model and the GPU when left empty."""
+    gpu_memory_utilization: float | None = Field(
+        None, gt=0, le=1, title="GPU Share", description=VLLM_GPU_SHARE_HINT
+    )
     max_num_seqs: int | None = Field(SERVING_MAX_NUM_SEQS, gt=0)
     """Requests generated at once; more wait."""
     max_num_batched_tokens: int | None = Field(None, gt=0)

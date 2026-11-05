@@ -55,6 +55,95 @@ test("a failed Pipeline says why", async () => {
   expect(await screen.findByText("Out of GPU memory.")).toBeInTheDocument();
 });
 
+const shareSchema = {
+  properties: { gpu_share: { description: "Share to reserve for training." } },
+  $defs: {
+    ServingOptions: {
+      properties: { gpu_memory_utilization: { description: "Share to reserve for vLLM." } },
+    },
+  },
+};
+const resumeRoutes = (pipeline: Pipeline): Parameters<typeof fakeApi>[0] => ({
+  "GET /pipelines": [200, [pipeline]],
+  "GET /settings": [200, { gpu_count: 1 }],
+  "GET /schema": [200, shareSchema],
+  "GET /gpus/reserved": [200, { reserved_percent: 35, recommended_max: 0.85 }],
+  "POST /pipelines/7/resume": [202, { id: 8 }],
+});
+
+test.each([
+  ["failed", true],
+  ["cancelled", true],
+  ["succeeded", false],
+  ["running", false],
+])("a %s Pipeline offering Resume is %s", async (status, offered) => {
+  fakeApi(resumeRoutes({ ...running, status }));
+  renderApp("/");
+
+  await screen.findByText("qwen-sft");
+  expect(!!screen.queryByRole("button", { name: "Resume" })).toBe(offered);
+});
+
+test("a Smoke Test can't be resumed", async () => {
+  fakeApi(resumeRoutes({ ...running, status: "failed", cases: { sft: "failed" } }));
+  renderApp("/");
+
+  await screen.findByText("qwen-sft");
+  expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+});
+
+test("a Resume left empty keeps the stored shares", async () => {
+  const calls = fakeApi(resumeRoutes({ ...running, status: "failed" }));
+  renderApp("/");
+
+  await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+  expect(screen.getByRole("textbox", { name: /^GPU Share/ })).toHaveAttribute("placeholder", "0.3");
+  await userEvent.click(screen.getByRole("button", { name: "Resume Pipeline 7" }));
+
+  expect(
+    await screen.findByText("Submitted Pipeline 8, which resumes Pipeline 7"),
+  ).toBeInTheDocument();
+  const resumed = calls.find((call) => call.route === "POST /pipelines/7/resume");
+  expect(resumed?.body).toEqual({ secrets: {} });
+});
+
+test("a Resume sends new shares for each Stage holding one, and Secrets", async () => {
+  const failed = {
+    ...running,
+    status: "failed",
+    stages: ["distill", "finetune", "evaluate"],
+    gpu_shares: { distill: 0.2, finetune: 0.3, evaluate: 0.25 },
+  };
+  const calls = fakeApi(resumeRoutes(failed));
+  renderApp("/");
+
+  await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+  await userEvent.type(screen.getByRole("textbox", { name: /^GPU Share gpu_share/ }), "0.7");
+  await userEvent.type(screen.getByRole("textbox", { name: /^GPU Share of evaluate/ }), "0.4");
+  await userEvent.type(screen.getByLabelText(/Hugging Face token/), "hf_secret");
+  await userEvent.click(screen.getByRole("button", { name: "Resume Pipeline 7" }));
+
+  await screen.findByText("Submitted Pipeline 8, which resumes Pipeline 7");
+  const resumed = calls.find((call) => call.route === "POST /pipelines/7/resume");
+  expect(resumed?.body).toEqual({
+    secrets: { hf_token: "hf_secret" },
+    gpu_share: 0.7,
+    serving_shares: { evaluate: 0.4 },
+  });
+});
+
+test("the Resume fields say what they mean and how full the fullest machine is", async () => {
+  fakeApi(resumeRoutes({ ...running, status: "cancelled" }));
+  renderApp("/");
+
+  await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+  expect(await screen.findByText("Share to reserve for training.")).toBeInTheDocument();
+  expect(
+    await screen.findByText("Currently reserved: 35% of this GPU · Recommended max: 85%"),
+  ).toBeInTheDocument();
+});
+
 test("a Pipeline that swept shows the best parameters it found", async () => {
   const swept: Pipeline = {
     ...running,

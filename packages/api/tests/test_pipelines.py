@@ -318,26 +318,19 @@ def test_a_failed_pipeline_shows_the_last_lines_of_its_failed_step(
     assert found["failure"] == "\n".join(lines[-config.FAILURE_SHOWN_LINES :])
 
 
-@pytest.mark.parametrize(
-    "error",
-    [
-        "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2 GiB",
-        "CUDA_ERROR_OUT_OF_MEMORY",
-        "Out of GPU memory: tried to allocate 2 GiB",
-        "ValueError: Free memory on device (1/8 GiB) on startup is less than desired GPU memory "
-        "utilization (0.9, 7 GiB).",
-    ],
-)
-def test_a_pipeline_out_of_gpu_memory_gets_the_plain_message(
-    logged_in_api, submittable, cluster, error
+def test_a_pipeline_too_small_for_its_model_is_told_to_resume_with_a_larger_share(
+    logged_in_api, submittable, cluster
 ):
     submit(logged_in_api)
     finish_run(cluster, "FAILED")
-    cluster.failed_step_logs = dict.fromkeys(cluster.runs, f"{error}\n  and a traceback after it")
+    log = "RuntimeError: No available memory for the cache blocks.\n  and a traceback after it"
+    cluster.failed_step_logs = dict.fromkeys(cluster.runs, log)
 
     reconcile(logged_in_api)
 
-    assert pipelines(logged_in_api)[0]["failure"] == config.OUT_OF_MEMORY_FAILURE
+    assert pipelines(logged_in_api)[0]["failure"] == (
+        "This GPU Share is too small for the model. Resume with a larger one."
+    )
 
 
 def test_a_reward_out_of_sandbox_memory_is_not_blamed_on_the_gpu(
@@ -894,21 +887,14 @@ def test_a_phase_takes_whole_gpus_and_no_share_while_sharing_is_off(
     assert "env" not in trainer
 
 
-def test_a_gpu_share_above_the_budget_is_refused(logged_in_api, submittable):
-    app = logged_in_api.app
-    app.state.settings = app.state.settings.model_copy(update={"gpu_budget": 0.4})
+def test_a_gpu_share_above_the_recommended_maximum_is_accepted(logged_in_api, submittable):
+    response = validate(logged_in_api, {**pipeline_request(), "gpu_share": 0.95})
 
-    response = validate(logged_in_api, pipeline_request())
+    assert response.status_code == 200, response.text
+
+
+def test_a_gpu_share_above_1_is_refused(logged_in_api, submittable):
+    response = validate(logged_in_api, {**pipeline_request(), "gpu_share": 1.1})
 
     assert response.status_code == 422
-    [problem] = response.json()["detail"]
-    assert problem["loc"] == ["gpu_share"]
-    assert "can never fit" in problem["msg"]
-
-
-def test_a_gpu_share_above_the_budget_passes_while_sharing_is_off(logged_in_api, submittable):
-    app = logged_in_api.app
-    update = {"gpu_budget": 0.4, "gpu_sharing": False}
-    app.state.settings = app.state.settings.model_copy(update=update)
-
-    assert validate(logged_in_api, pipeline_request()).status_code == 200
+    assert response.json()["detail"][0]["loc"] == ["gpu_share"]

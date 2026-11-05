@@ -121,6 +121,22 @@ def test_restart_restarts_the_endpoint_and_prints_its_url(logged_in, fake_api):
     assert f"OpenAI base URL: {URL}\n" in result.output
 
 
+def test_restart_sends_a_new_gpu_share(logged_in, fake_api):
+    path = api_paths.RESTART_ENDPOINT.format(name="chat")
+    fake_api.answers[path] = (200, {**ENDPOINT, "status": "pending"})
+
+    result = mlp_endpoints("restart", "chat", "--gpu-memory-utilization", "0.6")
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received == [(path, {"gpu_memory_utilization": 0.6})]
+
+
+def test_the_restart_help_explains_the_gpu_share(logged_in):
+    result = mlp_endpoints("restart", "--help")
+
+    assert "Too low and it fails at" in " ".join(result.output.split())
+
+
 def test_restarting_a_running_endpoint_says_why_it_was_refused(logged_in, fake_api):
     detail = "Endpoint chat is running; stop it first"
     fake_api.answers[api_paths.RESTART_ENDPOINT.format(name="chat")] = (409, {"detail": detail})

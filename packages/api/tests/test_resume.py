@@ -60,9 +60,9 @@ def saved_checkpoint(api, pipeline_id, phase_index):
     api.app.state.object_store.objects[key] = CHECKPOINT
 
 
-def resume(api, pipeline_id, secrets=None):
+def resume(api, pipeline_id, secrets=None, **shares):
     path = api_paths.RESUME_PIPELINE.format(id=pipeline_id)
-    return api.post(path, json={"secrets": secrets or {}})
+    return api.post(path, json={"secrets": secrets or {}, **shares})
 
 
 def parameters(task) -> dict:
@@ -107,6 +107,72 @@ def test_resume_skips_finished_phases_and_continues_the_failed_one_from_its_chec
     stored = pipeline(logged_in_api, resumed).json()
     assert stored["resumed_from"] == failed
     assert stored["request"] == pipeline(logged_in_api, failed).json()["request"]
+
+
+def test_resume_with_a_new_gpu_share_stores_it_and_keeps_the_checkpoint(
+    logged_in_api, pairs, cluster
+):
+    failed = failed_pipeline(logged_in_api)
+    registered_phase(logged_in_api, failed, 0, 1)
+    saved_checkpoint(logged_in_api, failed, 1)
+
+    response = resume(logged_in_api, failed, gpu_share=0.7)
+
+    assert response.status_code == 202, response.text
+    stored = pipeline(logged_in_api, response.json()["id"]).json()
+    assert stored["request"]["gpu_share"] == 0.7
+    assert stored["gpu_shares"] == {"finetune": 0.7}
+    finetune = parameters(tasks(cluster)["finetune"])
+    assert finetune["resume_checkpoint"] == f"checkpoints/{failed}/1/"
+    assert finetune["previous_model_version"] == "model:qwen-sft@1"
+    # The failed Pipeline's own stays as it ran.
+    assert pipeline(logged_in_api, failed).json()["request"]["gpu_share"] != 0.7
+
+
+def test_resume_without_new_shares_keeps_the_stored_ones(logged_in_api):
+    failed = failed_pipeline(logged_in_api, {**pipeline_request(), "gpu_share": 0.4})
+
+    response = resume(logged_in_api, failed)
+
+    assert pipeline(logged_in_api, response.json()["id"]).json()["gpu_shares"] == {"finetune": 0.4}
+
+
+def test_resume_with_a_new_serving_share_stores_it_and_keeps_the_stages_other_options(
+    logged_in_api,
+):
+    failed = failed_pipeline(logged_in_api, evaluating_with_serving())
+
+    response = resume(logged_in_api, failed, serving_shares={"evaluate": 0.45})
+
+    assert response.status_code == 202, response.text
+    stored = pipeline(logged_in_api, response.json()["id"]).json()
+    serving = stored["request"]["evaluate"]["serving"]
+    assert serving["gpu_memory_utilization"] == 0.45
+    assert serving["max_model_len"] == 4096
+
+
+def test_resume_may_go_above_the_recommended_maximum(logged_in_api):
+    failed = failed_pipeline(logged_in_api, pipeline_request())
+
+    assert resume(logged_in_api, failed, gpu_share=0.95).status_code == 202
+
+
+@pytest.mark.parametrize(
+    "shares", [{"gpu_share": 1.1}, {"gpu_share": 0}, {"serving_shares": {"evaluate": 1.1}}]
+)
+def test_resume_with_a_share_that_cant_be_is_refused(logged_in_api, shares):
+    failed = failed_pipeline(logged_in_api, evaluating_with_serving())
+
+    assert resume(logged_in_api, failed, **shares).status_code == 422
+
+
+def test_resume_refuses_a_serving_share_for_a_stage_that_serves_nothing(logged_in_api):
+    failed = failed_pipeline(logged_in_api, pipeline_request())
+
+    response = resume(logged_in_api, failed, serving_shares={"evaluate": 0.4})
+
+    assert response.status_code == 422
+    assert "evaluate" in response.json()["detail"]
 
 
 def store_request_with_quantization(api, pipeline_id):

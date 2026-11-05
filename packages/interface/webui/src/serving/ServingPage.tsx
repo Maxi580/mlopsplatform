@@ -24,6 +24,7 @@ import {
 } from "../apiPaths";
 import { ENDPOINT_LIST_REFRESH_MS } from "../config";
 import { NO_CATALOG } from "../fields/catalog";
+import GpuShareField from "../fields/GpuShareField";
 import ModelPicker from "../fields/ModelPicker";
 import { formatShare } from "../fields/numbers";
 import FailureRow from "../pipelines/FailureRow";
@@ -68,9 +69,10 @@ export default function ServingPage() {
     endpoints.reload();
   }
 
-  async function restart(name: string) {
+  async function restart(name: string, gpuShare: string) {
     try {
-      await callApi(restartEndpoint(name), {});
+      const body = gpuShare ? { gpu_memory_utilization: Number(gpuShare) } : {};
+      await callApi(restartEndpoint(name), body);
       setNotice({ text: `Restarted ${name}; it answers once vLLM is ready`, failed: false });
     } catch (failure) {
       setNotice({ text: errorMessage(failure), failed: true });
@@ -243,11 +245,12 @@ function EndpointRow({
   judgeRunning: boolean;
   onJudging: (text: string, failed: boolean) => Promise<void>;
   onStop: (name: string) => void;
-  onRestart: (name: string) => void;
+  onRestart: (name: string, gpuShare: string) => void;
   onRefreshKey: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
   const [judgingOpen, setJudgingOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const stopped = endpoint.status === "stopped";
   // The API starts and stops the Judge as judging is switched, and only it calls the Judge.
   const managed = endpoint.judge;
@@ -306,13 +309,33 @@ function EndpointRow({
           <td />
         ) : (
           <EndpointActions
-            {...{ endpoint, judgingOpen, onRestart, onStop, onDelete }}
+            {...{ endpoint, judgingOpen, restarting, onStop, onDelete }}
             onToggleJudging={() => setJudgingOpen(!judgingOpen)}
+            onToggleRestarting={() => setRestarting(!restarting)}
           />
         )}
       </tr>
       {endpoint.failure && (
-        <FailureRow failure={endpoint.failure} columns={11} logUrl={endpointLog(endpoint.name)} />
+        <FailureRow
+          failure={endpoint.failure}
+          columns={11}
+          // A stopped one has no pod to read a log from.
+          logUrl={stopped ? undefined : endpointLog(endpoint.name)}
+        />
+      )}
+      {restarting && (
+        <tr>
+          <td colSpan={11}>
+            <RestartForm
+              endpoint={endpoint}
+              onRestart={(gpuShare) => {
+                setRestarting(false);
+                onRestart(endpoint.name, gpuShare);
+              }}
+              onClose={() => setRestarting(false)}
+            />
+          </td>
+        </tr>
       )}
       {judgingOpen && (
         <tr className="judging-open">
@@ -332,16 +355,18 @@ function EndpointRow({
 function EndpointActions({
   endpoint,
   judgingOpen,
+  restarting,
   onToggleJudging,
+  onToggleRestarting,
   onStop,
-  onRestart,
   onDelete,
 }: {
   endpoint: Endpoint;
   judgingOpen: boolean;
+  restarting: boolean;
   onToggleJudging: () => void;
+  onToggleRestarting: () => void;
   onStop: (name: string) => void;
-  onRestart: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
   const stopped = endpoint.status === "stopped";
@@ -359,7 +384,8 @@ function EndpointActions({
         <button
           type="button"
           className="button ghost small"
-          onClick={() => onRestart(endpoint.name)}
+          aria-expanded={restarting}
+          onClick={onToggleRestarting}
         >
           <RotateCcw size={14} /> Restart
         </button>
@@ -381,6 +407,47 @@ function EndpointActions({
         </button>
       )}
     </td>
+  );
+}
+
+/** A new GPU Share to restart on, or the stored one if left empty. */
+function RestartForm({
+  endpoint,
+  onRestart,
+  onClose,
+}: {
+  endpoint: Endpoint;
+  onRestart: (gpuShare: string) => void;
+  onClose: () => void;
+}) {
+  const [gpuShare, setGpuShare] = useState("");
+  return (
+    <form
+      className="serve-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onRestart(gpuShare.trim());
+      }}
+    >
+      <div className="field-grid">
+        <GpuShareField
+          id={`${endpoint.name}-gpu-share`}
+          label="GPU Share"
+          name="gpu_memory_utilization"
+          stored={endpoint.gpu_share}
+          value={gpuShare}
+          onChange={setGpuShare}
+        />
+      </div>
+      <div className="serve-actions">
+        <button type="button" className="button ghost small" onClick={onClose}>
+          Keep as it is
+        </button>
+        <button type="submit" className="button primary small">
+          <RotateCcw size={14} /> Restart {endpoint.name}
+        </button>
+      </div>
+    </form>
   );
 }
 

@@ -166,7 +166,7 @@ def validate_pipeline_request(
         except ValueError as reason:
             errors.append(error(["evaluate", "model"], str(reason)))
 
-    # 11. Every GPU Share, calculated from the pinned models unless entered, and able to fit.
+    # 11. Every GPU Share, calculated from the pinned models unless entered, and at most 1.
     if not errors:
         resolve_gpu_shares(
             request,
@@ -177,7 +177,7 @@ def validate_pipeline_request(
             object_store,
             settings,
         )
-    errors += gpu_budget_errors(request, settings)
+    errors += gpu_share_errors(request, settings)
 
     if errors:
         return None, errors
@@ -234,7 +234,7 @@ def multi_process_errors(request: PipelineRequest, settings: Settings) -> list[d
     return errors
 
 
-def gpu_budget_errors(request: PipelineRequest, settings: Settings) -> list[dict]:
+def gpu_share_errors(request: PipelineRequest, settings: Settings) -> list[dict]:
     """An error for each GPU Share a step of this request holds that can never fit."""
     # 1. The Pipeline's, empty if no step holds it or other errors stopped its calculation.
     shares = [(["gpu_share"], request.gpu_share)]

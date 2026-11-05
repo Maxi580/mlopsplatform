@@ -40,41 +40,19 @@ def read_gpus() -> list[dict]:
 
 
 def gpu_readings(nvidia_smi_csv: str, meminfo: str) -> list[dict]:
-    """A reading per GPU in nvidia-smi's CSV; memory it doesn't report comes from meminfo."""
+    """A reading per line of nvidia-smi's CSV; memory it doesn't report is the machine's."""
     readings = []
-    for line in nvidia_smi_csv.splitlines():
-        # The name comes last, as it may hold a comma.
-        index, total, used, free, utilization, name = line.split(", ", 5)
-        shared = any(value in config.NVIDIA_SMI_NOT_REPORTED for value in (total, used, free))
-        readings.append(
-            {
-                "index": int(index),
-                "name": name,
-                **(system_memory(meminfo) if shared else gpu_memory(total, used, free)),
-                "shared_with_system": shared,
-                "utilization_percent": int(utilization) if utilization.isdigit() else None,
-            }
-        )
+    for total_mib in nvidia_smi_csv.splitlines():
+        shared = total_mib in config.NVIDIA_SMI_NOT_REPORTED
+        memory = system_memory_bytes(meminfo) if shared else int(total_mib) * 2**20
+        readings.append({"memory_total_bytes": memory, "shared_with_system": shared})
     return readings
 
 
-def gpu_memory(total_mib: str, used_mib: str, free_mib: str) -> dict:
-    return {
-        "memory_total_bytes": int(total_mib) * 2**20,
-        "memory_used_bytes": int(used_mib) * 2**20,
-        "memory_free_bytes": int(free_mib) * 2**20,
-    }
-
-
-def system_memory(meminfo: str) -> dict:
+def system_memory_bytes(meminfo: str) -> int:
     """What a GPU sharing the machine's memory, as the GB10 does, has of it."""
     kibibytes = {
         key: int(value.split()[0])
         for key, value in (line.split(":") for line in meminfo.splitlines())
     }
-    total, available = kibibytes["MemTotal"], kibibytes["MemAvailable"]
-    return {
-        "memory_total_bytes": total * 2**10,
-        "memory_used_bytes": (total - available) * 2**10,
-        "memory_free_bytes": available * 2**10,
-    }
+    return kibibytes["MemTotal"] * 2**10

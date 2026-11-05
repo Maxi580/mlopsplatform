@@ -10,6 +10,7 @@ export const DATASETS = "/datasets";
 export const PIPELINES = "/pipelines";
 export const pipelineById = (id: number) => `/pipelines/${id}`;
 export const cancelPipeline = (id: number) => `${pipelineById(id)}/cancel`;
+export const resumePipeline = (id: number) => `${pipelineById(id)}/resume`;
 export const datasetVersions = (name: string) => `/datasets/${name}/versions`;
 export const datasetVersion = (name: string, version: number) =>
   `/datasets/${name}/versions/${version}`;
@@ -24,7 +25,7 @@ export const modelVersionFiles = (name: string, version: number) =>
 export const MODEL_UPLOADS = "/models/uploads";
 export const modelUploadComplete = (id: string) => `/models/uploads/${id}/complete`;
 export const STORAGE = "/storage";
-export const STORAGE_GPUS = "/storage/gpus";
+export const GPU_RESERVED = "/gpus/reserved";
 export const MODEL_CACHE = "/cache";
 export const CHECKPOINTS = "/checkpoints";
 export const checkpoint = (pipelineId: number, phaseIndex: number) =>

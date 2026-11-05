@@ -70,7 +70,7 @@ def reconcile_pipelines(state) -> None:
             values["failure"] = (
                 config.RUN_DELETED_FAILURE
                 if run is None
-                else failure_reason(cluster.failed_step_log(row.kubeflow_run_id))
+                else failure_reason(cluster.failed_step_log(row.kubeflow_run_id), "Resume")
             )
         waiting = run is not None and not finished
         if waiting and cluster.is_waiting_for_gpu(row.kubeflow_run_id, row.id):

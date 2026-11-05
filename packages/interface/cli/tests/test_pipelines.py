@@ -237,6 +237,41 @@ def test_resume_sends_fresh_secrets_and_prints_the_new_pipeline(
     assert "resumes Pipeline 3" in result.output
 
 
+def test_resume_sends_new_gpu_shares(logged_in, home, fake_api, platform_ca):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE_WITHOUT_SECRETS)
+    path = api_paths.RESUME_PIPELINE.format(id=3)
+    fake_api.answers[path] = (202, {"id": 8})
+
+    result = mlp(
+        "resume", "3", "--gpu-share", "0.7", "--evaluate-gpu-share", "0.4", input=f"{OTHER_TOKEN}\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake_api.received == [
+        (
+            path,
+            {
+                "secrets": {"hf_token": OTHER_TOKEN},
+                "gpu_share": 0.7,
+                "serving_shares": {"evaluate": 0.4},
+            },
+        )
+    ]
+
+
+def test_resume_sends_a_gpu_share_of_zero_for_the_api_to_refuse(
+    logged_in, home, fake_api, platform_ca
+):
+    write_profile(home, fake_api.url, platform_ca, **PROFILE_WITHOUT_SECRETS)
+    path = api_paths.RESUME_PIPELINE.format(id=3)
+    fake_api.answers[path] = (422, {"detail": "gpu_share must be above 0"})
+
+    result = mlp("resume", "3", "--gpu-share", "0", input=f"{OTHER_TOKEN}\n")
+
+    assert result.exit_code == 1
+    assert fake_api.received[0][1]["gpu_share"] == 0
+
+
 def test_run_dry_run_prints_the_downloads_without_submitting(
     logged_in, home, fake_api, platform_ca
 ):

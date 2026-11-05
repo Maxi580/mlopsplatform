@@ -41,7 +41,7 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
         # 2. What vLLM loads, pinned, on a GPU Share that can fit, with room in the Model Cache.
         spec, model = pin_endpoint_model(state, spec)
         spec = with_calculated_gpu_share(state, spec)
-        refuse_gpu_share_over_budget(state, spec)
+        refuse_impossible_gpu_share(state, spec)
         make_room_for_base_models(state, model)
 
         # 3. Its row first, so in-use checks and the reconciler know every Deployment.
@@ -65,8 +65,8 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
         return create_endpoint_objects(state, name, endpoint_uuid, spec, model, gpus)
 
 
-def restart_endpoint(state, name: str) -> dict:
-    """The stopped or failed Endpoint at its URL and key again, pending until vLLM is ready."""
+def restart_endpoint(state, name: str, gpu_share: float | None = None) -> dict:
+    """The stopped or failed Endpoint at its URL and key, on a new GPU Share if given; pending."""
     with endpoints_lock:
         # 1. Only one that doesn't run; older databases may have several rows, the newest counts.
         found = find_endpoint(state.engine, name)
@@ -75,9 +75,11 @@ def restart_endpoint(state, name: str) -> dict:
         if found.status in (*config.ENDPOINT_STARTING_STATUSES, "running"):
             raise EndpointConflict(f"Endpoint {name} is {found.status}; stop it first")
 
-        # 2. What vLLM loads from the pinned spec, on its stored GPU Share, with cache room.
+        # 2. What vLLM loads from the pinned spec, on the new or stored GPU Share, with cache room.
         stored = EndpointSpec.model_validate(without_stored_quantization(found.spec))
-        refuse_gpu_share_over_budget(state, stored)
+        if gpu_share is not None:
+            stored = stored.model_copy(update={"gpu_memory_utilization": gpu_share})
+        refuse_impossible_gpu_share(state, stored)
         spec, model = pin_endpoint_model(state, stored)
         make_room_for_base_models(state, model)
 
@@ -88,7 +90,12 @@ def restart_endpoint(state, name: str) -> dict:
             connection.execute(
                 update(endpoint)
                 .where(endpoint.c.id == found.id)
-                .values(status="pending", gpus=gpus, failure=None)
+                .values(
+                    status="pending",
+                    gpus=gpus,
+                    failure=None,
+                    spec=spec.model_dump(mode="json", exclude_defaults=True),
+                )
             )
 
         # 4. Its Kubernetes objects under the same UUID.
@@ -118,7 +125,7 @@ def with_calculated_gpu_share(state, spec: EndpointSpec) -> EndpointSpec:
     return with_gpu_share(spec, memory, find_gpu(state.cluster), gpus, state.settings)
 
 
-def refuse_gpu_share_over_budget(state, spec: EndpointSpec) -> None:
+def refuse_impossible_gpu_share(state, spec: EndpointSpec) -> None:
     problem = state.settings.gpu_share_problem(serving_share(spec))
     if problem:
         raise ValueError(problem)
@@ -133,7 +140,7 @@ def make_room_for_base_models(state, model: EndpointModel) -> None:
 def preview_endpoint(state, spec: EndpointSpec) -> EndpointSpec:
     """The spec as a start would pin it, its GPU Share included; ValueError if it can't start."""
     spec = with_calculated_gpu_share(state, pin_endpoint_model(state, spec)[0])
-    refuse_gpu_share_over_budget(state, spec)
+    refuse_impossible_gpu_share(state, spec)
     return spec
 
 
@@ -198,9 +205,6 @@ def delete_endpoint(state, name: str) -> None:
         with engine.begin() as connection:
             named = endpoint.c.name == name
             deleted = connection.execute(delete(endpoint).where(named, ~not_stopped)).rowcount
-            # Inside the transaction, so an Endpoint whose log stays can be deleted again.
-            if deleted:
-                state.object_store.delete(endpoint_log_key(name))
         if deleted:
             delete_endpoint_history(state, name, datetime.now(UTC))
             return
@@ -218,7 +222,7 @@ def list_endpoints(engine: Engine, domain: str) -> list[dict]:
 
 
 def reconcile_endpoints(state) -> None:
-    """Copies each Endpoint's pod state into its status, freeing a crashed one; gone is stopped."""
+    """Each Endpoint's status from its pods: gone is stopped, failed lasts until one is ready."""
     engine, cluster = state.engine, state.cluster
     with endpoints_lock:
         with engine.connect() as connection:
@@ -226,29 +230,22 @@ def reconcile_endpoints(state) -> None:
         for row in rows:
             status = cluster.endpoint_state(row.name) or "stopped"
             if status == config.ENDPOINT_CRASHING:
-                free_crashed_endpoint(state, row.name)
-                status = "failed"
-            set_status(engine, row.name, status)
+                fail_crashed_endpoint(state, row.name)
+            elif status == "running":
+                set_status(engine, row.name, status, failure=None)
+            # Kubernetes keeps retrying, and one between attempts hasn't stopped failing.
+            elif row.status != "failed" or status == "stopped":
+                set_status(engine, row.name, status)
 
 
-def free_crashed_endpoint(state, name: str) -> None:
-    """Saves its logs and failure, then frees its GPU Share; a failure is retried next round."""
+def fail_crashed_endpoint(state, name: str) -> None:
+    """Marks it failed and says why; a log that can't be read is asked for again next round."""
+    values = {}
     try:
-        # 1. Its logs, which are lost with its pods.
-        log = state.cluster.endpoint_logs(name)
-        state.object_store.write(endpoint_log_key(name), log.encode())
-
-        # 2. Why it crashed.
-        set_status(state.engine, name, "failed", failure=failure_reason(log))
-
-        # 3. Its GPU Share, for what waits.
-        state.cluster.scale_endpoint_to_zero(name)
+        values["failure"] = failure_reason(state.cluster.endpoint_logs(name), "Restart")
     except Exception:
-        logger.exception("Freeing crashed Endpoint %s failed", name)
-
-
-def endpoint_log_key(name: str) -> str:
-    return config.ENDPOINT_LOG_KEY.format(name=name)
+        logger.exception("Reading the log of crashed Endpoint %s failed", name)
+    set_status(state.engine, name, "failed", **values)
 
 
 def endpoint_summary(row, domain: str) -> dict:

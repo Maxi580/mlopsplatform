@@ -36,7 +36,7 @@ The `sweep` Stage: a hyperparameter search over one Phase configuration. Its out
 One training run within a Sweep. Its weights are thrown away.
 
 **Endpoint**:
-A running, OpenAI-compatible server for one model (a Model Version or a Base Model), started by a user from the Serving tab or the CLI. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it. One that keeps crashing is scaled down to free its GPU Share and stays failed, its logs saved until it is deleted. A stopped or failed one can be restarted under the same name, URL and Endpoint Key until it is deleted.
+A running, OpenAI-compatible server for one model (a Model Version or a Base Model), started by a user from the Serving tab or the CLI. It outlives its Pipeline and runs until its Owner stops it or a platform upgrade resets it. One that keeps crashing is failed until an attempt becomes ready, keeping its GPU Share and its pod while Kubernetes retries. A stopped or failed one can be restarted under the same name, URL and Endpoint Key, on a new GPU Share if entered, until it is deleted.
 _Avoid_: Deployment, served model, inference service
 
 **Endpoint Key**:
@@ -103,7 +103,7 @@ An MLflow run: the tracked record of params, metrics and artifacts. Used for not
 _Avoid_: Execution, experiment (when meaning a single run)
 
 **GPU Share**:
-The share of a GPU's memory, not its compute, that a GPU workload holds while it runs; whatever fits runs, the rest waits, and nothing is evicted. An Endpoint's, the Judge's and the vLLM of a `distill` or `evaluate` step's is its `gpu_memory_utilization`; every other GPU step's and Phase's is its Pipeline's `gpu_share`. Unless the user enters it, it is calculated from the model and the GPU when the work is submitted, and kept from then on.
+The share of a GPU's memory, not its compute, that a GPU workload holds while it runs; whatever fits runs, the rest waits, and nothing is evicted. An Endpoint's, the Judge's and the vLLM of a `distill` or `evaluate` step's is its `gpu_memory_utilization`; every other GPU step's and Phase's is its Pipeline's `gpu_share`. Unless the user enters it, it is roughly calculated from the model and the GPU when the work is submitted, and kept until the user enters another on a Restart or Resume. Too small, the work fails with a message saying so.
 _Avoid_: Fraction, reservation
 
 ### Models and data

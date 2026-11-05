@@ -25,7 +25,6 @@ LLAMA_CONFIG = {
     "torch_dtype": "bfloat16",
 }
 LLAMA_BYTES = 16060522496
-# A KV cache of a few KiB, so an Adapter's bytes can tip a share over a slice.
 TINY_CONFIG = {"num_hidden_layers": 1, "num_attention_heads": 1, "hidden_size": 1}
 
 
@@ -77,13 +76,15 @@ def test_a_shared_memory_gpu_counts_its_reserve(logged_in_api, llama, cluster):
     assert share_of(logged_in_api) == 0.25
 
 
-def test_an_endpoint_that_barely_fits_is_served_in_fp8(logged_in_api, llama, cluster):
-    with_gpu(cluster, 20)
+def test_an_endpoint_that_doesnt_fit_runs_at_the_recommended_maximum_as_it_is(
+    logged_in_api, llama, cluster
+):
+    with_gpu(cluster, 12)
 
-    start(logged_in_api, PINNED_LLAMA)
+    assert start(logged_in_api, PINNED_LLAMA).status_code == 201
 
-    assert share_of(logged_in_api) == 0.95
-    assert contains(vllm_args(cluster), ["--kv-cache-dtype", "fp8"])
+    assert share_of(logged_in_api) == 0.85
+    assert not contains(vllm_args(cluster), ["--kv-cache-dtype", "fp8"])
 
 
 def test_a_users_share_always_wins(logged_in_api, llama, cluster):
@@ -92,16 +93,6 @@ def test_a_users_share_always_wins(logged_in_api, llama, cluster):
     start(logged_in_api, PINNED_LLAMA, gpu_memory_utilization=1.0)
 
     assert share_of(logged_in_api) == 1.0
-    assert not contains(vllm_args(cluster), ["--kv-cache-dtype", "fp8"])
-
-
-def test_a_calculated_share_above_the_budget_runs_at_the_budget(logged_in_api, llama, cluster):
-    logged_in_api.app.state.settings.gpu_budget = 0.5
-    with_gpu(cluster, 24)
-
-    assert start(logged_in_api, PINNED_LLAMA).status_code == 201
-
-    assert share_of(logged_in_api) == 0.5
 
 
 def test_a_restart_keeps_the_share_even_on_another_gpu(logged_in_api, llama, cluster):
@@ -127,7 +118,7 @@ def test_a_model_without_an_index_takes_its_one_weights_file(logged_in_api, hugg
     assert share_of(logged_in_api) == 0.85
 
 
-def test_a_model_without_weights_to_measure_keeps_the_fixed_share(
+def test_a_model_without_weights_to_measure_keeps_the_fixed_share_but_passes_its_length(
     logged_in_api, hugging_face, cluster
 ):
     on_the_hub(hugging_face, LLAMA, 0, LLAMA_CONFIG)
@@ -137,7 +128,20 @@ def test_a_model_without_weights_to_measure_keeps_the_fixed_share(
     start(logged_in_api, PINNED_LLAMA)
 
     assert share_of(logged_in_api) == 0.3
-    assert not contains(vllm_args(cluster), ["--max-model-len", "8192"])
+    assert contains(vllm_args(cluster), ["--max-model-len", "8192"])
+
+
+def test_a_model_without_a_config_is_sized_but_passes_no_length(
+    logged_in_api, hugging_face, cluster
+):
+    on_the_hub(hugging_face, LLAMA, LLAMA_BYTES, LLAMA_CONFIG)
+    del hugging_face.files[LLAMA]["config.json"]
+    with_gpu(cluster, 125, shared_with_system=True)
+
+    start(logged_in_api, PINNED_LLAMA)
+
+    assert share_of(logged_in_api) == 0.25
+    assert "--max-model-len" not in vllm_args(cluster)
 
 
 def test_an_unknown_gpu_size_keeps_the_fixed_share_but_passes_the_length(
@@ -163,9 +167,9 @@ def test_a_failing_gpu_reporter_keeps_the_fixed_share(logged_in_api, llama, clus
 def test_an_adapter_adds_its_file_to_its_base(
     logged_in_api, hugging_face, model_registry, object_store, cluster
 ):
-    # 2 GiB + 1.1 MiB + about 0.3 MiB of KV cache just fits 80%; the Adapter's 1.1 MiB doesn't.
+    # 2 GiB + 1.5 MiB just fits 80%; the Adapter's own 1.5 MiB doesn't.
     on_the_hub(hugging_face, LLAMA, 2**20, TINY_CONFIG)
-    with_gpu(cluster, (2 + 2 / 1024) / 0.8)
+    with_gpu(cluster, (2 + 2.25 / 1024) / 0.8)
     prefix = register_adapter(model_registry, object_store, "sft", PINNED_LLAMA)
     object_store.buckets["mlflow"][f"{prefix}adapter_model.safetensors"] = b"a" * 2**20
 
@@ -191,7 +195,7 @@ def test_a_quantized_model_counts_its_quantized_size(logged_in_api, hugging_face
 
     start(logged_in_api, PINNED_LLAMA)
 
-    assert share_of(logged_in_api) == 0.55
+    assert share_of(logged_in_api) == 0.5
     assert contains(vllm_args(cluster), ["--max-model-len", "32768"])
 
 
@@ -217,14 +221,12 @@ def test_the_preview_says_what_a_start_would_pin_and_starts_nothing(logged_in_ap
 
 
 def test_the_preview_refuses_what_a_start_would(logged_in_api, llama, cluster):
-    logged_in_api.app.state.settings.gpu_budget = 0.5
-    answer = logged_in_api.post(
-        api_paths.PREVIEW_ENDPOINT, json={"model": PINNED_LLAMA, "gpu_memory_utilization": 0.6}
+    above = logged_in_api.post(
+        api_paths.PREVIEW_ENDPOINT, json={"model": PINNED_LLAMA, "gpu_memory_utilization": 1.1}
     )
     unknown = logged_in_api.post(api_paths.PREVIEW_ENDPOINT, json={"model": "hf:nobody/nothing"})
 
-    assert answer.status_code == 422
-    assert "can never fit" in answer.json()["detail"]
+    assert above.status_code == 422
     assert unknown.status_code == 422
 
 
@@ -338,16 +340,12 @@ def test_a_users_serving_share_wins(logged_in_api, base_model_files, cluster):
     assert validated(logged_in_api, request)["gpu_shares"]["evaluate"] == 0.6
 
 
-def test_a_share_above_the_budget_is_refused_only_if_the_user_entered_it(
+def test_a_pipelines_calculated_share_stops_at_the_recommended_maximum(
     logged_in_api, base_model_files, cluster
 ):
     with_gpu(cluster, 24)
-    logged_in_api.app.state.settings = logged_in_api.app.state.settings.model_copy(
-        update={"gpu_budget": 0.5}
-    )
 
-    assert validated(logged_in_api, pipeline_request())["request"]["gpu_share"] == 0.5
-    assert validate(logged_in_api, {**pipeline_request(), "gpu_share": 0.6}).status_code == 422
+    assert validated(logged_in_api, pipeline_request())["request"]["gpu_share"] == 0.85
 
 
 def test_a_teacher_beside_the_student_counts(

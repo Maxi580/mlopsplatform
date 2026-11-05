@@ -96,6 +96,10 @@ code,
   margin: 4px 0 0;
 }
 
+.field-note {
+  font-size: 0.85em;
+}
+
 /* Layout */
 
 .shell {

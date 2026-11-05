@@ -92,9 +92,8 @@ def step_share(
     settings: Settings,
 ) -> float | None:
     """The GPU Share of one training step, or None if a size is unknown."""
-    memory = memory_of(model)
-    teacher_memory = memory_of(teacher) if teacher else None
-    if gpu is None or memory is None or (teacher and teacher_memory is None):
+    weights_bytes = memory_of(model).weights_bytes
+    teacher_bytes = memory_of(teacher).weights_bytes if teacher else 0
+    if gpu is None or weights_bytes is None or teacher_bytes is None:
         return None
-    teacher_bytes = teacher_memory.weights_bytes if teacher_memory else 0
-    return training_gpu_share(memory.weights_bytes, method, teacher_bytes, colocated, gpu, settings)
+    return training_gpu_share(weights_bytes, method, teacher_bytes, colocated, gpu, settings)

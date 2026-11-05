@@ -13,6 +13,7 @@ from mlp_api import (
     checkpoints_routes,
     datasets_routes,
     endpoints_routes,
+    gpu_usage_routes,
     health_routes,
     judge_routes,
     model_cache_routes,
@@ -74,6 +75,7 @@ app.include_router(base_models_routes.router)
 app.include_router(checkpoints_routes.router)
 app.include_router(datasets_routes.router)
 app.include_router(endpoints_routes.router)
+app.include_router(gpu_usage_routes.router)
 app.include_router(health_routes.router)
 app.include_router(judge_routes.router)
 app.include_router(model_cache_routes.router)

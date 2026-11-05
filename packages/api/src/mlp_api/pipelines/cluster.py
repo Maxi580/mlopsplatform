@@ -202,10 +202,12 @@ class Cluster:
             if error.status == 404:
                 return None
             raise
-        # Only a crashed Endpoint is scaled down.
-        if deployment.spec.replicas == 0:
-            return "failed"
-        pods = self.endpoint_pods(name)
+        # A restart's old pods are cleaned up only a moment after their Deployment is deleted.
+        pods = [
+            pod
+            for pod in self.endpoint_pods(name)
+            if pod.metadata.creation_timestamp >= deployment.metadata.creation_timestamp
+        ]
         if any(is_ready(pod) for pod in pods):
             return "running"
         # Not on the first restart, as a machine reboot restarts containers too.
@@ -235,14 +237,6 @@ class Cluster:
                 for log in filter(None, dict.fromkeys(attempts)):
                     sections.append(f"--- {pod.metadata.name}/{container.name} ---\n{log}")
         return "\n".join(sections)
-
-    def scale_endpoint_to_zero(self, name: str) -> None:
-        """Frees its GPU Share; its Deployment and Service stay, so a restart finds them."""
-        client.AppsV1Api(self.kubernetes_client).patch_namespaced_deployment_scale(
-            config.ENDPOINT_OBJECT_NAME.format(name=name),
-            self.endpoint_environment.namespace,
-            {"spec": {"replicas": 0}},
-        )
 
     def endpoint_metrics(self, name: str) -> str:
         """vLLM's Prometheus metrics of the Endpoint, read through its Service."""

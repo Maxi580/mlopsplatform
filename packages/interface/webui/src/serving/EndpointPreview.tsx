@@ -3,11 +3,7 @@ import { formatShare } from "../fields/numbers";
 import { usePreview } from "../usePreview";
 
 // What a start would pin for the model and options.
-type Pinned = {
-  gpu_memory_utilization: number;
-  max_model_len: number | null;
-  kv_cache_dtype?: string | null;
-};
+type Pinned = { gpu_memory_utilization: number; max_model_len: number | null };
 
 /** The GPU Share and length the spec would run on; nothing until it names a servable model. */
 export default function EndpointPreview({ spec }: { spec?: Record<string, unknown> }) {
@@ -16,10 +12,8 @@ export default function EndpointPreview({ spec }: { spec?: Record<string, unknow
 }
 
 function pinnedSummary(pinned: Pinned): string {
-  const kvCacheDtype = pinned.kv_cache_dtype;
   return [
     `GPU Share ${formatShare(pinned.gpu_memory_utilization)}`,
     ...(pinned.max_model_len ? [`up to ${pinned.max_model_len} tokens`] : []),
-    ...(kvCacheDtype && kvCacheDtype !== "auto" ? [`KV cache in ${kvCacheDtype}`] : []),
   ].join(", ");
 }

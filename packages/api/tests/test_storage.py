@@ -28,65 +28,6 @@ def test_storage_requires_login(api):
     assert api.get(api_paths.STORAGE).status_code == 401
 
 
-def gpu_reading(index: int = 0) -> dict:
-    return {
-        "index": index,
-        "name": "NVIDIA GB10",
-        "memory_total_bytes": 128 * 2**30,
-        "memory_used_bytes": 32 * 2**30,
-        "memory_free_bytes": 96 * 2**30,
-        "shared_with_system": True,
-        "utilization_percent": None,
-    }
-
-
-def test_gpus_show_each_machines_readings_and_the_shares_reserved_on_it(logged_in_api, cluster):
-    cluster.gpu_readings = {"host": [gpu_reading()], "joined": [gpu_reading()]}
-    cluster.gpu_slices = {"host": 12, "joined": 3}
-
-    response = logged_in_api.get(api_paths.STORAGE_GPUS)
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "machines": [
-            {"name": "host", "reserved_percent": 60, "gpus": [gpu_reading()]},
-            {"name": "joined", "reserved_percent": 15, "gpus": [gpu_reading()]},
-        ]
-    }
-
-
-def test_a_machine_without_jobs_has_nothing_reserved(logged_in_api, cluster):
-    cluster.gpu_readings = {"host": [gpu_reading()]}
-
-    [machine] = logged_in_api.get(api_paths.STORAGE_GPUS).json()["machines"]
-
-    assert machine["reserved_percent"] == 0
-
-
-def test_whole_gpus_are_reserved_of_all_a_machines_gpus_while_sharing_is_off(
-    logged_in_api, cluster
-):
-    logged_in_api.app.state.settings.gpu_sharing = False
-    cluster.gpu_readings = {"host": [gpu_reading(0), gpu_reading(1)]}
-    cluster.gpu_slices = {"host": 1}
-
-    [machine] = logged_in_api.get(api_paths.STORAGE_GPUS).json()["machines"]
-
-    assert machine["reserved_percent"] == 50
-
-
-def test_a_machine_reporting_no_gpus_is_left_out(logged_in_api, cluster):
-    cluster.gpu_readings = {"empty": [], "host": [gpu_reading()]}
-
-    machines = logged_in_api.get(api_paths.STORAGE_GPUS).json()["machines"]
-
-    assert [machine["name"] for machine in machines] == ["host"]
-
-
-def test_gpus_require_login(api):
-    assert api.get(api_paths.STORAGE_GPUS).status_code == 401
-
-
 def test_an_earlier_versions_endpoint_table_gets_the_judging_columns(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'platform.db'}")
     with engine.begin() as connection:

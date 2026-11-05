@@ -199,6 +199,7 @@ UNSCHEDULABLE = {
 }
 READY = {"type": "Ready", "status": "True"}
 BACKING_OFF = {"waiting": {"reason": "CrashLoopBackOff"}}
+DEPLOYMENT_CREATED = "2026-11-05T12:00:00Z"
 
 
 def container(name="vllm", state=None, restarts=0) -> dict:
@@ -220,12 +221,15 @@ def log_answer(log: bytes | None) -> SimpleNamespace:
 
 
 def endpoint_cluster(
-    replicas=1, conditions=(), containers=(), init_containers=(), logs=None
+    conditions=(), containers=(), init_containers=(), logs=None, pod_created=DEPLOYMENT_CREATED
 ) -> Cluster:
-    """The Deployment at the replicas, one pod as given, and logs by (container, previous)."""
-    deployment = {"spec": {"replicas": replicas, "selector": {}, "template": {}}}
+    """The Deployment, one pod as given, and logs by (container, previous)."""
+    deployment = {
+        "metadata": {"creationTimestamp": DEPLOYMENT_CREATED},
+        "spec": {"selector": {}, "template": {}},
+    }
     pod = {
-        "metadata": {"name": "endpoint-chat-1"},
+        "metadata": {"name": "endpoint-chat-1", "creationTimestamp": pod_created},
         "status": {
             "conditions": list(conditions),
             "containerStatuses": list(containers),
@@ -264,10 +268,6 @@ def test_an_endpoint_unschedulable_for_another_reason_is_pending():
     assert endpoint_cluster(conditions=[other]).endpoint_state("chat") == "pending"
 
 
-def test_an_endpoint_at_zero_replicas_stays_failed():
-    assert endpoint_cluster(replicas=0).endpoint_state("chat") == "failed"
-
-
 def test_an_endpoint_with_its_gpu_share_that_is_loading_is_pending():
     assert endpoint_cluster(containers=[container()]).endpoint_state("chat") == "pending"
 
@@ -289,10 +289,14 @@ def test_an_endpoint_kubernetes_backs_off_restarting_is_crashing(failing):
     assert cluster.endpoint_state("chat") == config.ENDPOINT_CRASHING
 
 
-def test_scaling_an_endpoint_to_zero_keeps_its_deployment():
-    requests = kubernetes_requests(lambda cluster: cluster.scale_endpoint_to_zero("chat"))
+# Deleting a Deployment leaves its pods to be cleaned up a moment later.
+def test_a_pod_left_over_from_before_a_restart_doesnt_count():
+    cluster = endpoint_cluster(
+        containers=[container(state=BACKING_OFF, restarts=3)],
+        pod_created="2026-11-05T11:00:00Z",
+    )
 
-    assert requests == [("PATCH", "/apis/apps/v1/namespaces/mlp/deployments/endpoint-chat/scale")]
+    assert cluster.endpoint_state("chat") == "pending"
 
 
 def test_a_crashed_endpoints_log_has_every_container_oldest_attempt_first():

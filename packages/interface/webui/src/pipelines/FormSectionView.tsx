@@ -1,10 +1,11 @@
 import { Plus, Trash2, X } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
-import { REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE } from "../config";
+import { GPU_SHARE_FIELDS, REFERENCE_PLACEHOLDERS, REWARD_TEMPLATE } from "../config";
 import { BenchmarkIntro, BenchmarkResults } from "../fields/AccelerationBenchmark";
 import Combobox from "../fields/Combobox";
 import type { Catalog } from "../fields/catalog";
 import DatasetPicker from "../fields/DatasetPicker";
+import GpuShareNote from "../fields/GpuShareNote";
 import InfoBox from "../fields/InfoBox";
 import ModelPicker from "../fields/ModelPicker";
 import NumberInput from "../fields/NumberInput";
@@ -233,6 +234,7 @@ function FieldInput({
 }) {
   if (field.kind === "choices")
     return <ChoicesInput {...{ field, value, errors, benchmarks, onChange }} />;
+  const selectsGpuShare = GPU_SHARE_FIELDS.includes(lastPart(field.name));
   // A setting its Sweep tunes shows like one not set, saying why.
   const unsent = notSet || field.tuned;
   const unset = field.tuned
@@ -261,7 +263,9 @@ function FieldInput({
         <label className="field-label" htmlFor={field.name}>
           {field.title} <code>{lastPart(field.name)}</code>
         </label>
-        {field.description && <InfoBox id={`${field.name}-info`} text={field.description} />}
+        {field.description && !selectsGpuShare && (
+          <InfoBox id={`${field.name}-info`} text={field.description} />
+        )}
         {!!field.rowFormats?.length && (
           <InfoBox
             id={`${field.name}-formats`}
@@ -340,6 +344,7 @@ function FieldInput({
       {field.results && (
         <BenchmarkResults results={field.results} option={value} fallback={field.default} />
       )}
+      {selectsGpuShare && <GpuShareNote id={`${field.name}-info`} hint={field.description} />}
       <FieldErrors id={`${field.name}-error`} messages={errors} />
     </div>
   );

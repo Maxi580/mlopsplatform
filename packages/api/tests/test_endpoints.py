@@ -46,8 +46,8 @@ def stop(api, name="chat"):
     return api.post(api_paths.STOP_ENDPOINT.format(name=name))
 
 
-def restart(api, name="chat"):
-    return api.post(api_paths.RESTART_ENDPOINT.format(name=name))
+def restart(api, name="chat", **new):
+    return api.post(api_paths.RESTART_ENDPOINT.format(name=name), json=new or None)
 
 
 def endpoints(api) -> list[dict]:
@@ -336,16 +336,6 @@ def test_endpoints_are_listed_newest_first_and_follow_their_pod(
     assert listed[0]["owner"] == "shared"
 
 
-def test_an_endpoint_whose_vllm_keeps_crashing_is_failed(logged_in_api, qwen_on_the_hub, cluster):
-    start(logged_in_api)
-    cluster.endpoint_states["chat"] = "failed"
-
-    reconcile(logged_in_api)
-
-    [endpoint] = endpoints(logged_in_api)
-    assert endpoint["status"] == "failed"
-
-
 def test_a_start_kubernetes_refuses_leaves_no_objects_behind(
     logged_in_api, qwen_on_the_hub, cluster
 ):
@@ -529,10 +519,6 @@ def crash(api, cluster, log="Traceback\nValueError: no such tokenizer", name="ch
     reconcile(api)
 
 
-def saved_log(object_store, name="chat"):
-    return object_store.objects.get(config.ENDPOINT_LOG_KEY.format(name=name))
-
-
 def test_an_endpoint_held_back_for_a_gpu_shows_it(logged_in_api, qwen_on_the_hub, cluster):
     start(logged_in_api)
     cluster.endpoint_states["chat"] = "waiting for GPU"
@@ -542,91 +528,122 @@ def test_an_endpoint_held_back_for_a_gpu_shows_it(logged_in_api, qwen_on_the_hub
     assert [e["status"] for e in endpoints(logged_in_api)] == ["waiting for GPU"]
 
 
-def test_a_crashed_endpoint_saves_its_logs_frees_its_gpu_share_and_says_why(
-    logged_in_api, qwen_on_the_hub, cluster, object_store
+def test_a_crashed_endpoint_says_why_and_leaves_its_deployment_alone(
+    logged_in_api, qwen_on_the_hub, cluster
 ):
     start(logged_in_api)
+    manifests = cluster.endpoints["chat"]
 
     crash(logged_in_api, cluster)
 
     [found] = endpoints(logged_in_api)
     assert found["status"] == "failed"
     assert found["failure"] == "Traceback\nValueError: no such tokenizer"
-    assert saved_log(object_store) == b"Traceback\nValueError: no such tokenizer"
-    assert cluster.scaled_to_zero == ["chat"]
-    # Its Deployment and Service stay.
-    assert "chat" in cluster.endpoints
+    assert cluster.endpoints["chat"] is manifests
+    assert cluster.deleted_endpoints == []
 
 
-def test_a_crashed_endpoint_is_handled_once(logged_in_api, qwen_on_the_hub, cluster, object_store):
+@pytest.mark.parametrize("attempt", ["pending", config.WAITING_FOR_GPU])
+def test_a_failed_endpoint_stays_failed_while_a_later_attempt_loads(
+    logged_in_api, qwen_on_the_hub, cluster, attempt
+):
     start(logged_in_api)
     crash(logged_in_api, cluster)
-    # Its pods are gone with the scale to 0, so nothing is left to overwrite what was saved with.
-    cluster.logs.clear()
+    cluster.endpoint_states["chat"] = attempt
 
     reconcile(logged_in_api)
 
-    assert endpoints(logged_in_api)[0]["status"] == "failed"
-    assert saved_log(object_store) == b"Traceback\nValueError: no such tokenizer"
-    assert cluster.scaled_to_zero == ["chat"]
+    [found] = endpoints(logged_in_api)
+    assert found["status"] == "failed"
+    assert found["failure"] == "Traceback\nValueError: no such tokenizer"
 
 
-def test_an_endpoint_out_of_gpu_memory_gets_the_plain_message(
-    logged_in_api, qwen_on_the_hub, cluster, object_store
+def test_a_ready_attempt_is_running_and_clears_the_failure(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+    cluster.endpoint_states["chat"] = "running"
+
+    reconcile(logged_in_api)
+
+    [found] = endpoints(logged_in_api)
+    assert (found["status"], found["failure"]) == ("running", None)
+
+
+def test_a_later_crash_says_why_that_one_failed(logged_in_api, qwen_on_the_hub, cluster):
+    start(logged_in_api)
+    crash(logged_in_api, cluster)
+
+    crash(logged_in_api, cluster, "a new reason")
+
+    assert endpoints(logged_in_api)[0]["failure"] == "a new reason"
+
+
+def test_a_failed_endpoint_whose_deployment_disappeared_is_stopped(
+    logged_in_api, qwen_on_the_hub, cluster
 ):
     start(logged_in_api)
-    log = "torch.OutOfMemoryError: CUDA out of memory.\n  raised in worker\n"
+    crash(logged_in_api, cluster)
+    del cluster.endpoints["chat"]
 
-    crash(logged_in_api, cluster, log)
+    reconcile(logged_in_api)
 
-    assert endpoints(logged_in_api)[0]["failure"] == config.OUT_OF_MEMORY_FAILURE
-    assert saved_log(object_store) == log.encode()
+    assert endpoints(logged_in_api)[0]["status"] == "stopped"
 
 
-def test_a_crash_whose_log_cant_be_saved_keeps_its_share_and_tries_again(
-    logged_in_api, qwen_on_the_hub, cluster, object_store, monkeypatch
+def test_an_endpoint_too_small_for_its_model_is_told_to_restart_with_a_larger_share(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api)
+
+    crash(logged_in_api, cluster, "RuntimeError: No available memory for the cache blocks.\n")
+
+    assert endpoints(logged_in_api)[0]["failure"] == (
+        "This GPU Share is too small for the model. Restart with a larger one."
+    )
+
+
+def test_a_crash_whose_log_cant_be_read_is_failed_and_says_why_next_round(
+    logged_in_api, qwen_on_the_hub, cluster, monkeypatch
 ):
     start(logged_in_api)
     with monkeypatch.context() as down:
 
-        def refuse(key, content):
-            raise ConnectionError("SeaweedFS is down")
+        def refuse(name):
+            raise ConnectionError("the Kubernetes API is down")
 
-        down.setattr(object_store, "write", refuse)
+        down.setattr(cluster, "endpoint_logs", refuse)
         crash(logged_in_api, cluster)
 
-        assert cluster.scaled_to_zero == []
         assert endpoints(logged_in_api)[0]["status"] == "failed"
+        assert endpoints(logged_in_api)[0]["failure"] is None
 
     reconcile(logged_in_api)
 
-    assert cluster.scaled_to_zero == ["chat"]
-    assert saved_log(object_store) is not None
+    assert endpoints(logged_in_api)[0]["failure"] == "Traceback\nValueError: no such tokenizer"
 
 
-def test_a_failed_endpoint_keeps_its_log_readable(logged_in_api, qwen_on_the_hub, cluster):
+def test_the_log_link_reads_from_the_pod(logged_in_api, qwen_on_the_hub, cluster):
     start(logged_in_api)
     crash(logged_in_api, cluster)
+    cluster.logs["chat"] = "attempt 1\nattempt 2"
 
     response = logged_in_api.get(api_paths.ENDPOINT_LOG.format(name="chat"))
 
     assert response.status_code == 200, response.text
-    assert response.text == "Traceback\nValueError: no such tokenizer"
+    assert response.text == "attempt 1\nattempt 2"
     assert response.headers["content-type"].startswith("text/plain")
 
 
 @pytest.mark.parametrize("name", ["chat", "unknown"])
-def test_an_endpoint_that_did_not_crash_has_no_saved_log(
-    logged_in_api, qwen_on_the_hub, cluster, name
-):
+def test_with_no_pod_there_is_no_log(logged_in_api, qwen_on_the_hub, cluster, name):
     start(logged_in_api)
+    crash(logged_in_api, cluster)
+    stop(logged_in_api)
 
     assert logged_in_api.get(api_paths.ENDPOINT_LOG.format(name=name)).status_code == 404
 
 
-def test_a_stopped_endpoint_still_says_why_it_failed(
-    logged_in_api, qwen_on_the_hub, cluster, object_store
-):
+def test_a_stopped_endpoint_still_says_why_it_failed(logged_in_api, qwen_on_the_hub, cluster):
     start(logged_in_api)
     crash(logged_in_api, cluster)
 
@@ -635,7 +652,6 @@ def test_a_stopped_endpoint_still_says_why_it_failed(
     [found] = endpoints(logged_in_api)
     assert found["status"] == "stopped"
     assert found["failure"] is not None
-    assert saved_log(object_store) is not None
 
 
 def test_a_restart_clears_the_failure(logged_in_api, qwen_on_the_hub, cluster):
@@ -645,36 +661,58 @@ def test_a_restart_clears_the_failure(logged_in_api, qwen_on_the_hub, cluster):
 
     assert restart(logged_in_api).json()["failure"] is None
     assert endpoints(logged_in_api)[0]["failure"] is None
-    assert logged_in_api.get(api_paths.ENDPOINT_LOG.format(name="chat")).status_code == 404
 
 
-def test_deleting_an_endpoint_deletes_its_saved_log(
-    logged_in_api, qwen_on_the_hub, cluster, object_store
+def test_a_restart_with_a_new_share_stores_it_and_keeps_the_url_and_key(
+    logged_in_api, qwen_on_the_hub, cluster
 ):
-    start(logged_in_api)
+    before = start(logged_in_api, gpu_memory_utilization=0.3).json()
     crash(logged_in_api, cluster)
+    cluster.endpoint_states.clear()
+
+    response = restart(logged_in_api, gpu_memory_utilization=0.6)
+
+    assert response.status_code == 200, response.text
+    after = response.json()
+    assert (after["url"], after["key"]) == (before["url"], before["key"])
+    assert after["gpu_share"] == 0.6
+    assert after["spec"]["gpu_memory_utilization"] == 0.6
+    assert contains(vllm_args(cluster), ["--gpu-memory-utilization", "0.6"])
+    assert pod(cluster)["containers"][0]["resources"]["limits"] == {"nvidia.com/gpu": 12}
+    # A later restart keeps it.
+    stop(logged_in_api)
+    assert restart(logged_in_api).json()["gpu_share"] == 0.6
+
+
+def test_a_restart_without_a_new_share_keeps_the_stored_one(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, gpu_memory_utilization=0.4)
     stop(logged_in_api)
 
-    assert delete_endpoint(logged_in_api).status_code == 204
+    assert restart(logged_in_api).json()["gpu_share"] == 0.4
+    stop(logged_in_api)
+    assert restart(logged_in_api, gpu_memory_utilization=None).json()["gpu_share"] == 0.4
 
-    assert saved_log(object_store) is None
 
-
-def test_a_saved_log_that_cant_be_deleted_keeps_its_endpoint(
-    logged_in_api, qwen_on_the_hub, cluster, object_store, monkeypatch
-):
+def test_a_restart_may_go_above_the_recommended_maximum(logged_in_api, qwen_on_the_hub, cluster):
     start(logged_in_api)
-    crash(logged_in_api, cluster)
     stop(logged_in_api)
 
-    def refuse(key):
-        raise ConnectionError("SeaweedFS is down")
+    assert restart(logged_in_api, gpu_memory_utilization=0.95).json()["gpu_share"] == 0.95
 
-    monkeypatch.setattr(object_store, "delete", refuse)
-    with pytest.raises(ConnectionError):
-        delete_endpoint(logged_in_api)
 
-    assert [e["name"] for e in endpoints(logged_in_api)] == ["chat"]
+@pytest.mark.parametrize("share", [1.5, 0, -0.1])
+def test_a_restart_with_a_share_that_cant_be_is_refused_and_changes_nothing(
+    logged_in_api, qwen_on_the_hub, cluster, share
+):
+    start(logged_in_api, gpu_memory_utilization=0.4)
+    stop(logged_in_api)
+
+    assert restart(logged_in_api, gpu_memory_utilization=share).status_code == 422
+
+    [found] = endpoints(logged_in_api)
+    assert (found["status"], found["gpu_share"]) == ("stopped", 0.4)
 
 
 @pytest.mark.parametrize("status", ["pending", "waiting for GPU", "running"])
@@ -813,22 +851,12 @@ def test_an_endpoint_takes_whole_gpus_while_sharing_is_off(logged_in_api, qwen_o
     assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 1}
 
 
-def test_an_endpoint_above_the_gpu_budget_is_refused(logged_in_api, qwen_on_the_hub, cluster):
-    logged_in_api.app.state.settings.gpu_budget = 0.5
+def test_a_share_above_the_recommended_maximum_is_accepted(logged_in_api, qwen_on_the_hub, cluster):
+    assert start(logged_in_api, gpu_memory_utilization=0.95).status_code == 201
 
-    response = start(logged_in_api, gpu_memory_utilization=0.6)
+    assert endpoints(logged_in_api)[0]["gpu_share"] == 0.95
 
-    assert response.status_code == 422
-    assert "can never fit" in response.json()["detail"]
+
+def test_a_share_above_1_is_refused(logged_in_api, qwen_on_the_hub, cluster):
+    assert start(logged_in_api, gpu_memory_utilization=1.1).status_code == 422
     assert cluster.endpoints == {}
-
-
-def test_a_restart_above_a_lowered_gpu_budget_is_refused(logged_in_api, qwen_on_the_hub, cluster):
-    start(logged_in_api)
-    stop(logged_in_api)
-    logged_in_api.app.state.settings.gpu_budget = 0.2
-
-    response = restart(logged_in_api)
-
-    assert response.status_code == 422
-    assert "can never fit" in response.json()["detail"]

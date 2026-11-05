@@ -3,6 +3,7 @@ from mlp_api.pipelines.compiler import Resume
 from mlp_api.pipelines.lifecycle import find_pipeline
 from mlp_core import config
 from mlp_core.endpoint_spec import without_stored_quantization
+from mlp_core.gpu_share import pipeline_gpu_shares
 from mlp_core.pipeline_request.references import checkpoint_prefix, model_reference
 from mlp_core.pipeline_request.schema import PipelineRequest
 
@@ -44,3 +45,21 @@ def plan_resume(state, pipeline_id: int) -> Resume:
     distilled = earlier.distilled_dataset or find_distillation_dataset(state.engine, pipeline_id)
     swept = earlier.swept_parameters or (row.sweep and row.sweep["parameters"])
     return Resume(model_versions, distilled, checkpoint, swept)
+
+
+def with_new_gpu_shares(
+    stored: dict, gpu_share: float | None, serving_shares: dict[str, float]
+) -> dict:
+    """The stored request with the shares entered; ValueError for a Stage serving no vLLM."""
+    # 1. The Pipeline's.
+    request = dict(stored)
+    if gpu_share is not None:
+        request["gpu_share"] = gpu_share
+
+    # 2. Those of the Stages serving their own vLLM.
+    for stage, share in serving_shares.items():
+        if stage not in pipeline_gpu_shares(stored):
+            raise ValueError(f"`{stage}` holds no GPU Share of its own in this Pipeline")
+        serving = {**(stored[stage].get("serving") or {}), "gpu_memory_utilization": share}
+        request[stage] = {**stored[stage], "serving": serving}
+    return request

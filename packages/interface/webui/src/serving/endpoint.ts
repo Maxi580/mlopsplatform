@@ -9,7 +9,7 @@ export type Endpoint = {
   status: string;
   // The share of a GPU's memory it holds while it runs.
   gpu_share: number;
-  // Why it crashed, until a restart: a plain message or the last log lines.
+  // Why it crashed, until an attempt is ready: a plain message or the last log lines.
   failure?: string | null;
   url: string;
   // The Endpoint Key: the bearer token its URL takes.

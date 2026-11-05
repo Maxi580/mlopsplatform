@@ -1,6 +1,6 @@
 import { FileText } from "lucide-react";
 
-/** The table row under a failed Pipeline or Endpoint, saying why, with its full log if saved. */
+/** The table row under a failed Pipeline or Endpoint, saying why, with its full log if it has one. */
 export default function FailureRow({
   failure,
   columns,

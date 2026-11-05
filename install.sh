@@ -294,16 +294,15 @@ count_gpus() {
   echo "$NODE_COUNT nodes with $GPU_COUNT GPUs"
 }
 
-# The slices per GPU the budget allows, or whole GPUs if a machine has several (#117).
+# 1 / gpu_slice slices per GPU, or whole GPUs if a machine has several (#117).
 choose_gpu_slices() {
-  local budget slice
-  budget=$(value .settings.gpu_budget)
+  local slice
   slice=$(value .settings.gpu_slice)
-  GPU_SLICES=$(awk -v budget="$budget" -v slice="$slice" 'BEGIN {
-    slices = budget / slice; whole = int(slices + 0.5); off = slices - whole
-    if (budget > 1 || whole < 1 || off > 1e-6 || off < -1e-6) exit 1
+  GPU_SLICES=$(awk -v slice="$slice" 'BEGIN {
+    slices = 1 / slice; whole = int(slices + 0.5); off = slices - whole
+    if (whole < 1 || off > 1e-6 || off < -1e-6) exit 1
     print whole
-  }') || die "settings.gpu_budget ($budget) must be at most 1 and a whole number of slices of $slice"
+  }') || die "settings.gpu_slice ($slice) must divide a GPU into whole slices"
   GPU_SHARING=true
   if (( MOST_GPUS > 1 )); then
     echo "GPU sharing is off: a machine has $MOST_GPUS GPUs, and the device plugin could spread one job's slices across them, which breaks the accounting. Jobs take whole GPUs and GPU Shares are ignored."

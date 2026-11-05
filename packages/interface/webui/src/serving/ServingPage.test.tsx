@@ -220,7 +220,7 @@ test("a stopped Endpoint is deleted with its trashcan, and only a stopped one ha
   expect(calls.map((call) => call.route)).toContain("DELETE /endpoints/old");
 });
 
-test("a failed Endpoint says why and links its saved log", async () => {
+test("a failed Endpoint says why and links the log of its pod", async () => {
   const failed = { ...chat, status: "failed", failure: "Out of GPU memory." };
   fakeApi({ ...routes, "GET /endpoints": [200, [failed]] });
   renderApp("/serving");
@@ -230,6 +230,15 @@ test("a failed Endpoint says why and links its saved log", async () => {
     "href",
     "/endpoints/chat/log",
   );
+});
+
+test("a stopped Endpoint still says why it failed, but has no pod to link a log from", async () => {
+  const failed = { ...chat, status: "stopped", failure: "Out of GPU memory." };
+  fakeApi({ ...routes, "GET /endpoints": [200, [failed]] });
+  renderApp("/serving");
+
+  expect(await screen.findByText("Out of GPU memory.")).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /full log/i })).not.toBeInTheDocument();
 });
 
 test("an Endpoint that did not fail shows no failure or log", async () => {
@@ -256,7 +265,7 @@ test.each([
   expect(buttons.map((button) => button.textContent?.trim() || button.ariaLabel)).toEqual(actions);
 });
 
-test("a stopped Endpoint restarts from its row", async () => {
+test("a stopped Endpoint restarts on its stored GPU Share when none is entered", async () => {
   const calls = fakeApi({
     ...routes,
     "POST /endpoints/old/restart": [200, { ...chat, name: "old", status: "pending" }],
@@ -265,11 +274,88 @@ test("a stopped Endpoint restarts from its row", async () => {
 
   const stopped = (await screen.findByText("old")).closest("tr")!;
   await userEvent.click(within(stopped).getByRole("button", { name: /restart/i }));
+  // It shows what stays.
+  expect(screen.getByRole("textbox", { name: /GPU Share/ })).toHaveAttribute("placeholder", "0.85");
+  await userEvent.click(screen.getByRole("button", { name: "Restart old" }));
 
   expect(
     await screen.findByText("Restarted old; it answers once vLLM is ready"),
   ).toBeInTheDocument();
-  expect(calls.map((call) => call.route)).toContain("POST /endpoints/old/restart");
+  const restarted = calls.find((call) => call.route === "POST /endpoints/old/restart");
+  expect(restarted?.body).toEqual({});
+});
+
+test("a failed Endpoint restarts with a new GPU Share", async () => {
+  const failed = { ...chat, status: "failed", failure: "Too small." };
+  const calls = fakeApi({
+    ...routes,
+    "GET /endpoints": [200, [failed]],
+    "POST /endpoints/chat/restart": [200, { ...failed, status: "pending" }],
+  });
+  renderApp("/serving");
+
+  await userEvent.click(await screen.findByRole("button", { name: /^restart$/i }));
+  await userEvent.type(screen.getByRole("textbox", { name: /GPU Share/ }), "0.95");
+  await userEvent.click(screen.getByRole("button", { name: "Restart chat" }));
+
+  await screen.findByText("Restarted chat; it answers once vLLM is ready");
+  const restarted = calls.find((call) => call.route === "POST /endpoints/chat/restart");
+  expect(restarted?.body).toEqual({ gpu_memory_utilization: 0.95 });
+});
+
+test("a Restart that is refused says why", async () => {
+  fakeApi({
+    ...routes,
+    "POST /endpoints/old/restart": [422, { detail: "Can't serve Endpoint old again" }],
+  });
+  renderApp("/serving");
+
+  const stopped = (await screen.findByText("old")).closest("tr")!;
+  await userEvent.click(within(stopped).getByRole("button", { name: /restart/i }));
+  await userEvent.click(screen.getByRole("button", { name: "Restart old" }));
+
+  expect(await screen.findByText("Can't serve Endpoint old again")).toBeInTheDocument();
+});
+
+const RESERVED_LINE = "Currently reserved: 35% of this GPU · Recommended max: 85%";
+
+test("a GPU Share field says what it means and how full the fullest machine is", async () => {
+  fakeApi({
+    ...routes,
+    "GET /gpus/reserved": [200, { reserved_percent: 35, recommended_max: 0.85 }],
+  });
+  renderApp("/serving");
+
+  const start = (await screen.findByRole("heading", { name: "Start an Endpoint" })).parentElement!;
+  expect(await within(start).findByText(RESERVED_LINE)).toBeInTheDocument();
+  expect(within(start).getByText("The share of GPU memory vLLM may take.")).toBeInTheDocument();
+});
+
+test("the Restart field has the same line", async () => {
+  fakeApi({
+    ...routes,
+    "GET /gpus/reserved": [200, { reserved_percent: 35, recommended_max: 0.85 }],
+  });
+  renderApp("/serving");
+
+  const stopped = (await screen.findByText("old")).closest("tr")!;
+  await userEvent.click(within(stopped).getByRole("button", { name: /restart/i }));
+
+  const form = screen.getByRole("button", { name: "Restart old" }).closest("form")!;
+  expect(await within(form).findByText(RESERVED_LINE)).toBeInTheDocument();
+  expect(within(form).getByText("The share of GPU memory vLLM may take.")).toBeInTheDocument();
+});
+
+test("the line is left out if what is reserved can't be read", async () => {
+  fakeApi({
+    ...routes,
+    "GET /gpus/reserved": [200, { reserved_percent: null, recommended_max: 0.85 }],
+  });
+  renderApp("/serving");
+
+  const start = (await screen.findByRole("heading", { name: "Start an Endpoint" })).parentElement!;
+  await within(start).findByText("The share of GPU memory vLLM may take.");
+  await waitFor(() => expect(screen.queryByText(/Currently reserved/)).not.toBeInTheDocument());
 });
 
 test("the model picker lists our Model Versions first, then open-source models", async () => {
@@ -875,18 +961,13 @@ test("an Endpoint's row shows its GPU Share", async () => {
 test("the GPU Share and length a start would pin show before starting", async () => {
   const calls = fakeApi({
     ...routes,
-    "POST /endpoints/preview": [
-      200,
-      { gpu_memory_utilization: 0.95, max_model_len: 8192, kv_cache_dtype: "fp8" },
-    ],
+    "POST /endpoints/preview": [200, { gpu_memory_utilization: 0.95, max_model_len: 8192 }],
   });
   renderApp("/serving");
 
   await userEvent.type(await screen.findByRole("combobox", { name: /^Model/ }), "hf:x/y");
 
-  expect(
-    await screen.findByText(/GPU Share 95%, up to 8192 tokens, KV cache in fp8/),
-  ).toBeInTheDocument();
+  expect(await screen.findByText("GPU Share 95%, up to 8192 tokens")).toBeInTheDocument();
   const asked = calls.filter((call) => call.route === "POST /endpoints/preview").at(-1)!.body;
   expect(asked).toEqual({ model: "hf:x/y", ...DEFAULTS });
 });
