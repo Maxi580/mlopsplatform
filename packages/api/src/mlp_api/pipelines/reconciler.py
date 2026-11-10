@@ -51,31 +51,11 @@ def reconcile_pipelines(state) -> None:
     for row in unfinished_pipelines(engine):
         if row.kubeflow_run_id is None:
             continue
-        run = cluster.find_run(row.kubeflow_run_id)
-        status = "failed" if run is None else config.PIPELINE_STATUSES.get(run.state, "pending")
-        finished = status in config.FINISHED_STATUSES
-        # A Smoke Test runs on while its serving cases' Endpoints, outside the run, have no result.
-        if finished and row.cases is not None and has_pending_serving_cases(row.cases):
-            status, finished = "running", False
-        values = {"status": status}
-        if row.cases is not None:
-            values["cases"] = case_results(row.cases, run, finished)
-        # The request goes to the MLflow Run when KFP first reports it, retried while unfinished.
-        url = run and run.mlflow_run_url
-        first_seen = url and row.mlflow_run_url is None
-        if first_seen and (logged_pipeline_request(state, row, url) or finished):
-            values["mlflow_run_url"] = url
-        # Once, as a Pipeline that failed no longer comes here.
-        if status == "failed":
-            values["failure"] = (
-                config.RUN_DELETED_FAILURE
-                if run is None
-                else failure_reason(cluster.failed_step_log(row.kubeflow_run_id), "Resume")
-            )
-        waiting = run is not None and not finished
-        if waiting and cluster.is_waiting_for_gpu(row.kubeflow_run_id):
-            values["status"] = config.WAITING_FOR_GPU
-        set_pipeline(engine, row.id, **values)
+        # One run Kubeflow can't read must not hold up the others.
+        try:
+            reconcile_pipeline(state, row)
+        except Exception:
+            logger.exception("Reconciling Pipeline %s failed", row.id)
 
     # 2. Secrets of finished or unknown Pipelines, and the backstop for old ones. Listed
     # before the Pipelines, since a Pipeline is stored before its Secret is created.
@@ -84,6 +64,36 @@ def reconcile_pipelines(state) -> None:
     for name, age in secret_ages.items():
         if name not in needed or age > config.SECRET_MAX_AGE:
             cluster.delete_secret(name)
+
+
+def reconcile_pipeline(state, row) -> None:
+    """Copies the Pipeline's Kubeflow run state, and a Smoke Test's case results, into its row."""
+    engine, cluster = state.engine, state.cluster
+    run = cluster.find_run(row.kubeflow_run_id)
+    status = "failed" if run is None else config.PIPELINE_STATUSES.get(run.state, "pending")
+    finished = status in config.FINISHED_STATUSES
+    # A Smoke Test runs on while its serving cases' Endpoints, outside the run, have no result.
+    if finished and row.cases is not None and has_pending_serving_cases(row.cases):
+        status, finished = "running", False
+    values = {"status": status}
+    if row.cases is not None:
+        values["cases"] = case_results(row.cases, run, finished)
+    # The request goes to the MLflow Run when KFP first reports it, retried while unfinished.
+    url = run and run.mlflow_run_url
+    first_seen = url and row.mlflow_run_url is None
+    if first_seen and (logged_pipeline_request(state, row, url) or finished):
+        values["mlflow_run_url"] = url
+    # Once, as a Pipeline that failed no longer comes here.
+    if status == "failed":
+        values["failure"] = (
+            config.RUN_DELETED_FAILURE
+            if run is None
+            else failure_reason(cluster.failed_step_log(row.kubeflow_run_id), "Resume")
+        )
+    waiting = run is not None and not finished
+    if waiting and cluster.is_waiting_for_gpu(row.kubeflow_run_id):
+        values["status"] = config.WAITING_FOR_GPU
+    set_pipeline(engine, row.id, **values)
 
 
 def logged_pipeline_request(state, row, mlflow_run_url: str) -> bool:

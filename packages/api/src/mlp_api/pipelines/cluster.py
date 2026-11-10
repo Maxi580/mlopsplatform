@@ -76,12 +76,14 @@ class Cluster:
             return None
         response.raise_for_status()
         run = response.json()
+        # KFP answers 200 with only an `error` for a run it can't read back.
+        if "error" in run:
+            raise RuntimeError(f"Kubeflow can't read run {run_id}: {run['error'].get('message')}")
         # KFP's MLflow plugin reports the run's MLflow Run here once it is configured.
         mlflow = run.get("plugins_output", {}).get("mlflow", {}).get("entries", {})
         steps = run.get("run_details", {}).get("task_details", [])
-        # KFP leaves out a state it hasn't set yet, which counts as pending.
         return KubeflowRun(
-            run.get("state", ""),
+            run["state"],
             mlflow.get("run_url", {}).get("value"),
             {step.get("display_name"): step.get("state") for step in steps},
         )

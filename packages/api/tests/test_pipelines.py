@@ -293,6 +293,30 @@ def test_a_pipeline_whose_pod_waits_for_a_gpu_shows_it(logged_in_api, submittabl
     assert pipelines(logged_in_api)[0]["status"] == "waiting for GPU"
 
 
+def test_a_pipeline_whose_run_cannot_be_read_does_not_hold_up_the_others(
+    logged_in_api, submittable, cluster
+):
+    for _ in range(2):
+        submit(logged_in_api)
+    unreadable, readable = list(cluster.runs)
+    cluster.runs[readable] = KubeflowRun("SUCCEEDED", None)
+    find_run = cluster.find_run
+
+    def find_run_failing_for_one(run_id):
+        if run_id == unreadable:
+            raise RuntimeError("KFP can't read this run")
+        return find_run(run_id)
+
+    cluster.find_run = find_run_failing_for_one
+
+    reconcile(logged_in_api)
+
+    statuses = {
+        p["kubeflow_run_url"].rsplit("/", 1)[-1]: p["status"] for p in pipelines(logged_in_api)
+    }
+    assert statuses == {unreadable: "pending", readable: "succeeded"}
+
+
 def test_a_failed_pipeline_shows_the_last_lines_of_its_failed_step(
     logged_in_api, submittable, cluster
 ):
