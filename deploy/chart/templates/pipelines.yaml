@@ -52,6 +52,10 @@ rules:
   - apiGroups: [trainer.kubeflow.org]
     resources: [trainjobs]
     verbs: [create, get, list, watch, delete]
+  # The Trainer SDK looks for a namespaced runtime first and falls back to ours only on a 404.
+  - apiGroups: [trainer.kubeflow.org]
+    resources: [trainingruntimes]
+    verbs: [get]
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list]
@@ -72,6 +76,29 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
+  name: mlp-launcher
+---
+# The finetune runtime is cluster-scoped, so reading it needs a ClusterRole.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mlp-launcher
+rules:
+  - apiGroups: [trainer.kubeflow.org]
+    resources: [clustertrainingruntimes]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mlp-launcher
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-runner
+    namespace: {{ .Values.namespaces.kubeflow }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
   name: mlp-launcher
 ---
 # A host directory rather than a provisioned volume, so the API in its own namespace mounts it too.
