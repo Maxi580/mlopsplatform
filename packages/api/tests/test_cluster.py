@@ -370,3 +370,31 @@ def test_a_run_kfp_cannot_read_raises_kfps_reason():
 
     with pytest.raises(RuntimeError, match="invalid plugins_output"):
         cluster.find_run("r")
+
+
+def test_a_runs_steps_go_by_the_display_names_the_compiler_gave_them():
+    # KFP names its steps by task, e.g. `finetune-2`; the spec has the display name.
+    tasks = {
+        "fetch": {"taskInfo": {"name": "fetch"}},
+        "finetune": {"taskInfo": {"name": "sft-lora-hf"}},
+        "finetune-2": {"taskInfo": {"name": "sft-assistant-only-hf"}},
+    }
+    steps = [
+        {"display_name": name, "state": "SUCCEEDED"}
+        for name in ("root-driver", "fetch", "finetune", "finetune-2")
+    ]
+    found = {
+        "state": "SUCCEEDED",
+        "pipeline_spec": {"pipeline_spec": {"root": {"dag": {"tasks": tasks}}}},
+        "run_details": {"task_details": steps},
+    }
+    cluster = Cluster.__new__(Cluster)
+    cluster.kubeflow = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=found)),
+        base_url="http://kubeflow.test",
+    )
+
+    states = cluster.find_run("r").step_states
+
+    assert states["sft-lora-hf"] == states["sft-assistant-only-hf"] == "SUCCEEDED"
+    assert states["fetch"] == "SUCCEEDED"

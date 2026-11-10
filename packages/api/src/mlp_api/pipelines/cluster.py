@@ -82,10 +82,14 @@ class Cluster:
         # KFP's MLflow plugin reports the run's MLflow Run here once it is configured.
         mlflow = run.get("plugins_output", {}).get("mlflow", {}).get("entries", {})
         steps = run.get("run_details", {}).get("task_details", [])
+        names = step_display_names(run)
         return KubeflowRun(
             run["state"],
             mlflow.get("run_url", {}).get("value"),
-            {step.get("display_name"): step.get("state") for step in steps},
+            {
+                names.get(s.get("display_name"), s.get("display_name")): s.get("state")
+                for s in steps
+            },
         )
 
     def terminate_run(self, run_id: str) -> None:
@@ -311,3 +315,11 @@ def is_crash_looping(pod) -> bool:
 def container_statuses(pod) -> list:
     """The statuses of its init containers, which run first, then its containers."""
     return (pod.status.init_container_statuses or []) + (pod.status.container_statuses or [])
+
+
+# KFP names a run's steps by task, e.g. `finetune-2`; the compiler's display names are in its spec.
+def step_display_names(run: dict) -> dict[str, str]:
+    """Each top-level task of the run -> the display name the compiler gave it."""
+    spec = run.get("pipeline_spec", {}).get("pipeline_spec", {})
+    tasks = spec.get("root", {}).get("dag", {}).get("tasks", {})
+    return {task: found["taskInfo"]["name"] for task, found in tasks.items()}
