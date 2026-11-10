@@ -79,8 +79,9 @@ class Cluster:
         # KFP's MLflow plugin reports the run's MLflow Run here once it is configured.
         mlflow = run.get("plugins_output", {}).get("mlflow", {}).get("entries", {})
         steps = run.get("run_details", {}).get("task_details", [])
+        # KFP leaves out a state it hasn't set yet, which counts as pending.
         return KubeflowRun(
-            run["state"],
+            run.get("state", ""),
             mlflow.get("run_url", {}).get("value"),
             {step.get("display_name"): step.get("state") for step in steps},
         )

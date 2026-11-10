@@ -357,3 +357,15 @@ def test_a_failed_run_is_explained_by_the_log_of_its_first_failed_step():
 )
 def test_a_failed_run_whose_pods_or_logs_are_gone_has_no_log(pods):
     assert run_with_failed_pods(pods, {}).failed_step_log("run-1") == ""
+
+
+def test_a_run_kfp_reports_without_a_state_yet_is_pending():
+    cluster = Cluster.__new__(Cluster)
+    cluster.kubeflow = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"run_id": "r"})),
+        base_url="http://kubeflow.test",
+    )
+
+    run = cluster.find_run("r")
+
+    assert config.PIPELINE_STATUSES.get(run.state, "pending") == "pending"
