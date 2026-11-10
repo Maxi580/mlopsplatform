@@ -46,11 +46,9 @@ def validate_pipeline_request(
     except ValidationError as validation_error:
         return None, [error(e["loc"], e["msg"]) for e in validation_error.errors()]
 
-    # 2. Phases and Sweeps the backend can train, on the GPUs a Phase gets, the settings TRL/PEFT
-    # would receive, rewards that can run, parameters Trials can set and
-    # Phases can take, and no Secret value anywhere.
-    errors = backend_errors(request) + multi_process_errors(request, settings)
-    errors += trainer_config_errors(request)
+    # 2. Phases and Sweeps the backend can train, the settings TRL/PEFT would receive, rewards
+    # that can run, parameters Trials can set and Phases can take, and no Secret value anywhere.
+    errors = backend_errors(request) + trainer_config_errors(request)
     errors += sweep_parameter_errors(request.sweep) + params_from_errors(request)
     errors += reward_errors(request)
     errors += secret_value_errors(request, secrets)
@@ -212,25 +210,6 @@ def backend_errors(request: PipelineRequest) -> list[dict]:
             supported = ", ".join(methods)
             msg = f"{backend} trains {phase.algorithm} Phases with {supported}, not {phase.method}"
             errors.append(error([*loc, "method"], f"{msg}; use backend `hf`"))
-    return errors
-
-
-def multi_process_errors(request: PipelineRequest, settings: Settings) -> list[dict]:
-    """An error for each Phase that would train in several processes but can't yet."""
-    finetune = request.finetune
-    if not finetune or finetune.backend in config.SINGLE_GPU_BACKENDS:
-        return []
-    if settings.phase_gpus == 1:
-        return []
-    errors = []
-    for index, phase in enumerate(finetune.phases):
-        if phase.method in config.SINGLE_PROCESS_PHASES.get(phase.algorithm, ()):
-            msg = (
-                f"{phase.algorithm} with {phase.method} doesn't train on several GPUs yet, and "
-                f"a Phase gets {settings.phase_gpus} GPUs; ask an admin to set "
-                "`gpus_per_stage: 1` and `nodes_per_stage: 1`"
-            )
-            errors.append(error(["finetune", "phases", index, "algorithm"], msg))
     return errors
 
 

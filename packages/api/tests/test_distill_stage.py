@@ -179,15 +179,12 @@ def test_distill_output_needs_distill(logged_in_api):
     assert "`distill` isn't enabled" in error["msg"]
 
 
-def test_distill_runs_on_the_teachers_gpus_and_hands_its_dataset_to_finetune(
-    logged_in_api, cluster
-):
+def test_distill_runs_on_the_teachers_gpu_and_hands_its_dataset_to_finetune(logged_in_api, cluster):
     pipeline_id = submit(logged_in_api, distilling_into_finetune()).json()["id"]
 
     distill, finetune = tasks(cluster)["distill"], tasks(cluster)["finetune"]
     assert distill["dependentTasks"] == ["fetch"]
     assert inputs(tasks(cluster)["fetch"])["references"] == PINNED_BASE_MODEL
-    assert inputs(distill)["gpus"] == "1"
     assert inputs(distill)["teacher_url"] == ""
     step = container(cluster, "distill")
     assert step["command"] == ["mlp-stage", "distill"]
@@ -226,7 +223,6 @@ def test_an_endpoint_teaches_through_its_service_without_a_gpu(logged_in_api, cl
     submit(logged_in_api, distilling(teacher="endpoint:chat"))
 
     assert inputs(tasks(cluster)["distill"])["teacher_url"] == "http://endpoint-chat.mlp.svc:8000"
-    assert inputs(tasks(cluster)["distill"])["gpus"] == "0"
     assert "resources" not in container(cluster, "distill")
 
 

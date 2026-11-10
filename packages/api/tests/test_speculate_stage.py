@@ -131,12 +131,11 @@ def test_speculate_is_handed_the_outputs_of_the_stages_before_it(logged_in_api, 
         "finetuned": "finetune",
         "quantized": "quantize",
         "distilled_dataset": "",
-        "gpus": "1",
         "dataloader_workers": "4",
     }
 
 
-def test_speculate_trains_offline_on_the_platforms_gpus(logged_in_api, cluster):
+def test_speculate_trains_offline_on_a_gpu(logged_in_api, cluster):
     submit(logged_in_api, speculating())
 
     step = container(cluster, "speculate")

@@ -12,7 +12,7 @@ from mlp_stages.evaluate.performance import measure_performance
 from mlp_stages.served_model import served_model
 
 
-def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str) -> None:
+def evaluate(pipeline_id: str, request: str, endpoint_url: str) -> None:
     """Runs each benchmark, and any performance run, and logs its metrics or NA into the Run."""
     # 1. The `evaluate` block of the resolved request the compiler passed in.
     resolved = PipelineRequest.model_validate_json(request)
@@ -25,9 +25,7 @@ def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str) -> No
 
     with tempfile.TemporaryDirectory() as scratch:
         # 2. The model behind an OpenAI-compatible URL: its Endpoint's, or a vLLM started here.
-        served = served_model(
-            model, evaluate.serving, resolved.name, endpoint_url, int(gpus), Path(scratch)
-        )
+        served = served_model(model, evaluate.serving, resolved.name, endpoint_url, Path(scratch))
         with served as (url, served_name, loaded):
             # Tells Runs apart that differ only by a `tool_parser` override.
             if evaluate.serving and evaluate.serving.tool_parser:

@@ -1,6 +1,5 @@
 import math
 
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from mlp_core import config
@@ -11,8 +10,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="forbid")
 
-    # The cluster's GPU machines and physical GPUs, counted by install.sh; machines are identical.
-    node_count: int
+    # The cluster's physical GPUs, counted by install.sh; every step and Endpoint uses one.
     gpu_count: int
     # Off if a machine has several GPUs, as install.sh decides: jobs then take whole GPUs.
     gpu_sharing: bool
@@ -26,10 +24,6 @@ class Settings(BaseSettings):
     gpu_share_full_training_factor: float
     gpu_share_training_reserve_gib: float
     gpu_max_utilization: float
-    # GPUs per node for a Stage; a finetune Phase trains on nodes_per_stage nodes, the rest on one.
-    gpus_per_stage: int
-    nodes_per_stage: int
-    gpus_per_endpoint: int
     sandbox_timeout_seconds: int
     sandbox_memory_mb: int
     sandbox_replicas: int
@@ -40,32 +34,9 @@ class Settings(BaseSettings):
     checkpoint_minutes: int
     speculate_dataloader_workers: int
 
-    @model_validator(mode="after")
-    def check_a_stage_and_an_endpoint_fit_on_the_platform(self) -> "Settings":
-        for name in ("gpus_per_stage", "gpus_per_endpoint"):
-            if getattr(self, name) > self.gpu_count:
-                raise ValueError(
-                    f"{name} ({getattr(self, name)}) exceeds gpu_count ({self.gpu_count})"
-                )
-        if self.nodes_per_stage > self.node_count:
-            raise ValueError(
-                f"nodes_per_stage ({self.nodes_per_stage}) exceeds node_count ({self.node_count})"
-            )
-        if self.phase_gpus > self.gpu_count:
-            raise ValueError(
-                f"nodes_per_stage × gpus_per_stage ({self.phase_gpus}) exceeds gpu_count "
-                f"({self.gpu_count})"
-            )
-        return self
-
-    @property
-    def phase_gpus(self) -> int:
-        """The GPUs a finetune Phase trains on, across its nodes."""
-        return self.nodes_per_stage * self.gpus_per_stage
-
-    def gpu_request(self, share: float, gpus: int) -> int:
-        """The `nvidia.com/gpu` a job asks for on `gpus` GPUs: the share's slices, or whole GPUs."""
-        return self.gpu_slices(share) * gpus if self.gpu_sharing else gpus
+    def gpu_request(self, share: float) -> int:
+        """The `nvidia.com/gpu` a job asks for: the share's slices of one GPU, or the whole GPU."""
+        return self.gpu_slices(share) if self.gpu_sharing else 1
 
     def gpu_slices(self, share: float) -> int:
         """The whole slices the share takes on one GPU."""

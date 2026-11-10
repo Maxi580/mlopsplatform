@@ -34,16 +34,15 @@ def resolve_gpu_shares(
     )
 
     # 1. Each step's own vLLM.
-    gpus = settings.gpus_per_stage
     distill, evaluate = request.distill, request.evaluate
     if distill and distill_serves_its_teacher(distill.teacher, distill.api_url):
         distill.serving = with_gpu_share(
-            distill.serving or ServingOptions(), memory_of(distill.teacher), gpu, gpus, settings
+            distill.serving or ServingOptions(), memory_of(distill.teacher), gpu, settings
         )
     if evaluate and evaluate_serves_its_model(evaluate.model):
         memory = memory_of(model_behind_output(request, evaluate.model))
         evaluate.serving = with_gpu_share(
-            evaluate.serving or ServingOptions(), memory, gpu, gpus, settings
+            evaluate.serving or ServingOptions(), memory, gpu, settings
         )
 
     # 2. The Pipeline's, for its largest step.

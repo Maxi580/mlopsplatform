@@ -70,7 +70,7 @@ def test_an_endpoint_starts_without_tracing_while_mlflow_is_unreachable(
 
 
 def test_stages_and_teachers_serve_without_tracing():
-    args = shared_vllm_args(ServingOptions(), VllmModel("/models/weights"), "teacher", 1)
+    args = shared_vllm_args(ServingOptions(), VllmModel("/models/weights"), "teacher")
 
     assert not any(arg.startswith("--otlp") for arg in args)
 

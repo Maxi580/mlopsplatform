@@ -18,9 +18,6 @@ class StepEnvironment:
     """The images and storage of the steps, from the API's environment; tests make their own."""
 
     stages_image: str
-    # Runs a finetune Phase as a TrainJob on the finetune runtime, then waits for it.
-    launcher_image: str
-    finetune_runtime: str
     # Training backend -> its trainer image.
     trainer_images: dict[str, str]
     model_cache_pvc: str
@@ -38,8 +35,6 @@ class StepEnvironment:
     def from_environment(cls) -> "StepEnvironment":
         return cls(
             stages_image=os.environ["STAGES_IMAGE"],
-            launcher_image=os.environ["LAUNCHER_IMAGE"],
-            finetune_runtime=os.environ["FINETUNE_RUNTIME"],
             trainer_images={
                 "hf": os.environ["TRAINER_HF_IMAGE"],
                 "unsloth": os.environ["TRAINER_UNSLOTH_IMAGE"],
@@ -103,7 +98,6 @@ def compile_pipeline(
             # `@sweep` sweep's, `@finetune` the last Phase's or, once every Phase finished, the
             # last one reused.
             stages, distilled, quantized = [], resume.distilled_dataset or "", ""
-            base_models = [reference for reference in fetched if reference.startswith("hf:")]
             swept = json.dumps(resume.swept_parameters) if resume.swept_parameters else ""
             finetuned = (resume.model_versions or [""])[-1]
             if request.distill and not distilled:
@@ -114,14 +108,7 @@ def compile_pipeline(
                 swept = stages[-1].outputs["best_parameters"]
             if request.finetune:
                 phases = finetune_steps(
-                    pipeline_id,
-                    request,
-                    steps,
-                    settings,
-                    base_models,
-                    distilled,
-                    resume,
-                    swept=swept,
+                    pipeline_id, request, steps, settings, distilled, resume, swept=swept
                 )
                 stages += phases
                 if phases:
@@ -176,7 +163,6 @@ def compile_smoke_test(
             sandbox_step(steps, settings).set_display_name(config.SMOKE_TEST_SANDBOX_CASE).after(
                 fetched_task
             )
-        base_models = [reference for reference in fetched if reference.startswith("hf:")]
         case_tasks = {}
         for case, request in cases.items():
             # A case of several steps (distill, sweep, Phases) passes or fails with its last one,
@@ -190,7 +176,7 @@ def compile_smoke_test(
                 swept = case_steps[-1][1].outputs["best_parameters"]
             if request.finetune and case == config.SMOKE_TEST_RESUME_CASE:
                 # The first step stops after a Checkpoint, as a cancel would; the next continues it.
-                phase = (pipeline_id, request, steps, settings, base_models, distilled)
+                phase = (pipeline_id, request, steps, settings, distilled)
                 [interrupted] = finetune_steps(*phase, interrupt=True)
                 resume = Resume(checkpoint=checkpoint_prefix(pipeline_id, 0))
                 [resumed] = finetune_steps(*phase, resume)
@@ -198,7 +184,7 @@ def compile_smoke_test(
             elif request.finetune:
                 names = [f"finetune-{phase.algorithm}" for phase in request.finetune.phases]
                 tasks = finetune_steps(
-                    pipeline_id, request, steps, settings, base_models, distilled, swept=swept
+                    pipeline_id, request, steps, settings, distilled, swept=swept
                 )
                 case_steps += zip(names, tasks, strict=True)
             if request.quantize:
@@ -246,33 +232,29 @@ def distill_step(
     """The step that asks the Teacher about every prompt and registers the replies via the API."""
 
     @dsl.container_component
-    def distill(
-        pipeline_id: str, request: str, teacher_url: str, gpus: str, dataset: dsl.OutputPath(str)
-    ):
+    def distill(pipeline_id: str, request: str, teacher_url: str, dataset: dsl.OutputPath(str)):
         return dsl.ContainerSpec(
             image=steps.stages_image,
             command=["mlp-stage", "distill"],
-            args=[pipeline_id, request, teacher_url, gpus, dataset],
+            args=[pipeline_id, request, teacher_url, dataset],
         )
 
-    # 1. Only a Base Model or Model Version Teacher runs here, on GPUs; the others have a URL.
+    # 1. Only a Base Model or Model Version Teacher runs here, on a GPU; the others have a URL.
     api_url = request.distill.api_url
     teacher_url = api_url or endpoint_reference_url(request.distill.teacher, steps)
-    gpus = 0 if teacher_url else settings.gpus_per_stage
 
     # 2. The step, with the step token to register the replies and an API Teacher's key.
     task = distill(
         pipeline_id=str(pipeline_id),
         request=request.model_dump_json(),
         teacher_url=teacher_url,
-        gpus=str(gpus),
     )
     secrets = {"step_token": config.SECRET_ENV_VARS["step_token"]}
     if api_url:
         secrets["teacher_api_key"] = config.SECRET_ENV_VARS["teacher_api_key"]
     kubernetes.use_secret_as_env(task, config.PIPELINE_SECRET_NAME.format(id=pipeline_id), secrets)
     task.set_env_variable("API_URL", steps.api_url)
-    use_vllm(task, steps, settings, serving_share(request.distill.serving), gpus)
+    use_vllm(task, steps, settings, serving_share(request.distill.serving), not teacher_url)
     return task
 
 
@@ -304,7 +286,7 @@ def sweep_step(
         request=request.model_dump_json(),
         distilled_dataset=distilled_dataset,
     )
-    use_trainer(task, steps, settings, request.gpu_share, trainer_gpus(backend, settings))
+    use_trainer(task, steps, settings, request.gpu_share)
     # It reports the best parameters to the API with the step token.
     task.set_env_variable("API_URL", steps.api_url)
     kubernetes.use_secret_as_env(
@@ -320,17 +302,16 @@ def finetune_steps(
     request: PipelineRequest,
     steps: StepEnvironment,
     settings: Settings,
-    base_models: list[str],
     distilled_dataset="",
     resume: Resume | None = None,
     interrupt: bool = False,
     swept="",
 ) -> list:
-    """One step per unfinished Phase, training it as a TrainJob from the previous Model Version."""
+    """One step per unfinished Phase, handed the previous Model Version and `swept` if it asks."""
+    trainer_image = steps.trainer_images[request.finetune.backend]
 
     @dsl.container_component
     def finetune(
-        trainjob: str,
         pipeline_id: str,
         phase_index: str,
         request: str,
@@ -343,10 +324,9 @@ def finetune_steps(
         model_version: dsl.OutputPath(str),
     ):
         return dsl.ContainerSpec(
-            image=steps.launcher_image,
-            command=["mlp-stage", "launch-phase"],
+            image=trainer_image,
+            command=["mlp-stage", "finetune"],
             args=[
-                trainjob,
                 pipeline_id,
                 phase_index,
                 request,
@@ -365,10 +345,8 @@ def finetune_steps(
     finished = len(resume.model_versions)
     tasks, previous_model_version = [], (resume.model_versions or [""])[-1]
     for index, phase in list(enumerate(request.finetune.phases))[finished:]:
-        trainjob = phase_trainjob(pipeline_id, index, request, base_models, steps, settings)
         # The request holds no Secret value, so it can be a parameter.
         task = finetune(
-            trainjob=json.dumps(trainjob),
             pipeline_id=str(pipeline_id),
             phase_index=str(index),
             request=request.model_dump_json(),
@@ -380,97 +358,18 @@ def finetune_steps(
             resume_checkpoint=(index == finished and resume.checkpoint) or "",
             stop_after_checkpoint="true" if interrupt else "",
         ).set_display_name(f"finetune-{phase.algorithm}")
-        task.set_caching_options(False)
+        use_trainer(task, steps, settings, request.gpu_share)
         tasks.append(task)
         previous_model_version = task.outputs["model_version"]
     return tasks
 
 
-def phase_trainjob(
-    pipeline_id: int,
-    index: int,
-    request: PipelineRequest,
-    base_models: list[str],
-    steps: StepEnvironment,
-    settings: Settings,
-) -> dict:
-    """The Phase's TrainJob, which Kueue admits once its GPU Share fits on all its nodes."""
-    # 1. On nodes_per_stage nodes, with one process per GPU and the weight method's accelerate
-    # config; Unsloth's on one GPU of one node.
-    backend, phase = request.finetune.backend, request.finetune.phases[index]
-    nodes, gpus = settings.nodes_per_stage, settings.gpus_per_stage
-    if backend in config.SINGLE_GPU_BACKENDS:
-        nodes, gpus = 1, 1
-    accelerate_config = config.ACCELERATE_CONFIG_PATH.format(
-        name=config.ACCELERATE_CONFIGS[phase.method]
-    )
-    command = ["accelerate", "launch", "--config_file", accelerate_config]
-    command += ["--num_processes", str(nodes * gpus), *config.ACCELERATE_RENDEZVOUS]
-    command += ["-m", "mlp_stages.main", "finetune"]
-
-    # 2. Each node fetches the Base Models its Model Cache lacks, with the Pipeline's token if any.
-    hf_token = {
-        "secretKeyRef": {
-            "name": config.PIPELINE_SECRET_NAME.format(id=pipeline_id),
-            "key": "hf_token",
-            "optional": True,
-        }
-    }
-    fetch = {
-        "name": "fetch",
-        "env": [
-            {"name": "BASE_MODELS", "value": ",".join(base_models)},
-            {"name": config.SECRET_ENV_VARS["hf_token"], "valueFrom": hf_token},
-        ],
-    }
-    node = {
-        "name": "node",
-        "template": {"spec": {"template": {"spec": {"initContainers": [fetch]}}}},
-    }
-    # 3. Told its GPU Share; the launcher adds the MLflow Run's environment to it.
-    trainer = {
-        "image": steps.trainer_images[backend],
-        "command": command,
-        "numNodes": nodes,
-        "resourcesPerNode": {
-            "limits": {config.GPU_RESOURCE: settings.gpu_request(request.gpu_share, gpus)}
-        },
-    }
-    if settings.gpu_sharing:
-        trainer["env"] = [{"name": config.GPU_SHARE_ENV, "value": str(request.gpu_share)}]
-
-    # 4. Labelled with its Pipeline, which cancels and deletes it, and the queue it waits in.
-    return {
-        "metadata": {
-            "generateName": config.TRAINJOB_NAME.format(id=pipeline_id, index=index),
-            "labels": {
-                config.PIPELINE_ID_LABEL: str(pipeline_id),
-                config.QUEUE_NAME_LABEL: steps.gpu_queue,
-            },
-        },
-        "spec": {
-            "runtimeRef": {"name": steps.finetune_runtime},
-            "trainer": trainer,
-            "runtimePatches": [
-                {
-                    "manager": config.TRAINJOB_PATCH_MANAGER,
-                    "trainingRuntimeSpec": {"template": {"spec": {"replicatedJobs": [node]}}},
-                }
-            ],
-        },
-    }
-
-
-def trainer_gpus(backend: str, settings: Settings) -> int:
-    return 1 if backend in config.SINGLE_GPU_BACKENDS else settings.gpus_per_stage
-
-
-# A step that trains on its GPUs, offline, reading Model Versions and Datasets from the object
+# A step that trains on its GPU, offline, reading Model Versions and Datasets from the object
 # store; `grpo` and `rloo` score their completions with their rewards in the Sandbox.
-def use_trainer(task, steps: StepEnvironment, settings: Settings, share: float, gpus: int) -> None:
+def use_trainer(task, steps: StepEnvironment, settings: Settings, share: float) -> None:
     use_model_cache(task, steps)
     task.set_env_variable("HF_HUB_OFFLINE", "1")
-    use_gpus(task, steps, settings, share, gpus)
+    use_gpu(task, steps, settings, share)
     use_object_store(task, steps)
     task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
 
@@ -497,7 +396,7 @@ def quantize_step(
     task = quantize(
         pipeline_id=str(pipeline_id), request=request.model_dump_json(), finetuned=finetuned
     )
-    use_vllm(task, steps, settings, request.gpu_share, settings.gpus_per_stage)
+    use_vllm(task, steps, settings, request.gpu_share)
     return task
 
 
@@ -519,7 +418,6 @@ def speculate_step(
         finetuned: str,
         quantized: str,
         distilled_dataset: str,
-        gpus: str,
         dataloader_workers: str,
         model_version: dsl.OutputPath(str),
     ):
@@ -532,7 +430,6 @@ def speculate_step(
                 finetuned,
                 quantized,
                 distilled_dataset,
-                gpus,
                 dataloader_workers,
                 model_version,
             ],
@@ -544,10 +441,9 @@ def speculate_step(
         finetuned=finetuned,
         quantized=quantized,
         distilled_dataset=distilled,
-        gpus=str(settings.gpus_per_stage),
         dataloader_workers=str(settings.speculate_dataloader_workers),
     )
-    use_vllm(task, steps, settings, request.gpu_share, settings.gpus_per_stage)
+    use_vllm(task, steps, settings, request.gpu_share)
     return task
 
 
@@ -557,25 +453,23 @@ def evaluate_step(
     """The step that runs the request's benchmarks, offline, against its model."""
 
     @dsl.container_component
-    def evaluate(pipeline_id: str, request: str, endpoint_url: str, gpus: str):
+    def evaluate(pipeline_id: str, request: str, endpoint_url: str):
         return dsl.ContainerSpec(
             image=steps.stages_image,
             command=["mlp-stage", "evaluate"],
-            args=[pipeline_id, request, endpoint_url, gpus],
+            args=[pipeline_id, request, endpoint_url],
         )
 
-    # 1. An Endpoint already serves its model; any other gets a vLLM of its own, on GPUs.
+    # 1. An Endpoint already serves its model; any other gets a vLLM of its own, on a GPU.
     endpoint_url = endpoint_reference_url(request.evaluate.model, steps)
-    gpus = 0 if endpoint_url else settings.gpus_per_stage
 
     # 2. The step.
     task = evaluate(
         pipeline_id=str(pipeline_id),
         request=request.model_dump_json(),
         endpoint_url=endpoint_url,
-        gpus=str(gpus),
     )
-    use_vllm(task, steps, settings, serving_share(request.evaluate.serving), gpus)
+    use_vllm(task, steps, settings, serving_share(request.evaluate.serving), not endpoint_url)
     task.set_env_variable("SANDBOX_URL", steps.sandbox_url)
     return task
 
@@ -596,20 +490,22 @@ def endpoint_service_url(name: str, namespace: str) -> str:
 
 
 # A step that loads models, e.g. on vLLM: it reads the Model Cache offline and Model Versions from
-# the object store, on its GPUs if it has any.
-def use_vllm(task, steps: StepEnvironment, settings: Settings, share: float, gpus: int) -> None:
+# the object store, on its GPU if it serves a model itself.
+def use_vllm(
+    task, steps: StepEnvironment, settings: Settings, share: float, on_gpu: bool = True
+) -> None:
     use_model_cache(task, steps)
     task.set_env_variable("HF_HUB_OFFLINE", "1")
     task.set_env_variable("HF_DATASETS_OFFLINE", "1")
-    if gpus:
-        use_gpus(task, steps, settings, share, gpus)
+    if on_gpu:
+        use_gpu(task, steps, settings, share)
     use_object_store(task, steps)
 
 
 # Kueue holds the step back until its GPU Share fits; whatever fits runs, the rest waits.
-def use_gpus(task, steps: StepEnvironment, settings: Settings, share: float, gpus: int) -> None:
+def use_gpu(task, steps: StepEnvironment, settings: Settings, share: float) -> None:
     task.set_accelerator_type(config.GPU_RESOURCE)
-    task.set_accelerator_limit(settings.gpu_request(share, gpus))
+    task.set_accelerator_limit(settings.gpu_request(share))
     kubernetes.add_pod_label(task, config.QUEUE_NAME_LABEL, steps.gpu_queue)
     if settings.gpu_sharing:
         task.set_env_variable(config.GPU_SHARE_ENV, str(share))

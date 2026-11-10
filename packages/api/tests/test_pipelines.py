@@ -293,16 +293,6 @@ def test_a_pipeline_whose_pod_waits_for_a_gpu_shows_it(logged_in_api, submittabl
     assert pipelines(logged_in_api)[0]["status"] == "waiting for GPU"
 
 
-def test_a_pipeline_whose_trainjob_waits_for_gpus_shows_it(logged_in_api, submittable, cluster):
-    pipeline_id = submit(logged_in_api).json()["id"]
-    finish_run(cluster, "RUNNING")
-    cluster.queued_trainjobs = {pipeline_id}
-
-    reconcile(logged_in_api)
-
-    assert pipelines(logged_in_api)[0]["status"] == "waiting for GPU"
-
-
 def test_a_failed_pipeline_shows_the_last_lines_of_its_failed_step(
     logged_in_api, submittable, cluster
 ):
@@ -407,20 +397,6 @@ def test_a_pipeline_the_api_restarted_before_submitting_says_so(logged_in_api):
 
     [found] = pipelines(logged_in_api)
     assert (found["status"], found["failure"]) == ("failed", config.UNSUBMITTED_FAILURE)
-
-
-def test_trainjobs_of_finished_or_unknown_pipelines_are_deleted(
-    logged_in_api, submittable, cluster
-):
-    finished, running = (submit(logged_in_api).json()["id"] for _ in range(2))
-    run_ids = list(cluster.runs)
-    cluster.runs[run_ids[0]] = KubeflowRun("FAILED", None)
-    cluster.runs[run_ids[1]] = KubeflowRun("RUNNING", None)
-    cluster.trainjobs = {finished, running, 999}
-
-    reconcile(logged_in_api)
-
-    assert cluster.trainjobs == {running}
 
 
 def test_a_run_deleted_in_the_kfp_ui_fails_the_pipeline(logged_in_api, submittable, cluster):
@@ -629,13 +605,7 @@ def test_a_cancel_during_a_reconcile_stays_cancelled(logged_in_api, submittable,
     assert pipelines(logged_in_api)[0]["status"] == "cancelled"
 
 
-def trainjob(pipeline: dict, task: str = "finetune") -> dict:
-    """The TrainJob the Phase's launcher step creates."""
-    parameters = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"][task]["inputs"]
-    return json.loads(parameters["parameters"]["trainjob"]["runtimeValue"]["constant"])
-
-
-def test_finetune_launches_after_fetch_a_trainjob_on_the_backends_trainer_image(
+def test_finetune_trains_after_fetch_on_the_backends_trainer_image_on_one_gpu(
     logged_in_api, submittable, cluster
 ):
     pipeline_id = submit(logged_in_api).json()["id"]
@@ -643,21 +613,11 @@ def test_finetune_launches_after_fetch_a_trainjob_on_the_backends_trainer_image(
     pipeline, _ = submitted_pipeline(cluster)
     finetune = pipeline["components"]["comp-exit-handler-1"]["dag"]["tasks"]["finetune"]
     assert finetune["dependentTasks"] == ["fetch"]
-    launcher = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
-    assert launcher["image"] == "mlp-launcher:test"
-    assert launcher["command"] == ["mlp-stage", "launch-phase"]
-    assert "accelerator" not in launcher.get("resources", {})
-    job = trainjob(pipeline)
-    assert job["metadata"]["generateName"] == f"pipeline-{pipeline_id}-phase-0-"
-    assert job["metadata"]["labels"] == {
-        "mlp/pipeline-id": str(pipeline_id),
-        "kueue.x-k8s.io/queue-name": "gpu",
-    }
-    assert job["spec"]["runtimeRef"] == {"name": "mlp-finetune"}
-    trainer = job["spec"]["trainer"]
-    assert trainer["image"] == "mlp-trainer-hf:test"
-    assert trainer["numNodes"] == 1
-    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 10}}
+    container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
+    assert container["image"] == "mlp-trainer-hf:test"
+    assert container["command"] == ["mlp-stage", "finetune"]
+    assert container["resources"]["accelerator"]["resourceType"] == "nvidia.com/gpu"
+    assert container["resources"]["accelerator"]["resourceCount"] == "10"
     parameters = finetune["inputs"]["parameters"]
     inputs = {name: p["runtimeValue"]["constant"] for name, p in parameters.items()}
     assert inputs["pipeline_id"] == str(pipeline_id)
@@ -667,95 +627,34 @@ def test_finetune_launches_after_fetch_a_trainjob_on_the_backends_trainer_image(
     assert request["finetune"]["phases"][0]["dataset"] == "dataset:chat@1"
 
 
-@pytest.mark.parametrize(
-    ("method", "nodes", "gpus", "accelerate_config"),
-    [
-        ("lora", 1, 1, "ddp"),
-        ("qlora", 1, 2, "ddp"),
-        ("full", 1, 1, "fsdp"),
-        ("full", 2, 2, "fsdp"),
-    ],
-)
-def test_a_phase_launches_one_process_per_gpu_of_each_node_with_its_weight_methods_config(
-    logged_in_api, submittable, cluster, method, nodes, gpus, accelerate_config
-):
-    update = {"node_count": nodes, "nodes_per_stage": nodes, "gpus_per_stage": gpus}
-    app = logged_in_api.app
-    app.state.settings = app.state.settings.model_copy(update={**update, "gpu_count": 4})
-
-    request = pipeline_request(phase={"method": method})
-    if method == "full":
-        request = without(request, "finetune", "phases", 0, "lora")
-
-    assert submit(logged_in_api, request).status_code == 202
-
-    pipeline, _ = submitted_pipeline(cluster)
-    trainer = trainjob(pipeline)["spec"]["trainer"]
-    assert trainer["command"] == [
-        "accelerate",
-        "launch",
-        "--config_file",
-        f"/app/packages/stages/src/mlp_stages/finetune/accelerate/{accelerate_config}.yaml",
-        "--num_processes",
-        str(nodes * gpus),
-        # Kubeflow Trainer sets these on every node, and Kubernetes fills them in.
-        "--num_machines",
-        "$(PET_NNODES)",
-        "--machine_rank",
-        "$(PET_NODE_RANK)",
-        "--main_process_ip",
-        "$(PET_MASTER_ADDR)",
-        "--main_process_port",
-        "$(PET_MASTER_PORT)",
-        "-m",
-        "mlp_stages.main",
-        "finetune",
-    ]
-    assert trainer["numNodes"] == nodes
-    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 10 * gpus}}
-
-
-def test_an_unsloth_phase_trains_on_its_trainer_image_on_one_gpu_of_one_node(
-    logged_in_api, submittable, cluster
-):
-    update = {"node_count": 2, "nodes_per_stage": 2, "gpus_per_stage": 2, "gpu_count": 4}
-    app = logged_in_api.app
-    app.state.settings = app.state.settings.model_copy(update=update)
-
+def test_an_unsloth_phase_trains_on_its_trainer_image(logged_in_api, submittable, cluster):
     assert submit(logged_in_api, pipeline_request(backend="unsloth")).status_code == 202
 
     pipeline, _ = submitted_pipeline(cluster)
-    trainer = trainjob(pipeline)["spec"]["trainer"]
-    assert trainer["image"] == "mlp-trainer-unsloth:test"
-    assert (trainer["numNodes"], trainer["resourcesPerNode"]) == (
-        1,
-        {"limits": {"nvidia.com/gpu": 10}},
-    )
+    container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
+    assert container["image"] == "mlp-trainer-unsloth:test"
 
 
-def test_each_node_fetches_the_pipelines_base_models_it_is_missing(
+def test_finetune_runs_offline_from_the_model_cache_and_reads_datasets_from_the_object_store(
     logged_in_api, submittable, cluster
 ):
-    pipeline_id = submit(logged_in_api, secrets={"hf_token": HF_TOKEN}).json()["id"]
+    submit(logged_in_api, secrets={"hf_token": HF_TOKEN})
 
-    pipeline, _ = submitted_pipeline(cluster)
-    [patch] = trainjob(pipeline)["spec"]["runtimePatches"]
-    [node] = patch["trainingRuntimeSpec"]["template"]["spec"]["replicatedJobs"]
-    [fetch] = node["template"]["spec"]["template"]["spec"]["initContainers"]
-    assert fetch["name"] == "fetch"
-    assert fetch["env"] == [
-        {"name": "BASE_MODELS", "value": f"hf:{BASE_MODEL}@{COMMIT}"},
-        {
-            "name": "HF_TOKEN",
-            "valueFrom": {
-                "secretKeyRef": {
-                    "name": f"pipeline-{pipeline_id}",
-                    "key": "hf_token",
-                    "optional": True,
-                }
-            },
-        },
-    ]
+    pipeline, kubernetes = submitted_pipeline(cluster)
+    env = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]["env"]
+    assert {"name": "HF_HUB_OFFLINE", "value": "1"} in env
+    assert {"name": "HF_HOME", "value": "/model-cache"} in env
+    assert {"name": "S3_ENDPOINT_URL", "value": "http://seaweedfs.test:8333"} in env
+    assert {"name": "S3_BUCKET", "value": "platform"} in env
+    executor = kubernetes["deploymentSpec"]["executors"]["exec-finetune"]
+    [mount] = executor["pvcMount"]
+    assert (mount["constant"], mount["mountPath"]) == ("model-cache", "/model-cache")
+    [object_store_keys] = executor["secretAsEnv"]
+    assert object_store_keys["secretName"] == "mlpipeline-minio-artifact"
+    assert {k["envVar"] for k in object_store_keys["keyToEnv"]} == {
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+    }
 
 
 def test_each_phase_trains_in_its_own_step_from_the_model_version_the_one_before_registered(
@@ -858,22 +757,21 @@ def test_only_gpu_steps_wait_in_the_gpu_queue(logged_in_api, submittable, cluste
         for name, executor in executors.items()
         if executor.get("podMetadata", {}).get("labels", {}).get("kueue.x-k8s.io/queue-name")
     }
-    # finetune's TrainJob waits in the queue instead.
-    assert queued == {"exec-evaluate"}
+    assert queued == {"exec-finetune", "exec-evaluate"}
 
 
-def test_a_phases_trainjob_requests_the_pipelines_gpu_share_and_is_told_it(
+def test_a_phase_requests_the_pipelines_gpu_share_and_is_told_it(
     logged_in_api, submittable, cluster
 ):
     submit(logged_in_api, {**pipeline_request(), "gpu_share": 0.33})
 
     pipeline, _ = submitted_pipeline(cluster)
-    trainer = trainjob(pipeline)["spec"]["trainer"]
-    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 7}}
-    assert {"name": "GPU_SHARE", "value": "0.33"} in trainer["env"]
+    container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
+    assert container["resources"]["accelerator"]["resourceCount"] == "7"
+    assert {"name": "GPU_SHARE", "value": "0.33"} in container["env"]
 
 
-def test_a_phase_takes_whole_gpus_and_no_share_while_sharing_is_off(
+def test_a_phase_takes_a_whole_gpu_and_no_share_while_sharing_is_off(
     logged_in_api, submittable, cluster
 ):
     app = logged_in_api.app
@@ -882,9 +780,9 @@ def test_a_phase_takes_whole_gpus_and_no_share_while_sharing_is_off(
     submit(logged_in_api)
 
     pipeline, _ = submitted_pipeline(cluster)
-    trainer = trainjob(pipeline)["spec"]["trainer"]
-    assert trainer["resourcesPerNode"] == {"limits": {"nvidia.com/gpu": 1}}
-    assert "env" not in trainer
+    container = pipeline["deploymentSpec"]["executors"]["exec-finetune"]["container"]
+    assert container["resources"]["accelerator"]["resourceCount"] == "1"
+    assert "GPU_SHARE" not in [variable["name"] for variable in container["env"]]
 
 
 def test_a_gpu_share_above_the_recommended_maximum_is_accepted(logged_in_api, submittable):

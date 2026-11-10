@@ -55,13 +55,12 @@ def test_an_endpoint_stops_by_deleting_its_deployment_service_and_route():
     ]
 
 
-def cluster_listing(conditions: list[dict] = (), trainjobs: list[dict] = ()) -> Cluster:
-    """A cluster whose run has one Pending pod with the conditions, and the Pipeline TrainJobs."""
+def cluster_listing(conditions: list[dict] = ()) -> Cluster:
+    """A cluster whose run has one Pending pod with the conditions."""
     pods = {"items": [{"status": {"phase": "Pending", "conditions": list(conditions)}}]}
 
     def request(method, url, **_):
-        found = {"items": list(trainjobs)} if "/trainjobs" in url else pods
-        return SimpleNamespace(status=200, data=json.dumps(found).encode(), getheaders=lambda: {})
+        return SimpleNamespace(status=200, data=json.dumps(pods).encode(), getheaders=lambda: {})
 
     cluster = Cluster.__new__(Cluster)
     cluster.namespace = "kubeflow"
@@ -160,35 +159,15 @@ def test_only_running_reporters_are_read():
 def test_a_step_kueue_holds_back_until_a_gpu_is_free_waits_for_a_gpu():
     gated = {"type": "PodScheduled", "status": "False", "reason": "SchedulingGated"}
 
-    assert cluster_listing([gated]).is_waiting_for_gpu("run-1", 7)
+    assert cluster_listing([gated]).is_waiting_for_gpu("run-1")
 
 
 def test_a_step_the_scheduler_finds_no_gpu_for_waits_for_a_gpu():
     message = "0/1 nodes are available: 1 Insufficient nvidia.com/gpu."
     unschedulable = {"type": "PodScheduled", "status": "False", "reason": "Unschedulable"}
 
-    assert cluster_listing([{**unschedulable, "message": message}]).is_waiting_for_gpu("run-1", 7)
-    assert not cluster_listing([unschedulable]).is_waiting_for_gpu("run-1", 7)
-
-
-def test_a_phase_whose_trainjob_kueue_holds_back_waits_for_a_gpu():
-    queued = {"metadata": {"name": "pipeline-7-phase-0-x1"}, "spec": {"suspend": True}}
-    admitted = {"metadata": {"name": "pipeline-7-phase-0-x1"}, "spec": {"suspend": False}}
-
-    assert cluster_listing(trainjobs=[queued]).is_waiting_for_gpu("run-1", 7)
-    assert not cluster_listing(trainjobs=[admitted]).is_waiting_for_gpu("run-1", 7)
-
-
-def test_the_trainjobs_of_a_pipeline_are_found_and_deleted_by_its_label():
-    requests = kubernetes_requests(lambda cluster: cluster.delete_trainjobs(7))
-
-    assert requests == [
-        (
-            "DELETE",
-            "/apis/trainer.kubeflow.org/v1alpha1/namespaces/kubeflow/trainjobs"
-            "?labelSelector=mlp%2Fpipeline-id%3D7",
-        )
-    ]
+    assert cluster_listing([{**unschedulable, "message": message}]).is_waiting_for_gpu("run-1")
+    assert not cluster_listing([unschedulable]).is_waiting_for_gpu("run-1")
 
 
 UNSCHEDULABLE = {

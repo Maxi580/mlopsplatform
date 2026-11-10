@@ -87,8 +87,7 @@ def test_an_endpoint_for_a_base_model_fetches_it_and_serves_it_offline_from_the_
     assert (started["name"], started["status"]) == ("chat", "pending")
     assert started["model"] == PINNED_QWEN
     assert init_commands(cluster) == [["mlp-stage", "fetch", "200Gi", PINNED_QWEN]]
-    expected = [QWEN, "--served-model-name", "chat", "--tensor-parallel-size", "1"]
-    assert vllm_args(cluster)[:5] == expected
+    assert vllm_args(cluster)[:3] == [QWEN, "--served-model-name", "chat"]
     assert contains(vllm_args(cluster), ["--revision", COMMIT])
     [vllm] = pod(cluster)["containers"]
     assert vllm["image"] == "vllm/vllm-openai:test"
@@ -239,16 +238,6 @@ def test_full_weights_registered_without_their_model_type_serve_without_a_reason
     start(logged_in_api, "model:my-model")
 
     assert "--reasoning-parser" not in vllm_args(cluster)
-
-
-def test_the_gpu_count_comes_from_platform_settings(logged_in_api, qwen_on_the_hub, cluster):
-    logged_in_api.app.state.settings.gpus_per_endpoint = 2
-
-    start(logged_in_api)
-
-    assert contains(vllm_args(cluster), ["--tensor-parallel-size", "2"])
-    [vllm] = pod(cluster)["containers"]
-    assert vllm["resources"]["limits"] == {"nvidia.com/gpu": 12}
 
 
 @pytest.mark.parametrize(
@@ -485,17 +474,6 @@ def test_an_endpoint_stored_with_quantization_restarts_without_it(
 
     assert response.status_code == 200, response.text
     assert "--quantization" not in vllm_args(cluster)
-
-
-def test_a_restart_takes_the_gpu_count_from_platform_settings(
-    logged_in_api, qwen_on_the_hub, cluster
-):
-    start(logged_in_api)
-    stop(logged_in_api)
-    logged_in_api.app.state.settings.gpus_per_endpoint = 2
-
-    assert restart(logged_in_api).json()["gpus"] == 2
-    assert contains(vllm_args(cluster), ["--tensor-parallel-size", "2"])
 
 
 def test_a_failed_endpoint_whose_model_is_gone_keeps_its_deployment(

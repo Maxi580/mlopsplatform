@@ -45,7 +45,7 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
         make_room_for_base_models(state, model)
 
         # 3. Its row first, so in-use checks and the reconciler know every Deployment.
-        endpoint_uuid, gpus = uuid.uuid4().hex, state.settings.gpus_per_endpoint
+        endpoint_uuid = uuid.uuid4().hex
         with state.engine.begin() as connection:
             connection.execute(
                 insert(endpoint).values(
@@ -55,14 +55,13 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
                     owner=config.OWNER,
                     spec=spec.model_dump(mode="json", exclude_defaults=True),
                     uses=model.references,
-                    gpus=gpus,
                     status="pending",
                     created_at=datetime.now(UTC),
                 )
             )
 
         # 4. Its Kubernetes objects.
-        return create_endpoint_objects(state, name, endpoint_uuid, spec, model, gpus)
+        return create_endpoint_objects(state, name, endpoint_uuid, spec, model)
 
 
 def restart_endpoint(state, name: str, gpu_share: float | None = None) -> dict:
@@ -83,23 +82,21 @@ def restart_endpoint(state, name: str, gpu_share: float | None = None) -> dict:
         spec, model = pin_endpoint_model(state, stored)
         make_room_for_base_models(state, model)
 
-        # 3. Without a failed Endpoint's leftover Deployment, pending again on today's GPU count.
+        # 3. Without a failed Endpoint's leftover Deployment, pending again.
         state.cluster.delete_endpoint(name)
-        gpus = state.settings.gpus_per_endpoint
         with state.engine.begin() as connection:
             connection.execute(
                 update(endpoint)
                 .where(endpoint.c.id == found.id)
                 .values(
                     status="pending",
-                    gpus=gpus,
                     failure=None,
                     spec=spec.model_dump(mode="json", exclude_defaults=True),
                 )
             )
 
         # 4. Its Kubernetes objects under the same UUID.
-        return create_endpoint_objects(state, name, found.uuid, spec, model, gpus)
+        return create_endpoint_objects(state, name, found.uuid, spec, model)
 
 
 def pin_endpoint_model(state, spec: EndpointSpec) -> tuple[EndpointSpec, EndpointModel]:
@@ -121,8 +118,7 @@ def with_calculated_gpu_share(state, spec: EndpointSpec) -> EndpointSpec:
     memory = find_model_memory(
         spec.model, None, state.hugging_face, state.model_registry, state.object_store
     )
-    gpus = state.settings.gpus_per_endpoint
-    return with_gpu_share(spec, memory, find_gpu(state.cluster), gpus, state.settings)
+    return with_gpu_share(spec, memory, find_gpu(state.cluster), state.settings)
 
 
 def refuse_impossible_gpu_share(state, spec: EndpointSpec) -> None:
@@ -145,7 +141,7 @@ def preview_endpoint(state, spec: EndpointSpec) -> EndpointSpec:
 
 
 def create_endpoint_objects(
-    state, name: str, endpoint_uuid: str, spec: EndpointSpec, model: EndpointModel, gpus: int
+    state, name: str, endpoint_uuid: str, spec: EndpointSpec, model: EndpointModel
 ) -> dict:
     """The Endpoint once Kubernetes has its objects; after a failure none, and it is stopped."""
     cluster = state.cluster
@@ -156,8 +152,7 @@ def create_endpoint_objects(
         endpoint_uuid,
         spec,
         model,
-        gpus,
-        state.settings.gpu_request(serving_share(spec), gpus),
+        state.settings.gpu_request(serving_share(spec)),
         state.settings.model_cache_size,
         cluster.endpoint_environment,
         None if judge else traces_experiment_id(state, name),
@@ -254,7 +249,6 @@ def endpoint_summary(row, domain: str) -> dict:
         "owner": row.owner,
         "model": row.spec["model"],
         "spec": row.spec,
-        "gpus": row.gpus,
         # Endpoints stored before #116 left out the then default.
         "gpu_share": row.spec.get("gpu_memory_utilization", config.SERVING_GPU_MEMORY_UTILIZATION),
         "status": row.status,

@@ -94,7 +94,7 @@ def step(monkeypatch, tmp_path):
     def run_step(model=BASE_MODEL, handed=("", "", ""), **speculate):
         speculate = {"model": model, "dataset": "dataset:chat@1", **speculate}
         request = json.dumps({"name": "qwen-sft", "speculate": speculate})
-        arguments = ["7", request, *handed, "2", "4", str(output)]
+        arguments = ["7", request, *handed, "4", str(output)]
         monkeypatch.setattr(sys, "argv", ["mlp-stage", "speculate", *arguments])
         main()
         return output.read_text()
@@ -151,7 +151,6 @@ def test_vllm_hands_out_four_verifier_layers_until_training_starts(step):
     step.run()
 
     [args] = step.vllm
-    assert flag(args, "--tensor-parallel-size") == "2"
     assert "--no-enable-prefix-caching" in args
     extraction = json.loads(flag(args, "--speculative-config"))
     assert extraction["method"] == "extract_hidden_states"

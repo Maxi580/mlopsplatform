@@ -126,11 +126,11 @@ def step(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "stdout", sys.stdout)
     monkeypatch.setattr(sys, "stderr", sys.stderr)
 
-    def run(teacher=BASE_MODEL, teacher_url="", gpus="1", **distill):
+    def run(teacher=BASE_MODEL, teacher_url="", **distill):
         distill = {"dataset": "dataset:prompts@1", "teacher": teacher, **distill}
         request = {"name": "qwen-distill", "distill": distill}
         monkeypatch.setattr(sys, "argv", ["mlp-stage", "distill", "7", json.dumps(request)])
-        sys.argv += [teacher_url, gpus, str(output)]
+        sys.argv += [teacher_url, str(output)]
         main()
 
     fakes.run = run
@@ -260,7 +260,7 @@ def test_an_api_teacher_gets_the_key_which_never_shows(step, monkeypatch, capsys
     step.teacher.status = 401
 
     with pytest.raises(SystemExit):
-        step.run(teacher="gpt-4.1", api_url="https://api.example.com/v1", gpus="0")
+        step.run(teacher="gpt-4.1", api_url="https://api.example.com/v1")
 
     assert step.vllm.commands == []
     [request] = step.teacher.requests
@@ -277,7 +277,7 @@ def test_an_endpoint_teaches_through_its_service(step):
     step.prompts = ["Hi"]
     step.teacher.replies = {"Hi": text("Hello.")}
 
-    step.run(teacher="endpoint:chat", teacher_url="http://endpoint-chat.mlp.svc:8000", gpus="0")
+    step.run(teacher="endpoint:chat", teacher_url="http://endpoint-chat.mlp.svc:8000")
 
     assert step.vllm.commands == []
     assert (

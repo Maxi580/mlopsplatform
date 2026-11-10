@@ -268,32 +268,6 @@ BACKENDS = {
         "rloo": ("lora", "qlora"),
     },
 }
-# Its open-source version trains on one GPU only (#23).
-SINGLE_GPU_BACKENDS = ("unsloth",)
-# A Phase runs one process per GPU through `accelerate launch`: Adapters under DDP, as each GPU
-# holds the whole model, and full weights under FSDP, sharded across the GPUs.
-ACCELERATE_CONFIGS = {"lora": "ddp", "qlora": "ddp", "full": "fsdp"}
-ACCELERATE_CONFIG_PATH = "/app/packages/stages/src/mlp_stages/finetune/accelerate/{name}.yaml"
-# Where a Phase's processes meet across its TrainJob's nodes: Kubeflow Trainer sets these on every
-# node, and Kubernetes fills them into the command.
-ACCELERATE_RENDEZVOUS = [
-    "--num_machines",
-    "$(PET_NNODES)",
-    "--machine_rank",
-    "$(PET_NODE_RANK)",
-    "--main_process_ip",
-    "$(PET_MASTER_ADDR)",
-    "--main_process_port",
-    "$(PET_MASTER_PORT)",
-]
-# Phase algorithm -> the weight methods it can't train with on several GPUs yet: `grpo` and `rloo`
-# start a colocated vLLM in every process, `distillation` a Teacher. None of these, nor any other
-# combination, has run on 2 GPUs yet; this list is the expected failures, to be confirmed.
-SINGLE_PROCESS_PHASES = {
-    "grpo": WEIGHT_METHODS,
-    "rloo": WEIGHT_METHODS,
-    "distillation": WEIGHT_METHODS,
-}
 # LoraConfig settings the platform sets.
 LORA_CONFIG = "LoraConfig"
 # The platform sets `task_type`; PEFT wants the others as dataclasses, not dicts (#79).
@@ -469,7 +443,7 @@ VLLM_MAX_LENGTH_KEYS = (
 WEIGHTS_INDEX_FILE = "model.safetensors.index.json"
 WEIGHTS_FILE = "model.safetensors"
 ADAPTER_WEIGHTS_FILE = "adapter_model.safetensors"
-# Tells a step and a Phase's TrainJob their GPU Share; unset while GPU sharing is off.
+# Tells a step its GPU Share; unset while GPU sharing is off.
 GPU_SHARE_ENV = "GPU_SHARE"
 # Secret slot -> the environment variable of the steps that receive it. The API adds
 # `step_token` itself, for the `distill` and `sweep` steps to call the API with.
@@ -484,7 +458,7 @@ STEP_REQUEST_TIMEOUT = timedelta(minutes=5)
 MODEL_CACHE_PATH = "/model-cache"
 # The Kubernetes resource the NVIDIA device plugin offers GPUs, or their slices, as.
 GPU_RESOURCE = "nvidia.com/gpu"
-# Kueue admits a pod, Deployment or TrainJob with this label once it fits the queue's quota.
+# Kueue admits a pod or Deployment with this label once it fits the queue's quota.
 QUEUE_NAME_LABEL = "kueue.x-k8s.io/queue-name"
 # KFP's own object store keys in its namespace, which install.sh fills with the platform's keys.
 OBJECT_STORE_SECRET = "mlpipeline-minio-artifact"
@@ -522,19 +496,6 @@ OWNER = "shared"
 PIPELINE_SECRET_NAME = "pipeline-{id}"
 # Marks the Secrets the platform created, so the backstop sweep never touches others.
 PIPELINE_SECRET_LABEL = "mlp-pipeline-secret"
-# A finetune Phase runs as a TrainJob of this name and label, which cancels and deletes find.
-TRAINJOB_NAME = "pipeline-{id}-phase-{index}-"
-PIPELINE_ID_LABEL = "mlp/pipeline-id"
-# Who the TrainJob's patch of its runtime belongs to; Kueue adds its own. Trainer's webhook
-# requires a domain-prefixed path.
-TRAINJOB_PATCH_MANAGER = "mlopsplatform.io/api"
-TRAINJOB_RESOURCE = {"group": "trainer.kubeflow.org", "version": "v1alpha1", "plural": "trainjobs"}
-# How long a launcher follows its TrainJob, queued and training, and how often it looks.
-TRAINJOB_TIMEOUT = timedelta(days=30)
-TRAINJOB_POLL_INTERVAL = timedelta(seconds=10)
-# A failed Phase's step ends with this many of its main process's last log lines.
-TRAINJOB_FAILURE_LINES = 20
-SERVICE_ACCOUNT_NAMESPACE_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 # Kubeflow run state -> Pipeline status; other states count as pending.
 PIPELINE_STATUSES = {
     "PENDING": "pending",

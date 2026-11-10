@@ -20,10 +20,8 @@ def test_a_training_step_imports_no_training_library_before_its_backend(step):
 
 @pytest.fixture
 def phase_process(monkeypatch, tmp_path):
-    """Runs `mlp-stage finetune` as one of `accelerate launch`'s processes, with fakes around it."""
+    """Runs `mlp-stage finetune` with fakes around it."""
     pytest.importorskip("torch", reason="needs a trainer extra, e.g. uv sync --extra hf")
-    import accelerate
-
     from mlp_stages.finetune import checkpoints
     from mlp_stages.finetune import main as finetune_main
     from mlp_stages.main import main
@@ -56,9 +54,7 @@ def phase_process(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "stdout", sys.stdout)
     monkeypatch.setattr(sys, "stderr", sys.stderr)
 
-    def run(main_process: bool, stop_after_checkpoint=""):
-        state = SimpleNamespace(is_main_process=main_process)
-        monkeypatch.setattr(accelerate, "PartialState", lambda: state)
+    def run(stop_after_checkpoint=""):
         arguments = ["7", "0", json.dumps(REQUEST), "", "", "", "30", "", stop_after_checkpoint]
         monkeypatch.setattr(sys, "argv", ["mlp-stage", "finetune", *arguments, str(fakes.output)])
         main()
@@ -101,33 +97,22 @@ REQUEST = {
 }
 
 
-def test_the_main_process_registers_the_model_version_and_writes_the_output(phase_process):
-    phase_process.run(main_process=True)
+def test_a_phase_registers_its_model_version_and_writes_the_output(phase_process):
+    phase_process.run()
 
     assert phase_process.registered == ["run-1"]
     assert phase_process.output.read_text() == "model:qwen-sft@1"
     assert phase_process.deleted == ["checkpoints/7/0/"]
 
 
-def test_the_other_processes_register_nothing_and_write_no_output(phase_process):
-    phase_process.run(main_process=False)
+def test_an_interrupted_phase_registers_nothing_and_writes_an_empty_output(phase_process):
+    phase_process.run(stop_after_checkpoint="true")
 
-    assert phase_process.registered == []
-    assert not phase_process.output.exists()
-    assert phase_process.deleted == []
-
-
-def test_an_interrupted_phase_has_only_the_main_process_write_its_empty_output(phase_process):
-    phase_process.run(main_process=False, stop_after_checkpoint="true")
-    assert not phase_process.output.exists()
-
-    phase_process.run(main_process=True, stop_after_checkpoint="true")
     assert phase_process.output.read_text() == ""
     assert phase_process.registered == []
 
 
-@pytest.mark.parametrize(("world_process_zero", "uploads"), [(True, 1), (False, 0)])
-def test_only_the_main_process_uploads_a_checkpoint(monkeypatch, world_process_zero, uploads):
+def test_a_due_checkpoint_is_saved_and_uploaded(monkeypatch):
     pytest.importorskip("torch", reason="needs a trainer extra, e.g. uv sync --extra hf")
     from mlp_stages.finetune import checkpoints
 
@@ -135,11 +120,11 @@ def test_only_the_main_process_uploads_a_checkpoint(monkeypatch, world_process_z
     monkeypatch.setattr(checkpoints, "upload_checkpoint", lambda *arguments: uploaded.append(1))
     callback = checkpoints.CheckpointUploads("checkpoints/7/0/", 0, False)
     args = SimpleNamespace(output_dir="out")
-    state = SimpleNamespace(global_step=3, is_world_process_zero=world_process_zero)
+    state = SimpleNamespace(global_step=3)
     control = SimpleNamespace(should_save=False, should_training_stop=False)
 
     callback.on_step_end(args, state, control)
     callback.on_save(args, state, control)
 
     assert control.should_save
-    assert len(uploaded) == uploads
+    assert len(uploaded) == 1

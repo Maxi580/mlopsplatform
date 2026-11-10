@@ -93,12 +93,9 @@ def save_model_version(
         trainer.save_model(str(model_directory))
         return
 
-    # 2. Merged into the base reloaded in bfloat16, not the 4 bits `qlora` trained on; only the main
-    # process saved the Adapter.
+    # 2. Merged into the base reloaded in bfloat16, not the 4 bits `qlora` trained on.
     adapter_directory = model_directory.with_name("trained-adapter")
     trainer.save_model(str(adapter_directory))
-    if not trainer.is_world_process_zero():
-        return
     load_model(base_directory, adapter_directory, "bfloat16").save_pretrained(model_directory)
     tokenizer.save_pretrained(model_directory)
 

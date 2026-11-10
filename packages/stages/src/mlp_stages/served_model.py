@@ -24,7 +24,6 @@ def served_model(
     options: ServingOptions | None,
     served_name: str,
     endpoint_url: str,
-    gpus: int,
     scratch: Path,
 ) -> Iterator[tuple[str, str, VllmModel | None]]:
     """The URL and name it is served under, and what vLLM loads (None for an Endpoint)."""
@@ -35,13 +34,13 @@ def served_model(
 
     # 2. Otherwise a vLLM of its own, with the serving options, from the Model Cache.
     loaded = vllm_model(model, scratch)
-    with running_vllm(vllm_args(options or ServingOptions(), loaded, served_name, gpus)):
+    with running_vllm(vllm_args(options or ServingOptions(), loaded, served_name)):
         yield config.LOCAL_VLLM_URL, served_name, loaded
 
 
 @contextmanager
 def running_vllm(args: list[str]) -> Iterator[None]:
-    """`vllm serve` with the args, at LOCAL_VLLM_URL until the block ends and frees its GPUs."""
+    """`vllm serve` with the args, at LOCAL_VLLM_URL until the block ends and frees its GPU."""
     vllm = subprocess.Popen(["vllm", "serve", *args])
     try:
         wait_until_ready(vllm)

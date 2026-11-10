@@ -44,8 +44,6 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("VLLM_IMAGE", "vllm/vllm-openai:real")
     monkeypatch.setenv("MODEL_CACHE_HOST_PATH", "/var/lib/mlp/model-cache")
     monkeypatch.setenv("GPU_QUEUE", "gpu")
-    monkeypatch.setenv("LAUNCHER_IMAGE", "mlp-launcher:real")
-    monkeypatch.setenv("FINETUNE_RUNTIME", "mlp-finetune")
     monkeypatch.setenv("GPU_REPORTER_PORT", "8020")
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
@@ -426,8 +424,6 @@ class FakeCluster:
 
     steps = StepEnvironment(
         stages_image="mlp-stages:test",
-        launcher_image="mlp-launcher:test",
-        finetune_runtime="mlp-finetune",
         trainer_images={"hf": "mlp-trainer-hf:test", "unsloth": "mlp-trainer-unsloth:test"},
         model_cache_pvc="model-cache",
         object_store_url="http://seaweedfs.test:8333",
@@ -456,9 +452,6 @@ class FakeCluster:
         self.terminated = []
         self.deleted_runs = []
         self.waiting_for_gpu = set()
-        # Pipeline ids that have TrainJobs, and those of them Kueue holds back.
-        self.trainjobs = set()
-        self.queued_trainjobs = set()
         # Run ID -> the log of its first failed step.
         self.failed_step_logs = {}
         # Endpoint name -> its Kubernetes objects, and the state its pod is in.
@@ -509,17 +502,11 @@ class FakeCluster:
         self.runs.pop(run_id, None)
         self.deleted_runs.append(run_id)
 
-    def is_waiting_for_gpu(self, run_id, pipeline_id):
-        return run_id in self.waiting_for_gpu or pipeline_id in self.queued_trainjobs
+    def is_waiting_for_gpu(self, run_id):
+        return run_id in self.waiting_for_gpu
 
     def failed_step_log(self, run_id):
         return self.failed_step_logs.get(run_id, "")
-
-    def trainjob_pipelines(self):
-        return set(self.trainjobs)
-
-    def delete_trainjobs(self, pipeline_id):
-        self.trainjobs.discard(pipeline_id)
 
     def create_endpoint(self, manifests):
         name = manifests["deployment"]["metadata"]["labels"][config.ENDPOINT_LABEL]

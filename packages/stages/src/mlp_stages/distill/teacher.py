@@ -10,7 +10,7 @@ from mlp_stages.served_model import served_model
 
 
 def teacher_replies(
-    request: PipelineRequest, prompts: list[list[dict]], teacher_url: str, gpus: int, scratch: Path
+    request: PipelineRequest, prompts: list[list[dict]], teacher_url: str, scratch: Path
 ) -> list[dict]:
     """The Teacher's reply to each prompt, an OpenAI chat choice, or `{"error": …}` if none came."""
     # 1. What every prompt is sent with: the Teacher's name, the tools and the sampling settings.
@@ -29,9 +29,7 @@ def teacher_replies(
         return ask_teacher(distill.api_url.rstrip("/"), headers, body, prompts, api_key)
 
     # 3. Otherwise a running Endpoint, or a vLLM started here with the Teacher's tool parser.
-    served = served_model(
-        distill.teacher, distill.serving, request.name, teacher_url, gpus, scratch
-    )
+    served = served_model(distill.teacher, distill.serving, request.name, teacher_url, scratch)
     with served as (url, served_name, _):
         return ask_teacher(f"{url}/v1", {}, {**body, "model": served_name}, prompts)
 

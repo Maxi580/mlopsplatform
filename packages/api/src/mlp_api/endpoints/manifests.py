@@ -9,7 +9,6 @@ def endpoint_manifests(
     endpoint_uuid: str,
     spec: EndpointSpec,
     model: EndpointModel,
-    gpus: int,
     gpu_request: int,
     model_cache_size: str,
     environment: EndpointEnvironment,
@@ -55,7 +54,7 @@ def endpoint_manifests(
         )
 
     # 2. vLLM, offline, on its GPU Share; it reports ready once the model is loaded.
-    args = vllm_args(spec, model.vllm, name, gpus, spec.speculative)
+    args = vllm_args(spec, model.vllm, name, spec.speculative)
     env = {"HF_HOME": config.MODEL_CACHE_PATH, "HF_HUB_OFFLINE": "1"}
     if traces_experiment_id is not None:
         args.append(f"--otlp-traces-endpoint={environment.mlflow_url}{config.REQUEST_TRACES_PATH}")

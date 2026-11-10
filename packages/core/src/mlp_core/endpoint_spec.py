@@ -127,13 +127,12 @@ def vllm_args(
     spec: ServingOptions,
     model: VllmModel,
     served_name: str,
-    gpus: int,
     speculative: Speculative | None = None,
 ) -> list[str]:
     """The `vllm serve` arguments for the spec, shared by Endpoints, `evaluate` and Teachers."""
     # 1. The model, which clients call `served_name`; an Adapter takes the name from its base.
     base_name = f"{served_name}-base" if model.adapter_path else served_name
-    args = [model.path, "--served-model-name", base_name, "--tensor-parallel-size", str(gpus)]
+    args = [model.path, "--served-model-name", base_name]
     # `evaluate` runs lm-eval against vLLM, and it tokenizes through vLLM's tokenizer endpoints.
     args.append("--enable-tokenizer-info-endpoint")
     if model.revision:

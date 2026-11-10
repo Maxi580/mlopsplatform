@@ -200,14 +200,13 @@ def test_evaluate_runs_after_finetune(logged_in_api, cluster):
     assert inputs(evaluate)["endpoint_url"] == ""
 
 
-def test_evaluate_serves_the_model_with_vllm_on_the_platforms_gpus_offline(logged_in_api, cluster):
+def test_evaluate_serves_the_model_with_vllm_on_a_gpu_offline(logged_in_api, cluster):
     submit(logged_in_api, evaluating())
 
     step = container(cluster, "evaluate")
     assert step["image"] == "mlp-stages:test"
     assert step["command"] == ["mlp-stage", "evaluate"]
     assert step["resources"]["accelerator"]["resourceCount"] == "6"
-    assert inputs(tasks(cluster)["evaluate"])["gpus"] == "1"
     for variable in ("HF_HUB_OFFLINE", "HF_DATASETS_OFFLINE"):
         assert {"name": variable, "value": "1"} in step["env"]
     assert {"name": "HF_HOME", "value": "/model-cache"} in step["env"]
@@ -240,7 +239,6 @@ def test_a_running_endpoint_is_evaluated_through_its_service_without_a_gpu(logge
     evaluate = tasks(cluster)["evaluate"]
     assert inputs(evaluate)["endpoint_url"] == "http://endpoint-chat.mlp.svc:8000"
     assert "resources" not in container(cluster, "evaluate")
-    assert inputs(evaluate)["gpus"] == "0"
     assert inputs(tasks(cluster)["fetch"])["references"] == GSM8K
 
 

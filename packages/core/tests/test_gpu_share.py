@@ -21,9 +21,9 @@ def settings(platform_settings):
     return Settings(**platform_settings)
 
 
-def calculated(settings, weights=LLAMA_8B_BYTES, gpu=GPU_24GB, gpus=1, limit=None, **options):
+def calculated(settings, weights=LLAMA_8B_BYTES, gpu=GPU_24GB, limit=None, **options):
     model = ModelMemory(weights, limit)
-    return with_gpu_share(ServingOptions(**options), model, gpu, gpus, settings)
+    return with_gpu_share(ServingOptions(**options), model, gpu, settings)
 
 
 def test_vllm_needs_one_and_a_half_times_its_weights_and_a_reserve(settings):
@@ -38,13 +38,6 @@ def test_shared_memory_adds_its_reserve(settings):
     assert calculated(settings, gpu=GB10).gpu_memory_utilization == 0.25
     unshared = Gpu(125 * GIB, shared_with_system=False)
     assert calculated(settings, gpu=unshared).gpu_memory_utilization == 0.2
-
-
-def test_weights_on_several_gpus_are_divided_but_the_reserve_is_not(settings):
-    # 11.25 GiB + 2 GiB of 50 GiB is 26.5%.
-    gpu = Gpu(50 * GIB, shared_with_system=False)
-
-    assert calculated(settings, gpu=gpu, gpus=2).gpu_memory_utilization == 0.3
 
 
 def test_a_calculated_share_stops_at_the_recommended_maximum(settings):

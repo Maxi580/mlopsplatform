@@ -13,7 +13,7 @@ from mlp_stages.distill.teacher import teacher_replies
 from mlp_stages.platform_api import call_step_route
 
 
-def distill(pipeline_id: str, request: str, teacher_url: str, gpus: str, dataset: str) -> None:
+def distill(pipeline_id: str, request: str, teacher_url: str, dataset: str) -> None:
     """Registers the prompts with their well-formed Teacher replies as a Dataset Version."""
     # 1. The `distill` block of the resolved request the compiler passed in, and its prompts.
     resolved = PipelineRequest.model_validate_json(request)
@@ -25,7 +25,7 @@ def distill(pipeline_id: str, request: str, teacher_url: str, gpus: str, dataset
         prompts = [prompt_messages(json.loads(line)["prompt"]) for line in lines]
 
         # 2. The Teacher's reply to each prompt.
-        replies = teacher_replies(resolved, prompts, teacher_url, int(gpus), Path(scratch))
+        replies = teacher_replies(resolved, prompts, teacher_url, Path(scratch))
 
     # 3. A row per well-formed reply; the others are dropped, with why (#17).
     rows, dropped = [], []

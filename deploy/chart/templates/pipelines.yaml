@@ -14,9 +14,8 @@ rules:
   - apiGroups: [""]
     resources: [secrets]
     verbs: [create, delete, list]
-  # Pending step pods and queued TrainJobs show as "waiting for GPU"; the TrainJobs of finished
-  # Pipelines are deleted. The GPU Shares a machine has reserved add up from pods here and in the
-  # platform namespace, the only ones with a GPU queue.
+  # Pending step pods show as "waiting for GPU". The GPU Shares a machine has reserved add up from
+  # pods here and in the platform namespace, the only ones with a GPU queue.
   - apiGroups: [""]
     resources: [pods]
     verbs: [list]
@@ -24,9 +23,6 @@ rules:
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
-  - apiGroups: [trainer.kubeflow.org]
-    resources: [trainjobs]
-    verbs: [list, deletecollection]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -41,65 +37,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: mlp-api
----
-# A finetune Phase's launcher step runs its TrainJob, follows its log and deletes it on cancel.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: mlp-launcher
-  namespace: {{ .Values.namespaces.kubeflow }}
-rules:
-  - apiGroups: [trainer.kubeflow.org]
-    resources: [trainjobs]
-    verbs: [create, get, list, watch, delete]
-  # The Trainer SDK looks for a namespaced runtime first and falls back to ours only on a 404.
-  - apiGroups: [trainer.kubeflow.org]
-    resources: [trainingruntimes]
-    verbs: [get]
-  - apiGroups: [""]
-    resources: [pods]
-    verbs: [get, list]
-  - apiGroups: [""]
-    resources: [pods/log]
-    verbs: [get]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: mlp-launcher
-  namespace: {{ .Values.namespaces.kubeflow }}
-subjects:
-  # KFP runs every step as this ServiceAccount.
-  - kind: ServiceAccount
-    name: pipeline-runner
-    namespace: {{ .Values.namespaces.kubeflow }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: mlp-launcher
----
-# The finetune runtime is cluster-scoped, so reading it needs a ClusterRole.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: mlp-launcher
-rules:
-  - apiGroups: [trainer.kubeflow.org]
-    resources: [clustertrainingruntimes]
-    verbs: [get]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: mlp-launcher
-subjects:
-  - kind: ServiceAccount
-    name: pipeline-runner
-    namespace: {{ .Values.namespaces.kubeflow }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: mlp-launcher
 ---
 # A host directory rather than a provisioned volume, so the API in its own namespace mounts it too.
 apiVersion: v1

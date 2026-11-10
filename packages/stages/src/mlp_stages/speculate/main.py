@@ -21,7 +21,6 @@ def speculate(
     finetuned: str,
     quantized: str,
     distilled_dataset: str,
-    gpus: str,
     dataloader_workers: str,
     model_version: str,
 ) -> None:
@@ -52,7 +51,7 @@ def speculate(
         # vLLM holds the GPU Share, if any; the training after it has no cap yet.
         share = os.environ.get(config.GPU_SHARE_ENV)
         serving = ServingOptions(prefix_caching=False, gpu_memory_utilization=share)
-        args = vllm_args(serving, VllmModel(str(source)), str(source), int(gpus))
+        args = vllm_args(serving, VllmModel(str(source)), str(source))
         extracted = scratch / "extracted"
         extracted.mkdir()
         with running_vllm(args + extraction_args(source, extracted)):

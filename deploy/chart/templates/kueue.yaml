@@ -1,6 +1,6 @@
 # Every GPU workload waits in one queue for its GPU Share, counted in the device plugin's slices of
-# all GPUs: oldest first, but a newer one goes ahead if the older one doesn't fit. A multi-pod
-# TrainJob starts only once all its slices are free, and nothing running is ever evicted.
+# all GPUs: oldest first, but a newer one goes ahead if the older one doesn't fit; nothing running
+# is ever evicted.
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:

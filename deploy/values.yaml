@@ -12,7 +12,6 @@ namespaces:
   certManager: cert-manager
   kubeSystem: kube-system
   kueue: kueue-system
-  kubeflowTrainer: kubeflow-system
 
 versions:
   k3s: v1.37.1+k3s1
@@ -24,8 +23,6 @@ versions:
   mlflowChart: 1.11.7
   nvidiaDevicePlugin: v0.20.1
   kueue: 0.20.1
-  # Kubeflow Trainer v2, with the JobSet it brings; finetune Phases run as its TrainJobs.
-  kubeflowTrainer: 2.3.0
   # BFCL, which `evaluate` runs for tool calling in a virtualenv of its own.
   bfcl: 2026.3.23
   # The oldest NVIDIA driver install.sh accepts.
@@ -49,9 +46,6 @@ images:
   trainerHf: mlp-trainer-hf
   # Runs finetune on the unsloth backend: Unsloth with the TRL and Transformers it supports.
   trainerUnsloth: mlp-trainer-unsloth
-  # Runs a finetune Phase's step: creates its TrainJob, follows its log and outputs its Model
-  # Version; Python with the Kubeflow SDK and MLflow.
-  launcher: mlp-launcher
   # Builds the Web UI with node and serves its static files with nginx.
   webui: mlp-webui
   # Endpoints run the upstream vLLM image as is.
@@ -93,15 +87,10 @@ sandboxServerMemoryMb: 512
 mlflowGcSchedule: "0 3 * * *"
 # install.sh prunes the BuildKit cache down to this size after building.
 buildCacheGb: 50
-# The Kueue queue every GPU workload waits in: KFP GPU steps, Endpoints and TrainJobs.
+# The Kueue queue every GPU workload waits in: KFP GPU steps and Endpoints.
 gpuQueue: gpu
 # What that queue may hand out at once in `nvidia.com/gpu`: install.sh sets it to all GPUs' slices.
 gpuQuota: 20
-# The ClusterTrainingRuntime every finetune Phase's TrainJob runs on.
-finetuneRuntime: mlp-finetune
-# `install.sh join` taints a joined GPU machine with it; only that runtime and the device plugin
-# tolerate it, so everything else stays on the host.
-trainingNodeTaint: mlp/training-only
 
 # Kueue's Configuration; install.sh limits its pod and Deployment webhooks to the platform's
 # namespaces, so k3s's own pods are never held back.
@@ -123,15 +112,14 @@ kueue:
         operator: In
         values: []
   integrations:
-    frameworks: [pod, deployment, trainer.kubeflow.org/trainjob]
+    frameworks: [pod, deployment]
   # Only GPUs are counted; CPU and memory stay the scheduler's.
   resources:
     excludeResourcePrefixes: [cpu, memory, ephemeral-storage, hugepages-]
 
 # Rendered into the platform settings ConfigMap, read through mlp_core.settings.
 settings:
-  # install.sh counts these two from the cluster's nodes; gpu_count is physical GPUs.
-  node_count: 1
+  # install.sh counts the cluster's physical GPUs; every step and Endpoint uses one.
   gpu_count: 1
   # install.sh switches it off if a machine has several GPUs: jobs then take whole GPUs (#117).
   gpu_sharing: true
@@ -150,10 +138,6 @@ settings:
   gpu_share_training_reserve_gib: 2
   # Only a recommendation: forms show it, calculated shares stop there, a user can enter up to 1.
   gpu_max_utilization: 0.85
-  # GPUs per node for a Stage; a finetune Phase trains on nodes_per_stage nodes, asked by install.sh.
-  gpus_per_stage: 1
-  nodes_per_stage: 1
-  gpus_per_endpoint: 1
   sandbox_timeout_seconds: 10
   sandbox_memory_mb: 1024
   sandbox_replicas: 1

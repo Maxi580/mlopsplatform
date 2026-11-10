@@ -3,7 +3,6 @@ import time
 from pathlib import Path
 
 import boto3
-from accelerate.utils import broadcast_object_list
 from transformers import TrainerCallback
 
 from mlp_core import config
@@ -19,18 +18,13 @@ class CheckpointUploads(TrainerCallback):
         self.stop_after_checkpoint = stop_after_checkpoint
         self.last_saved = time.monotonic()
 
-    # The trainer saves only when told to, as the platform sets `save_strategy: no`; every process
-    # saves at the same step, so the main process's clock decides.
+    # The trainer saves only when told to, as the platform sets `save_strategy: no`.
     def on_step_end(self, args, state, control, **kwargs):
-        [due] = broadcast_object_list([time.monotonic() - self.last_saved >= self.interval])
-        if due:
+        if time.monotonic() - self.last_saved >= self.interval:
             control.should_save = True
 
-    # Only the main process uploads; under FSDP it holds the gathered weights.
     def on_save(self, args, state, control, **kwargs):
-        if state.is_world_process_zero:
-            directory = Path(args.output_dir) / f"checkpoint-{state.global_step}"
-            upload_checkpoint(directory, self.prefix)
+        upload_checkpoint(Path(args.output_dir) / f"checkpoint-{state.global_step}", self.prefix)
         self.last_saved = time.monotonic()
         if self.stop_after_checkpoint:
             control.should_training_stop = True

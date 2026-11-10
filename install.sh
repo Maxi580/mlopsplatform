@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Installs or upgrades the platform on the host, or joins another GPU machine to its cluster for finetune Phases.
-# Usage: ./install.sh <dev|prod>, or on the new machine ./install.sh join <host>
+# Installs or upgrades the platform on a single-node host. Usage: ./install.sh <dev|prod>
 set -euo pipefail
 
 ENVIRONMENT=${1:-}
-[[ $ENVIRONMENT == dev || $ENVIRONMENT == prod || ($ENVIRONMENT == join && -n ${2:-}) ]] \
-  || { echo "usage: ./install.sh <dev|prod>, or ./install.sh join <host>" >&2; exit 1; }
+[[ $ENVIRONMENT == dev || $ENVIRONMENT == prod ]] || { echo "usage: ./install.sh <dev|prod>" >&2; exit 1; }
 source "$(dirname "$0")/deploy/values.sh"
 
 K3S_SOCKET=/run/k3s/containerd/containerd.sock
@@ -101,15 +99,6 @@ check_nvidia_driver() {
   (( ${driver%%.*} >= minimum )) || die "NVIDIA driver $driver is too old: install $minimum or newer"
 }
 
-# Every node pulls images from the others' containerd through k3s's embedded mirror (Spegel), so a joined machine
-# gets the images BuildKit built on the host.
-write_registry_mirror() {
-  update_root_file /etc/rancher/k3s/registries.yaml <<'EOF'
-mirrors:
-  docker.io:
-EOF
-}
-
 prepare_host() {
   log "Preparing the host (only what is missing)"
   local restart_k3s=false
@@ -121,9 +110,7 @@ prepare_host() {
   update_root_file /etc/rancher/k3s/config.yaml.d/mlp.yaml <<EOF && restart_k3s=true
 secrets-encryption: true
 default-runtime: nvidia
-embedded-registry: true
 EOF
-  write_registry_mirror && restart_k3s=true
   # k3s finds the nvidia runtime by itself, but gVisor needs a containerd template.
   update_root_file /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl <<'EOF' && restart_k3s=true
 {{ template "base" . }}
@@ -162,7 +149,6 @@ build_images() {
     --build-arg BFCL_VERSION="$(value .versions.bfcl)"
   build_image trainerHf "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=hf
   build_image trainerUnsloth "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=unsloth
-  build_image launcher "$ROOT" "$ROOT/packages/stages/Dockerfile" --build-arg STAGES_EXTRA=launch
   build_image webui "$ROOT/packages/interface/webui" "$ROOT/packages/interface/webui/Dockerfile"
 }
 
@@ -212,8 +198,7 @@ install_cert_manager() {
     --set crds.enabled=true --set crds.keep=false --wait
 }
 
-# Also on joined machines, which only finetune Phases' TrainJobs tolerate. Offers each GPU as $1
-# slices by time-slicing; the plugin refuses 1, which is simply no time-slicing. The annotation
+# Offers each GPU as $1 slices by time-slicing; the plugin refuses 1, which is simply no time-slicing. The annotation
 # restarts the plugin when the number changes, and tells the next run how to read what it reports.
 apply_device_plugin() {
   local slices=$1 config="$WORK/device-plugin.yaml"
@@ -224,9 +209,8 @@ apply_device_plugin() {
   kubectl -n kube-system create configmap nvidia-device-plugin-config --from-file=config.yaml="$config" \
     --dry-run=client -o yaml | kubectl apply -f -
   curl -fsSL "$(device_plugin_manifest)" \
-    | TAINT=$(value .trainingNodeTaint) SLICES=$slices yq '
-        .spec.template.spec.tolerations += [{"key": strenv(TAINT), "operator": "Exists", "effect": "NoSchedule"}]
-        | .spec.template.metadata.annotations["mlp/gpu-slices"] = strenv(SLICES)
+    | SLICES=$slices yq '
+        .spec.template.metadata.annotations["mlp/gpu-slices"] = strenv(SLICES)
         | .spec.template.spec.containers[0].env += [{"name": "CONFIG_FILE", "value": "/etc/nvidia-device-plugin/config.yaml"}]
         | .spec.template.spec.containers[0].volumeMounts += [{"name": "config", "mountPath": "/etc/nvidia-device-plugin"}]
         | .spec.template.spec.volumes += [{"name": "config", "configMap": {"name": "nvidia-device-plugin-config"}}]' \
@@ -243,55 +227,29 @@ installed_gpu_slices() {
   echo "${slices:-1}"
 }
 
-# On a new GPU machine: a k3s agent of the host's cluster that runs only finetune Phases' TrainJobs.
-join_cluster() {
-  local server=$1 token
-  log "Joining $server's cluster as a training machine"
-  check_nvidia_driver
-  command -v nvidia-container-runtime >/dev/null || install_nvidia_container_toolkit
-  token=${MLP_JOIN_TOKEN:-}
-  [[ -n $token ]] || { read -rsp "Join token (on the host: sudo cat /var/lib/rancher/k3s/server/node-token): " token && echo; }
-  update_root_file /etc/rancher/k3s/config.yaml.d/mlp.yaml <<EOF || true
-default-runtime: nvidia
-node-taint:
-  - $(value .trainingNodeTaint)=true:NoSchedule
-EOF
-  write_registry_mirror || true
-  if ! command -v k3s >/dev/null; then
-    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$(value .versions.k3s)" K3S_URL="https://$server:6443" \
-      K3S_TOKEN="$token" sh -
-  else
-    sudo systemctl restart k3s-agent
-  fi
-  # An agent can't read the cluster, but the host's device plugin runs here once the node is Ready.
-  log "Waiting until the host's device plugin reports this machine's GPUs"
-  until [[ -n $(sudo k3s crictl ps --name nvidia-device-plugin -q 2>/dev/null) ]]; do sleep 5; done
-  echo "Joined. Run ./install.sh on the host to use this machine's GPUs."
-}
-
-# What the device plugin offers on each GPU machine, one line per machine.
+# What the device plugin offers on each node, one line per node.
 offered_gpus() {
   kubectl get nodes -o json | yq -p json '.items[].status.allocatable["nvidia.com/gpu"]
     | select(. != null) | to_number | select(. > 0)'
 }
 
-# The cluster's GPU machines and physical GPUs, from what a plugin offering $1 slices per GPU reports:
-# until it divides evenly, as an older plugin may still be reporting.
+# The cluster's physical GPUs, from what a plugin offering $1 slices per GPU reports: until it
+# divides evenly, as an older plugin may still be reporting.
 count_gpus() {
   log "Counting the cluster's GPUs"
   local slices=$1 offered gpus even
   while true; do
     offered=$(offered_gpus) || offered=
-    NODE_COUNT=0 GPU_COUNT=0 MOST_GPUS=0 even=true
+    GPU_COUNT=0 MOST_GPUS=0 even=true
     for gpus in $offered; do
       (( gpus % slices == 0 )) || even=false
       gpus=$(( gpus / slices ))
-      NODE_COUNT=$(( NODE_COUNT + 1 )) GPU_COUNT=$(( GPU_COUNT + gpus )) MOST_GPUS=$(( gpus > MOST_GPUS ? gpus : MOST_GPUS ))
+      GPU_COUNT=$(( GPU_COUNT + gpus )) MOST_GPUS=$(( gpus > MOST_GPUS ? gpus : MOST_GPUS ))
     done
-    [[ $NODE_COUNT -gt 0 && $even == true ]] && break
+    [[ $GPU_COUNT -gt 0 && $even == true ]] && break
     sleep 5
   done
-  echo "$NODE_COUNT nodes with $GPU_COUNT GPUs"
+  echo "$GPU_COUNT GPUs"
 }
 
 # 1 / gpu_slice slices per GPU, or whole GPUs if a machine has several (#117).
@@ -323,27 +281,7 @@ wait_for_gpu_slices() {
   echo "warning: the device plugin offers $offered, not $(( GPU_COUNT * GPU_SLICES )); is a machine down?"
 }
 
-# Asked on every run, as a joined machine adds a node; the current setting is the default.
-ask_nodes_per_stage() {
-  local current
-  current=$(kubectl -n "$(value .namespaces.platform)" get configmap platform-settings \
-    -o 'jsonpath={.data.nodes_per_stage}' 2>/dev/null) || true
-  NODES_PER_STAGE=${MLP_NODES_PER_STAGE:-}
-  [[ -n $NODES_PER_STAGE ]] || read -rp "How many nodes should a finetune Phase use? [${current:-1}] " NODES_PER_STAGE
-  NODES_PER_STAGE=${NODES_PER_STAGE:-${current:-1}}
-  [[ $NODES_PER_STAGE =~ ^[0-9]+$ ]] && (( NODES_PER_STAGE >= 1 && NODES_PER_STAGE <= NODE_COUNT )) \
-    || die "a finetune Phase can use 1 to $NODE_COUNT nodes, not $NODES_PER_STAGE"
-}
-
-# Before Kueue, so its TrainJob integration finds the TrainJob CRD.
-install_kubeflow_trainer() {
-  log "Installing Kubeflow Trainer and JobSet"
-  helm upgrade --install kubeflow-trainer oci://ghcr.io/kubeflow/charts/kubeflow-trainer \
-    --version "$(value .versions.kubeflowTrainer)" --namespace "$(value .namespaces.kubeflowTrainer)" --create-namespace \
-    --wait --timeout 10m
-}
-
-# Before the platform chart, which creates the GPU queue and the finetune runtime.
+# Before the platform chart, which creates the GPU queue.
 install_kueue() {
   log "Installing Kueue"
   NAMESPACES="$(value .namespaces.platform),$(value .namespaces.kubeflow)" yq     '.kueue | .managedJobsNamespaceSelector.matchExpressions[0].values = (strenv(NAMESPACES) | split(","))'     "$VALUES" > "$WORK/kueue.yaml"
@@ -353,17 +291,14 @@ install_kueue() {
 install_platform_chart() {
   log "Installing the platform chart (API, Sandbox, Endpoint Proxy, Web UI, Postgres, TLS, routes)"
   helm upgrade --install mlp "$ROOT/deploy/chart" --namespace "$(value .namespaces.platform)" \
-    -f "$VALUES" --set images.tag="$TAG" --set settings.node_count="$NODE_COUNT" \
-    --set settings.gpu_count="$GPU_COUNT" --set settings.gpu_sharing="$GPU_SHARING" \
-    --set gpuQuota="$(( GPU_COUNT * GPU_SLICES ))" --set settings.nodes_per_stage="$NODES_PER_STAGE" --wait --timeout 10m
+    -f "$VALUES" --set images.tag="$TAG" --set settings.gpu_count="$GPU_COUNT" \
+    --set settings.gpu_sharing="$GPU_SHARING" --set gpuQuota="$(( GPU_COUNT * GPU_SLICES ))" --wait --timeout 10m
 }
 
 # On the new API: Endpoint Deployments and Kubeflow runs outlive the chart upgrade.
 stop_running_work() {
   log "Cancelling running Pipelines and stopping Endpoints"
   kubectl -n "$(value .namespaces.platform)" exec deploy/api -- stop-running-work
-  # A cancelled Phase's TrainJob would train on; the reconciler deletes it only later.
-  kubectl -n "$(value .namespaces.kubeflow)" delete trainjobs.trainer.kubeflow.org --all --ignore-not-found
   # Kueue's record of each GPU workload; nothing runs any more, so none may hold a GPU.
   for namespace in "$(value .namespaces.platform)" "$(value .namespaces.kubeflow)"; do
     kubectl -n "$namespace" delete workloads.kueue.x-k8s.io --all --ignore-not-found
@@ -522,16 +457,9 @@ print_urls() {
   echo "KFP UI:    https://$domain/pipeline/"
   echo "MLflow UI: https://$domain/mlflow/"
   echo "CA:        $ROOT/ca.crt (import it into your OS trust store once)"
-  echo "Join:      ./install.sh join <this host> on another GPU machine, with the token from"
-  echo "           sudo cat /var/lib/rancher/k3s/server/node-token"
 }
 
 install_yq
-if [[ $ENVIRONMENT == join ]]; then
-  load_values
-  join_cluster "$2"
-  exit
-fi
 load_values "$ROOT/deploy/values-$ENVIRONMENT.yaml"
 [[ -n $(value .domain) ]] || die "set domain in deploy/values-$ENVIRONMENT.yaml"
 log "Found a $ARCH host: installing $ARCH host tools and building images for linux/$ARCH"
@@ -544,11 +472,9 @@ count_gpus "$INSTALLED_GPU_SLICES"
 choose_gpu_slices
 apply_device_plugin "$GPU_SLICES"
 wait_for_gpu_slices
-ask_nodes_per_stage
 build_images
 create_credentials
 install_cert_manager
-install_kubeflow_trainer
 install_kueue
 install_platform_chart
 stop_running_work

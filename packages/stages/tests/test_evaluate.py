@@ -172,11 +172,11 @@ def step(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "stdout", sys.stdout)
     monkeypatch.setattr(sys, "stderr", sys.stderr)
 
-    def run(model, benchmarks=("lm_eval:gsm8k",), endpoint_url="", gpus="1", **evaluate):
+    def run(model, benchmarks=("lm_eval:gsm8k",), endpoint_url="", **evaluate):
         evaluate = {"model": model, "benchmarks": list(benchmarks), **evaluate}
         request = {"name": "qwen-sft", "evaluate": evaluate}
         monkeypatch.setattr(sys, "argv", ["mlp-stage", "evaluate", "7", json.dumps(request)])
-        sys.argv += [endpoint_url, gpus]
+        sys.argv += [endpoint_url]
         main()
 
     fakes.run = run
@@ -193,7 +193,6 @@ def test_a_base_model_is_served_by_vllm_and_each_metric_logged(step):
     [vllm] = step.vllm.commands
     assert vllm[:3] == ["vllm", "serve", REPO]
     assert option(vllm, "--revision") == COMMIT
-    assert option(vllm, "--tensor-parallel-size") == "1"
     assert "--enable-tokenizer-info-endpoint" in vllm
     assert step.vllm.terminated
     [lm_eval] = step.harnesses.commands
@@ -231,7 +230,7 @@ def test_the_limit_caps_the_samples_per_task(step):
 
 
 def test_an_endpoint_is_evaluated_through_its_service_without_a_vllm_of_its_own(step):
-    step.run("endpoint:chat", endpoint_url="http://endpoint-chat.mlp.svc:8000", gpus="0")
+    step.run("endpoint:chat", endpoint_url="http://endpoint-chat.mlp.svc:8000")
 
     assert step.vllm.commands == []
     model_args = option(step.harnesses.commands[0], "--model_args")

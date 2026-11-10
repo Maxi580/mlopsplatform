@@ -17,7 +17,8 @@ endpoint = Table(
     Column("spec", JSON, nullable=False),
     # Every Reference it serves from, pinned: its model, and an Adapter's base.
     Column("uses", JSON, nullable=False),
-    Column("gpus", Integer, nullable=False),
+    # Every Endpoint uses one GPU; the column stays for databases from before #124.
+    Column("gpus", Integer, nullable=False, default=1),
     Column("status", String, nullable=False),
     # Why it crashed, until a restart.
     Column("failure", String),

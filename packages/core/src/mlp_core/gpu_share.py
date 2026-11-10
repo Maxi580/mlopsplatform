@@ -25,7 +25,6 @@ def with_gpu_share(
     options: ServingOptions,
     model: ModelMemory,
     gpu: Gpu | None,
-    gpus: int,
     settings: Settings,
 ) -> ServingOptions:
     """The options with a GPU Share and length: the user's, else calculated, else the fixed ones."""
@@ -37,20 +36,18 @@ def with_gpu_share(
     # 2. A value the user entered wins.
     share = options.gpu_memory_utilization
     if share is None:
-        share = vllm_gpu_share(model.weights_bytes, gpu, gpus, settings)
+        share = vllm_gpu_share(model.weights_bytes, gpu, settings)
     return options.model_copy(update={"gpu_memory_utilization": share, "max_model_len": length})
 
 
-def vllm_gpu_share(
-    weights_bytes: int | None, gpu: Gpu | None, gpus: int, settings: Settings
-) -> float:
-    """The GPU Share to serve the weights, across `gpus`; the fixed one if a size is unknown."""
+def vllm_gpu_share(weights_bytes: int | None, gpu: Gpu | None, settings: Settings) -> float:
+    """The GPU Share to serve the weights; the fixed one if a size is unknown."""
     if weights_bytes is None or gpu is None:
         return config.SERVING_GPU_MEMORY_UTILIZATION
     reserve = settings.gpu_share_vllm_reserve_gib
     if gpu.shared_with_system:
         reserve += settings.gpu_share_shared_memory_reserve_gib
-    weights = settings.gpu_share_weights_factor * weights_bytes / gpus
+    weights = settings.gpu_share_weights_factor * weights_bytes
     need = weights + reserve * config.QUANTITY_SUFFIXES["Gi"]
     return min(settings.share_in_slices(need / gpu.memory_bytes), settings.gpu_max_utilization)
 

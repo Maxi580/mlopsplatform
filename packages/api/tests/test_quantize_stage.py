@@ -160,7 +160,7 @@ def test_quantize_is_handed_the_model_version_of_the_last_phase(logged_in_api, c
     assert parameters(quantize)["finetuned"] == "finetune"
 
 
-def test_quantize_loads_the_model_offline_on_the_platforms_gpus(logged_in_api, cluster):
+def test_quantize_loads_the_model_offline_on_a_gpu(logged_in_api, cluster):
     submit(logged_in_api, quantizing())
 
     step = container(cluster, "quantize")
