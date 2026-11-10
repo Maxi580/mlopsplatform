@@ -1,6 +1,6 @@
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 
 from google.protobuf import json_format
@@ -28,8 +28,9 @@ class StepEnvironment:
     sandbox_url: str
     # Where `evaluate` reaches an Endpoint's Service.
     platform_namespace: str
-    # The Kueue LocalQueue every GPU step waits in.
+    # The Kueue LocalQueue every GPU step waits in, and the one a Smoke Test's wait in instead.
     gpu_queue: str
+    smoke_test_gpu_queue: str
 
     @classmethod
     def from_environment(cls) -> "StepEnvironment":
@@ -46,6 +47,7 @@ class StepEnvironment:
             sandbox_url=os.environ["SANDBOX_URL"],
             platform_namespace=os.environ["PLATFORM_NAMESPACE"],
             gpu_queue=os.environ["GPU_QUEUE"],
+            smoke_test_gpu_queue=os.environ["SMOKE_TEST_GPU_QUEUE"],
         )
 
 
@@ -153,10 +155,12 @@ def compile_smoke_test(
     settings: Settings,
 ) -> dict:
     """The Smoke Test's Kubeflow pipeline spec: fetch, then one node per case, named after it."""
+    # Its GPU steps run one at a time in their own queue, though the graph runs them side by side.
+    steps = replace(steps, gpu_queue=steps.smoke_test_gpu_queue)
 
     @dsl.pipeline(name=name)
     def pipeline():
-        # Every case runs once fetch passed, side by side, so one failing can't stop the others;
+        # Every case may run once fetch passed, so one failing can't stop the others;
         # KFP's backend turns ignore_upstream_failure into an exit hook, so cases can't chain.
         fetched_task = fetch_step(fetched, steps, settings).set_display_name("fetch")
         if sandbox:

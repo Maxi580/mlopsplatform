@@ -209,7 +209,13 @@ def backend_errors(request: PipelineRequest) -> list[dict]:
         elif phase.method not in methods:
             supported = ", ".join(methods)
             msg = f"{backend} trains {phase.algorithm} Phases with {supported}, not {phase.method}"
-            errors.append(error([*loc, "method"], f"{msg}; use backend `hf`"))
+            others = [
+                other
+                for other, trained in config.BACKENDS.items()
+                if phase.method in trained.get(phase.algorithm, ())
+            ]
+            hint = f"; use backend `{others[0]}`" if others else ""
+            errors.append(error([*loc, "method"], msg + hint))
     return errors
 
 

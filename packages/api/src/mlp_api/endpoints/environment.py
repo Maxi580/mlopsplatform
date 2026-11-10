@@ -15,8 +15,9 @@ class EndpointEnvironment:
     mlflow_url: str
     # Where the API reaches the Endpoint Proxy inside the cluster, as the Smoke Test does.
     proxy_url: str
-    # The Kueue LocalQueue an Endpoint waits in for its GPUs.
+    # The Kueue LocalQueue an Endpoint waits in for its GPUs, and the one a Smoke Test's wait in.
     gpu_queue: str
+    smoke_test_gpu_queue: str
 
     @classmethod
     def from_environment(cls) -> "EndpointEnvironment":
@@ -30,4 +31,5 @@ class EndpointEnvironment:
             mlflow_url=os.environ["MLFLOW_URL"],
             proxy_url=os.environ["PROXY_URL"],
             gpu_queue=os.environ["GPU_QUEUE"],
+            smoke_test_gpu_queue=os.environ["SMOKE_TEST_GPU_QUEUE"],
         )

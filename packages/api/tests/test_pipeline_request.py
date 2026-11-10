@@ -668,7 +668,7 @@ REWARDS = {"exact": {"weight": 1.0, "source": "def reward(sample, item):\n    re
         ),
         (
             {"algorithm": "grpo", "method": "full", "lora": None, "rewards": REWARDS},
-            "unsloth trains grpo Phases with lora, qlora, not full; use backend `hf`",
+            "unsloth trains grpo Phases with lora, not full; use backend `hf`",
         ),
     ],
 )
@@ -676,6 +676,17 @@ def test_an_algorithm_or_method_the_backend_lacks_is_rejected(validate, phase, m
     request = pipeline_request(phase=phase, backend="unsloth")
 
     assert message in rejection(validate(request))
+
+
+@pytest.mark.parametrize("backend", ["hf", "unsloth"])
+@pytest.mark.parametrize("algorithm", ["grpo", "rloo"])
+def test_online_rl_trains_no_qlora_as_its_vllm_loads_no_4_bit_model(validate, backend, algorithm):
+    phase = {"algorithm": algorithm, "method": "qlora", "rewards": REWARDS}
+    request = pipeline_request(phase=phase, backend=backend)
+
+    rejected = rejection(validate(request))
+    assert f"{backend} trains {algorithm} Phases with lora" in rejected
+    assert "use backend" not in rejected
 
 
 def test_assistant_only_loss_on_unsloth_needs_no_generation_markers(validate, hugging_face):

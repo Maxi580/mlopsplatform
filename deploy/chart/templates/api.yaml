@@ -108,6 +108,8 @@ spec:
             # GPU steps and Endpoints wait for their GPUs in this Kueue queue.
             - name: GPU_QUEUE
               value: {{ .Values.gpuQueue }}
+            - name: SMOKE_TEST_GPU_QUEUE
+              value: {{ .Values.smokeTestQueue }}
             # Where each machine's reporter answers what its GPUs report.
             - name: GPU_REPORTER_PORT
               value: {{ .Values.ports.gpuReporter | quote }}

@@ -44,6 +44,7 @@ def platform_database(settings_configmap_env, tmp_path, monkeypatch):
     monkeypatch.setenv("VLLM_IMAGE", "vllm/vllm-openai:real")
     monkeypatch.setenv("MODEL_CACHE_HOST_PATH", "/var/lib/mlp/model-cache")
     monkeypatch.setenv("GPU_QUEUE", "gpu")
+    monkeypatch.setenv("SMOKE_TEST_GPU_QUEUE", "smoke-test")
     monkeypatch.setenv("GPU_REPORTER_PORT", "8020")
     # Tests reconcile by hand, so the background loop never races them.
     monkeypatch.setattr(config, "RECONCILE_INTERVAL", timedelta(days=1))
@@ -432,6 +433,7 @@ class FakeCluster:
         sandbox_url="http://sandbox.mlp.test:8090",
         platform_namespace="mlp",
         gpu_queue="gpu",
+        smoke_test_gpu_queue="smoke-test",
     )
     endpoint_environment = EndpointEnvironment(
         namespace="mlp",
@@ -443,6 +445,7 @@ class FakeCluster:
         mlflow_url="http://mlflow.test",
         proxy_url="http://proxy.mlp.test:8010",
         gpu_queue="gpu",
+        smoke_test_gpu_queue="smoke-test",
     )
 
     def __init__(self):

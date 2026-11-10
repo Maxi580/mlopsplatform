@@ -1,6 +1,7 @@
 import logging
 import threading
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from sqlalchemy import Engine, delete, insert, select, update
@@ -31,7 +32,7 @@ class EndpointConflict(Exception):
     pass
 
 
-def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
+def start_endpoint(state, name: str, spec: EndpointSpec, smoke_test: bool = False) -> dict:
     """The new Endpoint, pending until vLLM is ready; ValueError if its model can't be served."""
     with endpoints_lock:
         # 1. The name is free until the Endpoint with it is deleted.
@@ -61,7 +62,7 @@ def start_endpoint(state, name: str, spec: EndpointSpec) -> dict:
             )
 
         # 4. Its Kubernetes objects.
-        return create_endpoint_objects(state, name, endpoint_uuid, spec, model)
+        return create_endpoint_objects(state, name, endpoint_uuid, spec, model, smoke_test)
 
 
 def restart_endpoint(state, name: str, gpu_share: float | None = None) -> dict:
@@ -141,10 +142,19 @@ def preview_endpoint(state, spec: EndpointSpec) -> EndpointSpec:
 
 
 def create_endpoint_objects(
-    state, name: str, endpoint_uuid: str, spec: EndpointSpec, model: EndpointModel
+    state,
+    name: str,
+    endpoint_uuid: str,
+    spec: EndpointSpec,
+    model: EndpointModel,
+    smoke_test: bool = False,
 ) -> dict:
     """The Endpoint once Kubernetes has its objects; after a failure none, and it is stopped."""
     cluster = state.cluster
+    environment = cluster.endpoint_environment
+    # A Smoke Test's Endpoint waits for its GPU Share behind the Smoke Test's other GPU jobs.
+    if smoke_test:
+        environment = replace(environment, gpu_queue=environment.smoke_test_gpu_queue)
     # Only the API calls the Judge, so it has no route, and its answers aren't traced.
     judge = name == config.JUDGE_ENDPOINT_NAME
     manifests = endpoint_manifests(
@@ -154,7 +164,7 @@ def create_endpoint_objects(
         model,
         state.settings.gpu_request(serving_share(spec)),
         state.settings.model_cache_size,
-        cluster.endpoint_environment,
+        environment,
         None if judge else traces_experiment_id(state, name),
         routed=not judge,
     )

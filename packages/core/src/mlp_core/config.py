@@ -258,14 +258,19 @@ ALGORITHMS = {
 WEIGHT_METHODS = ("lora", "qlora", "full")
 ADAPTER_METHODS = ("lora", "qlora")
 BACKENDS = {
-    "hf": dict.fromkeys(ALGORITHMS, WEIGHT_METHODS),
+    # Online RL generates on vLLM, which loads no bitsandbytes 4-bit model since 0.30: no `qlora`.
+    "hf": {
+        **dict.fromkeys(ALGORITHMS, WEIGHT_METHODS),
+        "grpo": ("lora", "full"),
+        "rloo": ("lora", "full"),
+    },
     # Its vLLM shares weights with LoRA Adapters only, and it loads no Teacher.
     "unsloth": {
         "sft": WEIGHT_METHODS,
         "dpo": WEIGHT_METHODS,
         "kto": WEIGHT_METHODS,
-        "grpo": ("lora", "qlora"),
-        "rloo": ("lora", "qlora"),
+        "grpo": ("lora",),
+        "rloo": ("lora",),
     },
 }
 # LoraConfig settings the platform sets.

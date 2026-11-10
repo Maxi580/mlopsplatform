@@ -91,6 +91,10 @@ buildCacheGb: 50
 gpuQueue: gpu
 # What that queue may hand out at once in `nvidia.com/gpu`: install.sh sets it to all GPUs' slices.
 gpuQuota: 20
+# The Smoke Test's GPU steps and Endpoints wait in this queue instead: one at a time, as vLLM
+# misjudges its memory while another job starts beside it, borrowing at most this much of gpuQuota.
+smokeTestQueue: smoke-test
+smokeTestGpuPercent: 70
 
 # Kueue's Configuration; install.sh limits its pod and Deployment webhooks to the platform's
 # namespaces, so k3s's own pods are never held back.

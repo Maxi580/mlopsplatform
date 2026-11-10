@@ -45,14 +45,16 @@ SERVING_CASES = [
     *(f"serve-{case}" for case in SPECULATE_CASES),
     "judge",
 ]
-# Every Phase algorithm with every method of the `hf` backend, and those `unsloth` trains.
-UNSLOTH = {"sft", "dpo", "kto", "grpo-lora", "grpo-qlora", "rloo-lora", "rloo-qlora"}
+# Every Phase algorithm with every method of the `hf` backend, and those `unsloth` trains; online
+# RL trains no `qlora`.
+UNSLOTH = {"sft", "dpo", "kto", "grpo-lora", "rloo-lora"}
 GRID_CASES = [
     f"{phase}-{method}-{backend}"
     for phase in ("sft", "dpo", "kto", "distillation", "grpo", "rloo")
     for method in ("lora", "qlora", "full")
     for backend in ("hf", "unsloth")
     if backend == "hf" or {phase, f"{phase}-{method}"} & UNSLOTH
+    if f"{phase}-{method}" not in ("grpo-qlora", "rloo-qlora")
 ]
 WEIGHT_CASES = [
     "sft-rslora-hf",
@@ -171,6 +173,21 @@ def test_every_case_runs_once_fetch_passed_whatever_the_others_do(
     assert all("triggerPolicy" not in task for task in nodes(cluster).values())
 
 
+def test_its_gpu_steps_wait_one_at_a_time_in_the_smoke_test_queue(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api, {"finetune": {"phases": ["grpo"]}, "evaluate": True})
+
+    platform = cluster.submitted["pipeline_spec"]["platform_spec"]["platforms"]["kubernetes"]
+    executors = platform["deploymentSpec"]["executors"].values()
+    queues = {
+        executor["podMetadata"]["labels"]["kueue.x-k8s.io/queue-name"]
+        for executor in executors
+        if "podMetadata" in executor
+    }
+    assert queues == {"smoke-test"}
+
+
 @pytest.mark.parametrize(
     ("selection", "cases"),
     [
@@ -199,7 +216,7 @@ def test_every_case_runs_once_fetch_passed_whatever_the_others_do(
         ),
         (
             {"finetune": {"phases": ["grpo", "distillation"], "backends": ["unsloth"]}},
-            ["fetch", "grpo-lora-unsloth", "grpo-qlora-unsloth"],
+            ["fetch", "grpo-lora-unsloth"],
         ),
         ({"finetune": {"phases": ["sft"], "methods": [], "backends": ["hf"]}}, ["fetch"]),
     ],
@@ -773,6 +790,16 @@ def test_the_adapter_case_fails_with_its_finetune_case(logged_in_api, qwen_on_th
 
     assert smoke_test(logged_in_api)["cases"]["serve-adapter"] == "failed"
     assert f"{name}-serve-adapter" not in running_endpoints(logged_in_api)
+
+
+def test_a_serving_cases_endpoint_waits_in_the_smoke_test_queue(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    name = start(logged_in_api, {"serving": True}).json()["name"]
+    reconcile(logged_in_api)
+
+    deployment = cluster.endpoints[f"{name}-serve-base-model"]["deployment"]
+    assert deployment["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == "smoke-test"
 
 
 def test_a_serving_case_passes_once_its_endpoint_answered_a_chat_request_and_then_stops_it(

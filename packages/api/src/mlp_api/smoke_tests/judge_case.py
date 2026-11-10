@@ -69,7 +69,7 @@ def judged_answer_result(state, name: str, case: dict) -> str:
     found = find_endpoint(state.engine, name)
     if found is None:
         try:
-            start_endpoint(state, name, EndpointSpec(model=case["model"]))
+            start_endpoint(state, name, EndpointSpec(model=case["model"]), smoke_test=True)
             judging = Judging(judged=True, every=1, max_per_hour=1)
             set_endpoint_judging(state.engine, name, judging, datetime.now(UTC))
         except Exception:
