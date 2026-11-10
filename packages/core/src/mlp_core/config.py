@@ -525,8 +525,9 @@ PIPELINE_SECRET_LABEL = "mlp-pipeline-secret"
 # A finetune Phase runs as a TrainJob of this name and label, which cancels and deletes find.
 TRAINJOB_NAME = "pipeline-{id}-phase-{index}-"
 PIPELINE_ID_LABEL = "mlp/pipeline-id"
-# Who the TrainJob's patch of its runtime belongs to; Kueue adds its own.
-TRAINJOB_PATCH_MANAGER = "mlp"
+# Who the TrainJob's patch of its runtime belongs to; Kueue adds its own. Trainer's webhook
+# requires a domain-prefixed path.
+TRAINJOB_PATCH_MANAGER = "mlopsplatform.io/api"
 TRAINJOB_RESOURCE = {"group": "trainer.kubeflow.org", "version": "v1alpha1", "plural": "trainjobs"}
 # How long a launcher follows its TrainJob, queued and training, and how often it looks.
 TRAINJOB_TIMEOUT = timedelta(days=30)
