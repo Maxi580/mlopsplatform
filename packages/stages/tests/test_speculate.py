@@ -157,6 +157,7 @@ def test_vllm_hands_out_four_verifier_layers_until_training_starts(step):
     layers = extraction["draft_model_config"]["hf_config"]["eagle_aux_hidden_state_layer_ids"]
     assert layers == [3, 12, 21, 24]
     assert json.loads(flag(args, "--kv-transfer-config"))["kv_role"] == "kv_producer"
+    assert "--enable-scale-out" in args
     assert [c[1] for c in step.commands[:2]] == ["prepare-data", "generate-offline-data"]
     train = command(step, "speculators.train")
     assert (flag(train, "--speculator-type"), flag(train, "--num-workers")) == ("eagle3", "4")

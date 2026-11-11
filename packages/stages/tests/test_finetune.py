@@ -54,8 +54,11 @@ def phase_process(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "stdout", sys.stdout)
     monkeypatch.setattr(sys, "stderr", sys.stderr)
 
-    def run(stop_after_checkpoint=""):
-        arguments = ["7", "0", json.dumps(REQUEST), "", "", "", "30", "", stop_after_checkpoint]
+    def run(stop_after_checkpoint="", checkpoint_minutes="30"):
+        arguments = [
+            *("7", "0", json.dumps(REQUEST), "", "", ""),
+            *(checkpoint_minutes, "", stop_after_checkpoint),
+        ]
         monkeypatch.setattr(sys, "argv", ["mlp-stage", "finetune", *arguments, str(fakes.output)])
         main()
 
@@ -103,6 +106,15 @@ def test_a_phase_registers_its_model_version_and_writes_the_output(phase_process
     assert phase_process.registered == ["run-1"]
     assert phase_process.output.read_text() == "model:qwen-sft@1"
     assert phase_process.deleted == ["checkpoints/7/0/"]
+
+
+def test_a_phase_without_checkpoint_minutes_leaves_the_checkpoints_under_its_prefix(
+    phase_process,
+):
+    phase_process.run(checkpoint_minutes="")
+
+    assert phase_process.registered == ["run-1"]
+    assert phase_process.deleted == []
 
 
 def test_an_interrupted_phase_registers_nothing_and_writes_an_empty_output(phase_process):

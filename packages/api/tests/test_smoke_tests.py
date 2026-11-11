@@ -397,6 +397,16 @@ def test_the_resume_case_stops_a_phase_after_its_first_checkpoint_then_continues
     assert resumed["resume_checkpoint"] == f"checkpoints/{smoke_test_id}/0/"
 
 
+def test_only_the_resume_case_keeps_checkpoints_as_all_cases_share_their_prefix(
+    logged_in_api, qwen_on_the_hub, cluster
+):
+    start(logged_in_api)
+
+    for case in ("sft-lora-hf", "sft-dpo-chain-finetune-sft", "sft-dpo-chain"):
+        parameters = node(cluster, case)["inputs"]["parameters"]
+        assert parameters["checkpoint_minutes"]["runtimeValue"]["constant"] == "", case
+
+
 def phases(cluster, case: str) -> list[dict]:
     parameters = node(cluster, case)["inputs"]["parameters"]
     return json.loads(parameters["request"]["runtimeValue"]["constant"])["finetune"]["phases"]

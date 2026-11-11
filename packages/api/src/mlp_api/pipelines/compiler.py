@@ -186,9 +186,11 @@ def compile_smoke_test(
                 [resumed] = finetune_steps(*phase, resume)
                 case_steps += [("interrupted", interrupted), ("finetune", resumed)]
             elif request.finetune:
+                # Every case shares the Smoke Test's Checkpoint prefixes, so only the resume case
+                # keeps Checkpoints; another case finishing would delete its Checkpoint.
                 names = [f"finetune-{phase.algorithm}" for phase in request.finetune.phases]
                 tasks = finetune_steps(
-                    pipeline_id, request, steps, settings, distilled, swept=swept
+                    pipeline_id, request, steps, settings, distilled, swept=swept, checkpoints=False
                 )
                 case_steps += zip(names, tasks, strict=True)
             if request.quantize:
@@ -310,6 +312,7 @@ def finetune_steps(
     resume: Resume | None = None,
     interrupt: bool = False,
     swept="",
+    checkpoints: bool = True,
 ) -> list:
     """One step per unfinished Phase, handed the previous Model Version and `swept` if it asks."""
     trainer_image = steps.trainer_images[request.finetune.backend]
@@ -357,8 +360,10 @@ def finetune_steps(
             distilled_dataset=distilled_dataset,
             previous_model_version=previous_model_version,
             swept_parameters=swept if phase.params_from else "",
-            # The Smoke Test's interrupted step saves at its first step.
-            checkpoint_minutes="0" if interrupt else str(settings.checkpoint_minutes),
+            # The Smoke Test's interrupted step saves at its first step; one without minutes keeps none.
+            checkpoint_minutes=(
+                "0" if interrupt else str(settings.checkpoint_minutes) if checkpoints else ""
+            ),
             resume_checkpoint=(index == finished and resume.checkpoint) or "",
             stop_after_checkpoint="true" if interrupt else "",
         ).set_display_name(f"finetune-{phase.algorithm}")

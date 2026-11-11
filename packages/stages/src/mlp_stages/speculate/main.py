@@ -94,7 +94,7 @@ def conversations_file(dataset: str, scratch: Path) -> Path:
 
 
 def extraction_args(source: Path, extracted: Path) -> list[str]:
-    """vLLM flags that write the prompt's hidden states to `extracted` instead of answering."""
+    """vLLM flags that render conversations and write their hidden states to `extracted`."""
     # An early, a middle and a late layer, and the final hidden state, by the verifier's depth.
     depth = json.loads((source / "config.json").read_text())["num_hidden_layers"]
     layers = [3, depth // 2, depth - 3, depth]
@@ -113,6 +113,9 @@ def extraction_args(source: Path, extracted: Path) -> list[str]:
         json.dumps(speculative),
         "--kv-transfer-config",
         json.dumps(kv_transfer),
+        # `prepare-data` renders the conversations through /v1/chat/completions/render, which
+        # vLLM serves only with this flag.
+        "--enable-scale-out",
     ]
 
 

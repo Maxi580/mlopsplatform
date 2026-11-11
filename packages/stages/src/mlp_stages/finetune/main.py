@@ -85,12 +85,14 @@ def finetune(
         checkpoint = None
         if resume_checkpoint:
             checkpoint = checkpoints.download_checkpoint(resume_checkpoint, scratch / "resume")
+        # No checkpoint_minutes: a Smoke Test case that must leave the resume case's Checkpoint be.
         own_checkpoints = checkpoint_prefix(pipeline_id, index)
-        trainer.add_callback(
-            checkpoints.CheckpointUploads(
-                own_checkpoints, int(checkpoint_minutes), bool(stop_after_checkpoint)
+        if checkpoint_minutes:
+            trainer.add_callback(
+                checkpoints.CheckpointUploads(
+                    own_checkpoints, int(checkpoint_minutes), bool(stop_after_checkpoint)
+                )
             )
-        )
         try:
             trainer.train(resume_from_checkpoint=checkpoint and str(checkpoint))
         except torch.OutOfMemoryError as error:
@@ -116,7 +118,8 @@ def finetune(
         Path(model_version).write_text(registered)
 
         # 8. The Phase succeeded, so its Checkpoints are no longer needed.
-        checkpoints.delete_checkpoints(own_checkpoints)
+        if checkpoint_minutes:
+            checkpoints.delete_checkpoints(own_checkpoints)
 
 
 # Rows of messages, which TRL renders with the chat template; TRL may only load after the backend.
